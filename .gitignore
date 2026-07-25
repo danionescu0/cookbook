@@ -1,0 +1,21 @@
+# env
+.env
+
+# python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+*.db
+
+# locally downloaded/processed recipe images (local IMAGES_DIR default, not the Docker volume)
+api/data/
+worker/data/
+
+# node
+node_modules/
+dist/
+*.tsbuildinfo
+
+# editors/os
+.DS_Store

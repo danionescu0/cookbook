@@ -1,0 +1,37 @@
+# Loaded automatically alongside docker-compose.yml for local development.
+# Adds hot reload and exposes ports directly on the host for debugging.
+services:
+  db:
+    ports:
+      - "5432:5432"
+
+  rabbitmq:
+    ports:
+      - "5672:5672"
+      - "15672:15672"     # management UI, http://localhost:15672
+
+  worker:
+    volumes:
+      - ./worker/app:/code/app
+    # No --reload equivalent for the consumer loop: `docker compose restart worker`
+    # after editing code.
+
+  api:
+    volumes:
+      - ./api/app:/code/app
+      - ./api/migrations:/code/migrations
+    ports:
+      - "8000:8000"
+    command: >
+      sh -c "alembic upgrade head &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+
+  frontend:
+    build:
+      target: dev
+    volumes:
+      - ./frontend/src:/code/src
+      - ./frontend/index.html:/code/index.html
+    ports:
+      - "5173:5173"
+    command: npm run dev -- --host 0.0.0.0

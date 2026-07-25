@@ -1,0 +1,17 @@
+@import "tailwindcss";
+
+@theme {
+  --font-serif: ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
+
+  --color-cream: #faf6f0;
+  --color-cream-card: #fffdf9;
+  --color-ink: #3a2e27;
+  --color-terracotta: #c1652f;
+  --color-terracotta-dark: #a65223;
+  --color-olive: #6b7a4f;
+  --color-olive-light: #eef1e6;
+}
+
+body {
+  @apply bg-cream text-ink;
+}
