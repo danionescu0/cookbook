@@ -3,6 +3,14 @@ const en = {
   nav: {
     recipes: "Recipes",
     backoffice: "Back office",
+    logout: "Log out",
+  },
+  login: {
+    heading: "Back office login",
+    usernameLabel: "Username",
+    passwordLabel: "Password",
+    submit: "Log in",
+    error: "Invalid username or password.",
   },
   browser: {
     heading: "Recipes",

@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.auth import require_admin
 from app.config import settings
 from app.database import get_db
 from app.models.category import Category
@@ -87,7 +88,7 @@ def list_recipes(
     return [_serialize(recipe, language) for recipe in recipes]
 
 
-@router.post("", response_model=RecipeRead, status_code=201)
+@router.post("", response_model=RecipeRead, status_code=201, dependencies=[Depends(require_admin)])
 def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)) -> RecipeRead:
     _ensure_category_exists(db, payload.category_id)
     _ensure_not_a_pasted_url(payload)
@@ -125,7 +126,9 @@ def get_recipe(
     return _serialize(recipe, language)
 
 
-@router.post("/{recipe_id}/approve", response_model=RecipeRead)
+@router.post(
+    "/{recipe_id}/approve", response_model=RecipeRead, dependencies=[Depends(require_admin)]
+)
 def approve_recipe(
     recipe_id: int,
     language: str = Query(default=settings.default_language),
@@ -139,7 +142,7 @@ def approve_recipe(
     return _serialize(recipe, language)
 
 
-@router.put("/{recipe_id}", response_model=RecipeRead)
+@router.put("/{recipe_id}", response_model=RecipeRead, dependencies=[Depends(require_admin)])
 def update_recipe(
     recipe_id: int,
     payload: RecipeUpdate,
@@ -160,7 +163,7 @@ def update_recipe(
     return _serialize(recipe, language)
 
 
-@router.delete("/{recipe_id}", status_code=204)
+@router.delete("/{recipe_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db)) -> None:
     recipe = _get_or_404(db, recipe_id)
     db.delete(recipe)

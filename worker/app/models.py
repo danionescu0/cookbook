@@ -14,6 +14,11 @@ class ImportJobType(str, enum.Enum):
 
 
 class ImportJobStatus(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/import_job.py's ImportJobStatus — see the
+    # "Worker/API code sharing" design decision. This drifted once already (missing PENDING
+    # crashed db.get() on any row read while pending/queued-but-uncommitted was observed) —
+    # if this enum is ever touched, touch the API's copy in the same change.
+    PENDING = "pending"
     QUEUED = "queued"
     FETCHING = "fetching"
     PROCESSING = "processing"

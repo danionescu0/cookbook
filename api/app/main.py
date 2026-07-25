@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from app.config import settings
-from app.routers import categories, imports, languages, recipes
+from app.routers import auth, categories, imports, languages, recipes
 
 app = FastAPI(title="Cookbook API")
 
@@ -16,6 +16,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth.router)
 app.include_router(categories.router)
 app.include_router(recipes.router)
 app.include_router(imports.router)

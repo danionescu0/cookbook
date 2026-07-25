@@ -27,7 +27,7 @@ state:
 
 - [x] Docker Compose skeleton (Postgres + API + frontend)
 - [x] API backend: categories + recipes CRUD, tested
-- [x] Frontend: front office browsing + back office CRUD (no auth yet), tested
+- [x] Frontend: front office browsing + back office CRUD, tested
 - [x] RabbitMQ + worker: API publishes import jobs, worker consumes them
 - [x] Real scraping: robots.txt-respecting fetch with per-domain rate limiting, single-call Claude
       extraction/cleanup/translation — tested against real servers (`example.com`,
@@ -59,7 +59,13 @@ state:
       English content from one Claude call, and switching languages in the browser updated both
       the UI and the recipe content instantly with no reload; migration `0004`'s data copy was also
       verified against the real (non-empty) dev database
-- [ ] Back office authentication (username/password)
+- [x] Back office authentication: JWT login (`POST /auth/login`) against a single hard-coded
+      admin account in config (`ADMIN_USERNAME`/`ADMIN_PASSWORD`/`JWT_SECRET`/`JWT_EXPIRES_MINUTES`
+      env vars — no users table, no self-registration). Every mutating route (categories/recipes
+      create/update/delete/approve, the entire `/imports` router) requires a valid
+      `Authorization: Bearer <token>` header; all GET routes stay public since the front office
+      depends on them unauthenticated. The React side gates `/backoffice` behind a `LoginForm`,
+      persists the token in `localStorage`, and auto-logs-out on any 401 from a protected call.
 - [ ] Bulk URL lists / bookmark-file upload in the import form (single URL only for now)
 - [ ] Bookmark-file import
 - [ ] Admin-configurable `settings` table (rate limit, image size are env vars for now)
@@ -71,8 +77,8 @@ state:
   recipe page modeled after sites like
   [AllRecipes](https://www.allrecipes.com/shredded-zucchini-casserole-recipe-11747790): hero image,
   description, ingredients, steps, tips.
-- **Back office** — username/password-protected admin area with full CRUD for categories and
-  recipes.
+- **Back office** — username/password-protected admin area (JWT login, single admin account in
+  config) with full CRUD for categories and recipes.
 - **Single-URL scraping, reviewed before scraping happens** — submit a URL + category in the back
   office; it sits as a pending request until an admin clicks Approve, which is what actually
   triggers the fetch/Claude/image pipeline.
@@ -141,13 +147,13 @@ scrape from ever blocking a user-facing API request.
 
 | Layer                  | Technology                                              | Notes |
 |-------------------------|----------------------------------------------------------|-------|
-| Frontend                | React + TypeScript (Vite), React Router, Tailwind CSS v4  | Single SPA serving both front office and back office; route-gated by auth once auth exists (not yet) |
+| Frontend                | React + TypeScript (Vite), React Router, Tailwind CSS v4  | Single SPA serving both front office and back office; `/backoffice` is route-gated by a JWT `AuthContext`, front office stays public |
 | UI language              | Hand-rolled i18n (`src/i18n/`), no library                | Small static dictionary per language (`ro`, `en`); one site-wide switcher drives both UI text and which recipe translation is fetched |
-| API backend             | Python + FastAPI                                         | REST API, JWT-based username/password auth for the back office |
+| API backend             | Python + FastAPI                                         | REST API; JWT (`PyJWT`) username/password auth for the back office, single hard-coded admin account in config |
 | Scraper workers         | Python + Pika (RabbitMQ client), httpx (fetch), stdlib `urllib.robotparser`, Pillow (image resize/compress) | Consume import jobs, respect robots.txt + rate limits, fetch pages, download + process images |
 | AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call |
 | Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import jobs |
-| Database                | PostgreSQL                                                | Recipes, categories, users, import status, site settings |
+| Database                | PostgreSQL                                                | Recipes, categories, import status, site settings — no users table (see Design Decisions) |
 | Image storage           | Docker named volume (`images_data`), mounted into both `api` and `worker`, served by the API via `StaticFiles` at `/images` | Worker downloads + writes JPEGs there; API serves them read-only; not hotlinked from source sites |
 | Reverse proxy           | Caddy (or Nginx)                                          | TLS termination, routes `/` to SPA and `/api` to backend |
 | Orchestration            | Docker Compose                                            | One compose stack for local dev (Fedora) and prod (Raspberry Pi, arm64 images) |
@@ -165,26 +171,31 @@ cookbook/
 │   │   ├── frontoffice/             # RecipeBrowser (home), RecipeDetail (/recipes/:id),
 │   │   │                            #   CategoryNav, RecipeCard — approved recipes only
 │   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL, approve-to-trigger,
-│   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve;
-│   │   │                            #   no auth yet)
+│   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve),
+│   │   │                            #   LoginForm — all gated behind AuthContext
+│   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout,
+│   │   │                            #   token in localStorage)
 │   │   ├── i18n/                    # config.ts (SUPPORTED_LANGUAGES, default "ro"), translations/
 │   │   │                            #   {ro,en}.ts, LanguageContext.tsx (useLanguage/useT, localStorage)
-│   │   ├── api/                     # fetch-based API client
+│   │   ├── api/                     # fetch-based API client (attaches Authorization: Bearer <token>)
 │   │   ├── index.css                # Tailwind v4 entry + @theme (warm/rustic palette)
 │   │   └── tests/                   # Vitest + React Testing Library
 │   ├── package.json
 │   └── Dockerfile                  # multi-stage: dev (vite) / production (nginx)
 ├── api/                            # FastAPI backend
 │   ├── app/
-│   │   ├── routers/                # categories.py, recipes.py (CRUD + /approve),
-│   │   │                           #   imports.py (CRUD + /approve, deferred publish), languages.py
+│   │   ├── routers/                # auth.py (POST /auth/login), categories.py, recipes.py
+│   │   │                           #   (CRUD + /approve), imports.py (CRUD + /approve, deferred
+│   │   │                           #   publish, router-level require_admin), languages.py
 │   │   ├── models/                 # SQLAlchemy models (Category, Recipe, RecipeTranslation, ImportJob)
 │   │   ├── schemas/                # Pydantic request/response schemas
 │   │   ├── tests/                  # pytest, FastAPI TestClient
 │   │   ├── queue.py                # RabbitMQ publisher (pika)
+│   │   ├── auth.py                 # create_access_token, require_admin (FastAPI dependency)
 │   │   ├── main.py                 # also mounts StaticFiles at /images -> settings.images_dir
 │   │   ├── database.py
-│   │   └── config.py                # includes supported_languages, default_language
+│   │   └── config.py                # includes supported_languages, default_language, admin_username,
+│   │                                 #   admin_password, jwt_secret, jwt_expires_minutes
 │   ├── migrations/                 # Alembic (categories/recipes 0001, import_jobs 0002, category_id
 │   │                                #   0003, recipe_translations split 0004, pending status 0005)
 │   ├── requirements.txt
@@ -343,12 +354,14 @@ Not built yet.
 **Design note:** the [original spec](#original-spec) assumed every import lands `unapproved` and
 gets a second human review of Claude's cleaned-up output before publishing. That's been
 superseded — see [Design Decisions](#design-decisions) for why the review moved earlier, to
-approving the import *request*, instead. No reject action and no back-office auth gating any of
-this yet — anyone who can reach `/backoffice` can approve/delete anything.
+approving the import *request*, instead. Still no reject action, but `/backoffice` and every
+mutating API route are now gated behind the JWT admin login — see [Design
+Decisions](#design-decisions).
 
 ## Data Model (sketch)
 
-- **users** — id, username, password_hash, role
+- *(no users table)* — back office auth is a single hard-coded admin account read from config
+  (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), not a database row; see [Design Decisions](#design-decisions)
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
   yet, see [Design Decisions](#design-decisions))
 - **recipes** — id, category_id, images, source_url (nullable, set when imported), status
@@ -381,9 +394,9 @@ this yet — anyone who can reach `/backoffice` can approve/delete anything.
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 34 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete |
-| Worker              | `pytest`                           | 24 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language; each failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe) |
-| Frontend            | Vitest + React Testing Library     | 24 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live |
+| API backend        | `pytest` + FastAPI `TestClient`    | 43 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected |
+| Worker              | `pytest`                           | 27 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language; each failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body) |
+| Frontend            | Vitest + React Testing Library     | 31 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -441,6 +454,22 @@ Notes on the current setup:
   `https://example.com/some-recipe` as a title in the running `RecipeManager` form now surfaces
   `That looks like a URL — use "Import from URL" instead of adding a recipe manually.` inline and
   blocks submission; both pre-existing junk recipes were then deleted.
+- The stuck-job incident (see the Design Decisions bullet) was fixed and confirmed against the real
+  job that triggered it, not just unit tests: the worker was restarted with the enum fix and picked
+  up jobs cleanly afterward (no more crash), the stuck job was manually flipped to `failed` (the
+  only way to make it retriable, since it had no valid transition from `queued` with the message
+  already gone from RabbitMQ), and re-approving it through the normal `POST /imports/{id}/approve`
+  flow completed successfully end to end — `robots.txt` checked, page fetched, Claude called, image
+  downloaded, landed as a real `approved` recipe in both languages.
+- Back office auth was verified end to end through the actual browser UI: an unauthenticated visit
+  to `/backoffice` shows the login form (not the managers), submitting the wrong password surfaces
+  the translated "Invalid username or password" error inline without clearing the username field,
+  logging in with the real admin credentials unlocks `CategoryManager`/`ImportManager`/
+  `RecipeManager` and swaps the nav's "Back office" link area for a "Log out" button, the token
+  survives a full page reload (`localStorage`), and clicking **Log out** immediately re-locks the
+  page back to the login form. Confirmed independently via `curl` against the API directly: wrong
+  password → `401`, correct password → a real JWT, a mutating route (`POST /categories`) without a
+  token → `401`, and `GET /recipes` without a token → `200` (front office must stay unauthenticated).
 
 Conventions:
 - Unit tests live next to the code they cover (`api/app/tests/test_*.py`, `worker/app/tests/test_*.py`,
@@ -479,6 +508,21 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   would still count as different URLs and both go through. Good enough for the actual problem this
   solved (the same link pasted twice); revisit if that gap turns out to matter in practice. Deleting
   a job frees its URL up for resubmission, same as if it never existed.
+- **Back office authentication** — JWT (`PyJWT`, HS256), not sessions/cookies, so the API stays
+  fully stateless and the same `Authorization: Bearer <token>` pattern works identically whether the
+  frontend is served from the same origin or not. Credentials are a single hard-coded admin account
+  read from config (`ADMIN_USERNAME`/`ADMIN_PASSWORD`) — no users table, no self-registration, no
+  password hashing — a deliberate choice for a self-hosted, single-operator tool where the "users
+  table" would otherwise be a table with exactly one row forever. `require_admin` is a FastAPI
+  dependency applied per-route (categories/recipes: only the mutating verbs) or once at the router
+  level (`imports`, since every route there is back-office-only); all GET routes on recipes/
+  categories stay open since the front office calls them unauthenticated. The token carries no
+  role/permissions (there's only one account to have permissions), just `sub`/`exp`, so `require_admin`
+  is only ever checking "is this a validly-signed, unexpired token," not doing any authorization
+  logic. React stores the token in `localStorage` (same pattern as the language preference) and a
+  single `onUnauthorized` callback registered on `api/client.ts` logs the user out automatically the
+  moment any protected call comes back `401` (expired token, or `JWT_SECRET` rotated) instead of every
+  form independently showing a stale error forever.
 - **Guard against pasting a URL into the manual "Add recipe" form** — a real, repeated failure
   mode in practice: the back office has two separate forms (`ImportManager` for real URL imports,
   `RecipeManager` for hand-authoring), and a URL pasted into the latter's title or an ingredient
@@ -572,7 +616,30 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
 - **Worker/API code sharing** — the worker doesn't import from `api`; it keeps its own copy of the
   `ImportJob` model (same table, defined twice) so the two remain independently buildable/deployable
   images with no shared package to version. Revisit with a shared internal package if duplication
-  grows painful as more tables/models are added.
+  grows painful as more tables/models are added. **This drifted for real once already**: adding
+  `PENDING` to `api/app/models/import_job.py`'s `ImportJobStatus` didn't get mirrored into
+  `worker/app/models.py`, so the worker crashed (`LookupError`) the moment it tried to load any
+  `import_jobs` row it could observe as `pending` — see the incident bullet below. Each enum now
+  carries a comment pointing at its counterpart; still manual, still the real risk this design
+  decision accepted.
+- **Incident: a stuck-forever import job, caused by two compounding bugs** — a real job
+  (`https://www.e-retete.ro/tehnici/...`) got stuck at `queued` indefinitely with no error, no
+  progress, and no way to retry it from the UI. Root causes, both now fixed:
+  1. `POST /imports/{id}/approve` called `publish_import_job()` *before* committing the job's
+     `status=queued` to Postgres. A worker fast enough to consume the RabbitMQ message before that
+     commit landed would read the row's *prior* status instead — normally harmless, except:
+  2. the worker's mirrored `ImportJobStatus` enum was missing `PENDING` (see above), so reading that
+     prior status crashed `db.get()` with a raw `LookupError`, before `handle_import_job`'s own
+     try/except block even started — so nothing caught it, no `job.error` got set, and the message
+     was still acked (lost) regardless, leaving the job stuck at `queued` forever with zero trace of
+     what happened. **Fixes:** the enum drift (above); reordered `approve_import_job` to commit
+     `queued` *before* publishing, so a consumer can no longer possibly observe a stale status; and
+     — the actual transparency fix — `worker/app/consumer.py`'s `_on_message` now wraps the entire
+     call to `handle_import_job` (not just the parts it already handled) and marks the job `failed`
+     with the exception message on *any* escaping error, so a bug like this can never again leave a
+     job silently stuck — worst case, it now shows up as `failed` with a real error message,
+     retriable via the same **Approve** button. The stuck job itself was manually marked `failed`
+     and re-approved through the normal flow to confirm the fix; it completed successfully.
 
 ## Original Spec
 

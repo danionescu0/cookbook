@@ -2,6 +2,21 @@ import type { Category, ImportJob, Recipe, RecipeDraft } from "../types";
 
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
+let authToken: string | null = null;
+let onUnauthorized: (() => void) | null = null;
+
+// Set by AuthProvider on login/logout/mount-from-storage. Kept as module state (rather than
+// threading a token through every api.xxx() call) so call sites don't change at all.
+export function setAuthToken(token: string | null): void {
+  authToken = token;
+}
+
+// Set by AuthProvider so an expired/invalid token clears itself out automatically instead of
+// every protected form just showing "Invalid or expired token" forever until a manual re-login.
+export function setUnauthorizedHandler(handler: (() => void) | null): void {
+  onUnauthorized = handler;
+}
+
 // FastAPI error bodies are `{"detail": "message"}` for our own HTTPExceptions, or
 // `{"detail": [{"msg": "...", ...}, ...]}` for pydantic validation errors (422).
 function extractErrorMessage(body: string): string | null {
@@ -21,12 +36,15 @@ function extractErrorMessage(body: string): string | null {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+  const response = await fetch(`${BASE_URL}${path}`, { headers, ...init });
 
   if (!response.ok) {
+    if (response.status === 401 && path !== "/auth/login") {
+      onUnauthorized?.();
+    }
     const body = await response.text();
     throw new Error(extractErrorMessage(body) ?? `Request failed (${response.status})`);
   }
@@ -38,6 +56,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
+  login: (username: string, password: string) =>
+    request<{ access_token: string; token_type: string }>("/auth/login", {
+      method: "POST",
+      body: JSON.stringify({ username, password }),
+    }),
+
   listCategories: () => request<Category[]>("/categories"),
   createCategory: (name: string) =>
     request<Category>("/categories", { method: "POST", body: JSON.stringify({ name }) }),

@@ -3,6 +3,7 @@ from slugify import slugify
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin
 from app.database import get_db
 from app.models.category import Category
 from app.schemas.category import CategoryCreate, CategoryRead, CategoryUpdate
@@ -22,7 +23,7 @@ def list_categories(db: Session = Depends(get_db)) -> list[Category]:
     return list(db.scalars(select(Category).order_by(Category.name)))
 
 
-@router.post("", response_model=CategoryRead, status_code=201)
+@router.post("", response_model=CategoryRead, status_code=201, dependencies=[Depends(require_admin)])
 def create_category(payload: CategoryCreate, db: Session = Depends(get_db)) -> Category:
     slug = slugify(payload.name)
     if db.scalar(select(Category).where(Category.slug == slug)) is not None:
@@ -40,7 +41,7 @@ def get_category(category_id: int, db: Session = Depends(get_db)) -> Category:
     return _get_or_404(db, category_id)
 
 
-@router.put("/{category_id}", response_model=CategoryRead)
+@router.put("/{category_id}", response_model=CategoryRead, dependencies=[Depends(require_admin)])
 def update_category(
     category_id: int, payload: CategoryUpdate, db: Session = Depends(get_db)
 ) -> Category:
@@ -53,7 +54,7 @@ def update_category(
     return category
 
 
-@router.delete("/{category_id}", status_code=204)
+@router.delete("/{category_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_category(category_id: int, db: Session = Depends(get_db)) -> None:
     category = _get_or_404(db, category_id)
     db.delete(category)

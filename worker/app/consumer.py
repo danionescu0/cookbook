@@ -1,3 +1,4 @@
+import json
 import logging
 import time
 
@@ -8,6 +9,7 @@ from pika.spec import Basic, BasicProperties
 from app.config import settings
 from app.database import SessionLocal
 from app.handlers import handle_import_job
+from app.models import ImportJob, ImportJobStatus
 
 logger = logging.getLogger(__name__)
 
@@ -23,8 +25,23 @@ def _on_message(
     db = SessionLocal()
     try:
         handle_import_job(body, db)
-    except Exception:
-        logger.exception("failed to process import job")
+    except Exception as exc:
+        # handle_import_job already catches and records the failure modes it knows about
+        # (fetch errors, robots.txt, malformed Claude responses, ...). Anything that escapes
+        # here is unexpected — a job must never end up silently stuck with no trace (this is
+        # exactly how a past enum-drift bug left a job stuck at "queued" forever): record it
+        # as failed too, so it's visible and retriable in the back office instead.
+        logger.exception("unhandled error processing import job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            job = db.get(ImportJob, payload.get("job_id"))
+            if job is not None:
+                job.status = ImportJobStatus.FAILED
+                job.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record job failure after crash")
     finally:
         db.close()
     channel.basic_ack(delivery_tag=method.delivery_tag)

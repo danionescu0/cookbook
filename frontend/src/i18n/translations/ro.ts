@@ -7,6 +7,14 @@ const ro: Translation = {
   nav: {
     recipes: "Rețete",
     backoffice: "Panou admin",
+    logout: "Deconectare",
+  },
+  login: {
+    heading: "Autentificare panou admin",
+    usernameLabel: "Utilizator",
+    passwordLabel: "Parolă",
+    submit: "Conectare",
+    error: "Utilizator sau parolă incorecte.",
   },
   browser: {
     heading: "Rețete",

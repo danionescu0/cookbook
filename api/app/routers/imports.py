@@ -2,6 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.auth import require_admin
 from app.database import get_db
 from app.models.category import Category
 from app.models.import_job import ImportJob, ImportJobStatus
@@ -9,7 +10,9 @@ from app.models.recipe import Recipe
 from app.queue import publish_import_job
 from app.schemas.import_job import ImportJobCreate, ImportJobRead
 
-router = APIRouter(prefix="/imports", tags=["imports"])
+# Every route here is back-office-only — the front office never touches /imports — so the
+# whole router is protected at once rather than route by route.
+router = APIRouter(prefix="/imports", tags=["imports"], dependencies=[Depends(require_admin)])
 
 _APPROVABLE_STATUSES = {ImportJobStatus.PENDING, ImportJobStatus.FAILED}
 
@@ -63,16 +66,23 @@ def approve_import_job(job_id: int, db: Session = Depends(get_db)) -> ImportJob:
             status_code=400, detail=f"Cannot approve a job in status {job.status.value}"
         )
 
+    # Commit `queued` *before* publishing, not after: publishing first meant a worker fast
+    # enough to consume the message before this transaction committed would read the job's
+    # still-stale prior status. Committing first guarantees the queued status is visible to
+    # any consumer before the message can possibly reach one.
+    job.status = ImportJobStatus.QUEUED
     job.error = None
+    db.commit()
+    db.refresh(job)
+
     try:
         publish_import_job(job.id, job.type.value, job.source)
-        job.status = ImportJobStatus.QUEUED
     except Exception as exc:
         job.status = ImportJobStatus.FAILED
         job.error = f"failed to publish to queue: {exc}"
+        db.commit()
+        db.refresh(job)
 
-    db.commit()
-    db.refresh(job)
     return job
 
 

@@ -13,6 +13,14 @@ class Settings(BaseSettings):
     supported_languages: str = "ro,en"
     default_language: str = "ro"
 
+    # Single hard-coded admin account, stored in config — no users table, no self-registration.
+    # Matches a self-hosted, single-operator tool: see README Design Decisions ("Back office
+    # authentication").
+    admin_username: str = "admin"
+    admin_password: str = "change-me"
+    jwt_secret: str = "change-me-too"
+    jwt_expires_minutes: int = 60 * 24
+
     @property
     def supported_languages_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",") if lang.strip()]

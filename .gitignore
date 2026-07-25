@@ -1,6 +1,8 @@
 # env
 .env
 
+.claudes/
+
 # python
 __pycache__/
 *.pyc

@@ -1,11 +1,14 @@
 import { Link, NavLink, Route, Routes } from "react-router-dom";
 import { CategoryManager } from "./backoffice/CategoryManager";
 import { ImportManager } from "./backoffice/ImportManager";
+import { LoginForm } from "./backoffice/LoginForm";
 import { RecipeManager } from "./backoffice/RecipeManager";
+import { useAuth } from "./auth/AuthContext";
 import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
 import { RecipeDetail } from "./frontoffice/RecipeDetail";
 import { SUPPORTED_LANGUAGES } from "./i18n/config";
 import { useLanguage } from "./i18n/LanguageContext";
+import { secondaryButton } from "./ui/buttonStyles";
 
 function navLinkClasses({ isActive }: { isActive: boolean }): string {
   return isActive ? "font-medium text-terracotta" : "text-ink/70 hover:text-ink";
@@ -36,8 +39,25 @@ function LanguageSwitcher() {
   );
 }
 
+function BackofficePage() {
+  const { isAuthenticated } = useAuth();
+
+  if (!isAuthenticated) {
+    return <LoginForm />;
+  }
+
+  return (
+    <div className="space-y-10">
+      <CategoryManager />
+      <ImportManager />
+      <RecipeManager />
+    </div>
+  );
+}
+
 export function App() {
   const { t } = useLanguage();
+  const { isAuthenticated, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -47,14 +67,18 @@ export function App() {
             {t.brand}
           </Link>
           <div className="flex items-center gap-4">
-            <nav className="flex gap-4 text-sm">
+            <nav className="flex items-center gap-4 text-sm">
               <NavLink to="/" end className={navLinkClasses}>
                 {t.nav.recipes}
               </NavLink>
-              {/* Back office auth (username/password) is not wired up yet in this vertical slice. */}
               <NavLink to="/backoffice" className={navLinkClasses}>
                 {t.nav.backoffice}
               </NavLink>
+              {isAuthenticated && (
+                <button type="button" onClick={logout} className={secondaryButton}>
+                  {t.nav.logout}
+                </button>
+              )}
             </nav>
             <LanguageSwitcher />
           </div>
@@ -65,16 +89,7 @@ export function App() {
         <Routes>
           <Route path="/" element={<RecipeBrowser />} />
           <Route path="/recipes/:id" element={<RecipeDetail />} />
-          <Route
-            path="/backoffice"
-            element={
-              <div className="space-y-10">
-                <CategoryManager />
-                <ImportManager />
-                <RecipeManager />
-              </div>
-            }
-          />
+          <Route path="/backoffice" element={<BackofficePage />} />
         </Routes>
       </main>
     </div>
