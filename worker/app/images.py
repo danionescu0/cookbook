@@ -7,16 +7,17 @@ import httpx
 from PIL import Image, UnidentifiedImageError
 
 from app.config import settings
+from app.settings_service import SettingsSnapshot
 
 logger = logging.getLogger(__name__)
 
 
-def _download(url: str) -> bytes | None:
+def _download(url: str, timeout_seconds: float) -> bytes | None:
     try:
         response = httpx.get(
             url,
             headers={"User-Agent": settings.scrape_user_agent},
-            timeout=settings.scrape_timeout_seconds,
+            timeout=timeout_seconds,
             follow_redirects=True,
         )
         response.raise_for_status()
@@ -37,17 +38,17 @@ def _flatten_to_rgb(image: Image.Image) -> Image.Image:
     return image.convert("RGB")
 
 
-def _resize_and_compress(content: bytes) -> bytes | None:
+def _resize_and_compress(content: bytes, max_dimension: int, max_size_kb: int) -> bytes | None:
     try:
         image = Image.open(io.BytesIO(content))
         image.load()
     except UnidentifiedImageError:
         return None
 
-    image.thumbnail((settings.image_max_dimension, settings.image_max_dimension))
+    image.thumbnail((max_dimension, max_dimension))
     image = _flatten_to_rgb(image)
 
-    max_bytes = settings.image_max_size_kb * 1024
+    max_bytes = max_size_kb * 1024
     quality = 85
     buffer = io.BytesIO()
     while True:
@@ -61,7 +62,7 @@ def _resize_and_compress(content: bytes) -> bytes | None:
     return buffer.getvalue()
 
 
-def process_images(image_urls: list[str]) -> list[str]:
+def process_images(image_urls: list[str], app_settings: SettingsSnapshot) -> list[str]:
     """Download, downscale, and compress each URL to a local JPEG.
 
     Individual failures (unreachable URL, non-image content) are skipped rather than
@@ -72,11 +73,13 @@ def process_images(image_urls: list[str]) -> list[str]:
 
     served_urls: list[str] = []
     for url in image_urls:
-        content = _download(url)
+        content = _download(url, app_settings.scrape_timeout_seconds)
         if content is None:
             continue
 
-        processed = _resize_and_compress(content)
+        processed = _resize_and_compress(
+            content, app_settings.image_max_dimension, app_settings.image_max_size_kb
+        )
         if processed is None:
             logger.warning("skipping non-image content at %s", url)
             continue

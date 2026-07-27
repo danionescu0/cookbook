@@ -7,10 +7,10 @@ import httpx
 from sqlalchemy.orm import Session
 
 from app.claude_client import RecipeExtractionError, extract_recipe
-from app.config import settings
 from app.images import process_images
 from app.models import ImportJob, ImportJobStatus, Recipe, RecipeStatus, RecipeTranslation
 from app.scraping import ScrapeDisallowedError, fetch_page
+from app.settings_service import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -24,16 +24,21 @@ def handle_import_job(body: bytes, db: Session) -> None:
         logger.warning("import job %s not found, skipping", job_id)
         return
 
+    # Read once per job (not once per HTTP call within it) — see settings_service.get_settings.
+    app_settings = get_settings(db)
+
     job.status = ImportJobStatus.FETCHING
     db.commit()
 
     try:
-        html = fetch_page(job.source)
+        html = fetch_page(job.source, app_settings)
 
         job.status = ImportJobStatus.PROCESSING
         db.commit()
 
-        extracted = extract_recipe(html, settings.supported_languages_list)
+        extracted = extract_recipe(
+            html, app_settings.supported_languages_list, app_settings.anthropic_api_key
+        )
 
         translations_data = extracted.get("translations", [])
         if not translations_data:
@@ -55,7 +60,7 @@ def handle_import_job(body: bytes, db: Session) -> None:
         ]
 
         source_image_urls = [urljoin(job.source, image) for image in extracted.get("images", [])]
-        stored_images = process_images(source_image_urls)
+        stored_images = process_images(source_image_urls, app_settings)
 
         # An admin already explicitly approved importing this exact URL (see
         # POST /imports/{id}/approve), so a successful import publishes immediately rather than

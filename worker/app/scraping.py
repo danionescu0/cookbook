@@ -6,17 +6,20 @@ import httpx
 
 from app.config import settings
 from app.rate_limiter import DomainRateLimiter
+from app.settings_service import SettingsSnapshot
 
 logger = logging.getLogger(__name__)
 
-_rate_limiter = DomainRateLimiter(settings.default_rate_limit_requests_per_minute)
+# Constructor value is only ever a fallback (see DomainRateLimiter.wait) — every real call from
+# fetch_page passes the current DB-backed rate explicitly, so this never actually applies.
+_rate_limiter = DomainRateLimiter(6)
 
 
 class ScrapeDisallowedError(Exception):
     pass
 
 
-def _fetch_robots_txt(url: str) -> RobotFileParser:
+def _fetch_robots_txt(url: str, timeout_seconds: float) -> RobotFileParser:
     parsed = urlparse(url)
     robots_url = f"{parsed.scheme}://{parsed.netloc}/robots.txt"
 
@@ -25,7 +28,7 @@ def _fetch_robots_txt(url: str) -> RobotFileParser:
         response = httpx.get(
             robots_url,
             headers={"User-Agent": settings.scrape_user_agent},
-            timeout=settings.scrape_timeout_seconds,
+            timeout=timeout_seconds,
         )
     except httpx.HTTPError:
         # Unreachable robots.txt (DNS/connect/timeout/etc): treat as if none was published.
@@ -41,21 +44,25 @@ def _fetch_robots_txt(url: str) -> RobotFileParser:
     return parser
 
 
-def fetch_page(url: str) -> str:
+def fetch_page(url: str, app_settings: SettingsSnapshot) -> str:
     domain = urlparse(url).netloc
-    robots = _fetch_robots_txt(url)
+    robots = _fetch_robots_txt(url, app_settings.scrape_timeout_seconds)
 
     if not robots.can_fetch(settings.scrape_user_agent, url):
         raise ScrapeDisallowedError(f"robots.txt on {domain} disallows fetching this page")
 
     crawl_delay = robots.crawl_delay(settings.scrape_user_agent)
-    _rate_limiter.wait(domain, float(crawl_delay) if crawl_delay else None)
+    _rate_limiter.wait(
+        domain,
+        float(crawl_delay) if crawl_delay else None,
+        app_settings.default_rate_limit_requests_per_minute,
+    )
 
     response = httpx.get(
         url,
         headers={"User-Agent": settings.scrape_user_agent},
-        timeout=settings.scrape_timeout_seconds,
+        timeout=app_settings.scrape_timeout_seconds,
         follow_redirects=True,
     )
     response.raise_for_status()
-    return response.text[: settings.max_html_chars]
+    return response.text[: app_settings.max_html_chars]

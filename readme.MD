@@ -44,6 +44,12 @@ Recipe manager, where imported recipes are previewed and approved before they go
 
 <img src="docs/screenshots/backoffice-recipes.jpg" alt="Back office recipe manager with approve/delete actions" width="800">
 
+Settings manager, where the admin-editable subset of config (languages, credentials, and the
+import pipeline's rate limit/timeout/image tuning) can be changed and applied live — see
+[Design Decisions](#design-decisions):
+
+<img src="docs/screenshots/backoffice-settings.jpg" alt="Back office settings manager with the Settings applied confirmation showing" width="800">
+
 ## Status
 
 The project is being built as a vertical slice, widening outward one piece at a time rather than
@@ -91,9 +97,13 @@ state:
       `Authorization: Bearer <token>` header; all GET routes stay public since the front office
       depends on them unauthenticated. The React side gates `/backoffice` behind a `LoginForm`,
       persists the token in `localStorage`, and auto-logs-out on any 401 from a protected call.
+- [x] Admin-editable settings (`SettingsManager`): languages, back office password, Anthropic API
+      key, and the import pipeline's rate limit/timeout/HTML-size/image-size tuning live in a
+      single-row `app_settings` Postgres table instead of `.env`, editable from the back office and
+      applied live — no container restart, no Docker socket access from the app. `.env` only seeds
+      that row's initial value via migration `0006`. See [Design Decisions](#design-decisions).
 - [ ] Bulk URL lists / bookmark-file upload in the import form (single URL only for now)
 - [ ] Bookmark-file import
-- [ ] Admin-configurable `settings` table (rate limit, image size are env vars for now)
 - [ ] Reverse proxy (Caddy/Nginx) in front of frontend + API
 
 ## Features
@@ -121,6 +131,9 @@ state:
   unpublished/republished via the API today.
 - **Portable deployment** — everything runs in Docker Compose, locally on a Fedora laptop and later
   on a Raspberry Pi.
+- **Live-editable settings** — languages, the back office password, the Anthropic API key, and the
+  import pipeline's rate limit/timeout/image tuning can all be changed from a back office Settings
+  page, with each change taking effect immediately (no restart).
 
 ## Architecture
 
@@ -178,7 +191,7 @@ scrape from ever blocking a user-facing API request.
 | Scraper workers         | Python + Pika (RabbitMQ client), httpx (fetch), stdlib `urllib.robotparser`, Pillow (image resize/compress) | Consume import jobs, respect robots.txt + rate limits, fetch pages, download + process images |
 | AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call |
 | Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import jobs |
-| Database                | PostgreSQL                                                | Recipes, categories, import status, site settings — no users table (see Design Decisions) |
+| Database                | PostgreSQL                                                | Recipes, categories, import status, a single-row `app_settings` table for admin-editable config — no users table (see Design Decisions) |
 | Image storage           | Docker named volume (`images_data`), mounted into both `api` and `worker`, served by the API via `StaticFiles` at `/images` | Worker downloads + writes JPEGs there; API serves them read-only; not hotlinked from source sites |
 | Reverse proxy           | Caddy (or Nginx)                                          | TLS termination, routes `/` to SPA and `/api` to backend |
 | Orchestration            | Docker Compose                                            | One compose stack for local dev (Fedora) and prod (Raspberry Pi, arm64 images) |
@@ -197,6 +210,7 @@ cookbook/
 │   │   │                            #   CategoryNav, RecipeCard — approved recipes only
 │   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL, approve-to-trigger,
 │   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve),
+│   │   │                            #   SettingsManager (view/edit app_settings, Apply = live PATCH),
 │   │   │                            #   LoginForm — all gated behind AuthContext
 │   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout,
 │   │   │                            #   token in localStorage)
@@ -211,18 +225,24 @@ cookbook/
 │   ├── app/
 │   │   ├── routers/                # auth.py (POST /auth/login), categories.py, recipes.py
 │   │   │                           #   (CRUD + /approve), imports.py (CRUD + /approve, deferred
-│   │   │                           #   publish, router-level require_admin), languages.py
-│   │   ├── models/                 # SQLAlchemy models (Category, Recipe, RecipeTranslation, ImportJob)
+│   │   │                           #   publish, router-level require_admin), languages.py,
+│   │   │                           #   settings.py (GET/PATCH /settings, router-level require_admin)
+│   │   ├── models/                 # SQLAlchemy models (Category, Recipe, RecipeTranslation, ImportJob,
+│   │   │                           #   AppSettings — single-row admin-editable settings table)
 │   │   ├── schemas/                # Pydantic request/response schemas
 │   │   ├── tests/                  # pytest, FastAPI TestClient
 │   │   ├── queue.py                # RabbitMQ publisher (pika)
 │   │   ├── auth.py                 # create_access_token, require_admin (FastAPI dependency)
+│   │   ├── settings_service.py     # get_settings (get-or-create), update_settings (validates +
+│   │   │                           #   masks secrets) — see Design Decisions
 │   │   ├── main.py                 # also mounts StaticFiles at /images -> settings.images_dir
 │   │   ├── database.py
-│   │   └── config.py                # includes supported_languages, default_language, admin_username,
-│   │                                 #   admin_password, jwt_secret, jwt_expires_minutes
+│   │   └── config.py                # env-only config: database_url, rabbitmq_url, admin_username,
+│   │                                 #   jwt_secret, jwt_expires_minutes — everything admin-editable
+│   │                                 #   lives in app_settings/settings_service instead (see below)
 │   ├── migrations/                 # Alembic (categories/recipes 0001, import_jobs 0002, category_id
-│   │                                #   0003, recipe_translations split 0004, pending status 0005)
+│   │                                #   0003, recipe_translations split 0004, pending status 0005,
+│   │                                #   app_settings table seeded from .env 0006)
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
 │   └── Dockerfile
@@ -237,8 +257,10 @@ cookbook/
     │   │                           #   per `SUPPORTED_LANGUAGES` entry, in the same call
     │   ├── images.py               # process_images — download, downscale, compress to JPEG,
     │   │                           #   save under images_dir; skips (not fails) bad images
-    │   ├── models.py               # ImportJob, Recipe, RecipeTranslation (mirror the API's models;
-    │   │                           #   see Design Decisions)
+    │   ├── models.py               # ImportJob, Recipe, RecipeTranslation, AppSettings (mirror the
+    │   │                           #   API's models; see Design Decisions)
+    │   ├── settings_service.py     # get_settings — reads app_settings fresh once per job (no
+    │   │                           #   cache), read-only from the worker's side
     │   ├── tests/                  # pytest, in-memory SQLite, httpx/Claude client mocked
     │   ├── main.py
     │   ├── database.py
@@ -385,8 +407,9 @@ Decisions](#design-decisions).
 
 ## Data Model (sketch)
 
-- *(no users table)* — back office auth is a single hard-coded admin account read from config
-  (`ADMIN_USERNAME`/`ADMIN_PASSWORD`), not a database row; see [Design Decisions](#design-decisions)
+- *(no users table)* — back office auth is a single hard-coded admin account: username from config
+  (`ADMIN_USERNAME`), password from **app_settings** below (not a users table row); see
+  [Design Decisions](#design-decisions)
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
   yet, see [Design Decisions](#design-decisions))
 - **recipes** — id, category_id, images, source_url (nullable, set when imported), status
@@ -402,6 +425,11 @@ Decisions](#design-decisions).
   (`pending` \| `queued` \| `fetching` \| `processing` \| `done` \| `failed`), error, created_at.
   `pending` means created but not yet approved/published to RabbitMQ; approving is what moves it to
   `queued`
+- **app_settings** — a single row (id=1), not a real multi-row table: supported_languages,
+  default_language, admin_password, anthropic_api_key, default_rate_limit_requests_per_minute,
+  scrape_timeout_seconds, max_html_chars, image_max_dimension, image_max_size_kb. Seeded once from
+  `.env` by migration `0006`; editable live from the back office Settings page from then on — see
+  [Design Decisions](#design-decisions)
 - **settings** — key/value store for admin-configurable defaults, e.g. `scrape_rate_limit_per_domain`,
   `image_max_dimension`, `image_max_size_kb`
 
@@ -419,9 +447,9 @@ Decisions](#design-decisions).
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 43 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected |
-| Worker              | `pytest`                           | 27 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language; each failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body) |
-| Frontend            | Vitest + React Testing Library     | 31 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure |
+| API backend        | `pytest` + FastAPI `TestClient`    | 56 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected. Settings: `GET`/`PATCH /settings` require admin, secrets never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), a changed `admin_password` is reflected immediately by `/auth/login`, an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields |
+| Worker              | `pytest`                           | 32 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language; each failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache) |
+| Frontend            | Vitest + React Testing Library     | 36 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure. `SettingsManager`: loads and displays current settings, secret fields stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, shows a success message on save and the server error on failure |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -495,6 +523,13 @@ Notes on the current setup:
   page back to the login form. Confirmed independently via `curl` against the API directly: wrong
   password → `401`, correct password → a real JWT, a mutating route (`POST /categories`) without a
   token → `401`, and `GET /recipes` without a token → `200` (front office must stay unauthenticated).
+- The Settings page was verified end to end through the actual browser UI, not just the API tests:
+  migration `0006` was applied against the real dev Postgres database and correctly seeded the
+  `app_settings` row from the values already in `.env` (confirmed via `GET /settings`, including
+  `anthropic_api_key_is_set: true` from the real key already configured there). Changing the import
+  rate limit from the Settings form and clicking **Apply** persisted immediately (`GET /settings`
+  reflected it right away, and it survived a full page reload) with no container restart of any
+  kind — confirming the live-apply requirement this feature was built around.
 
 Conventions:
 - Unit tests live next to the code they cover (`api/app/tests/test_*.py`, `worker/app/tests/test_*.py`,
@@ -536,18 +571,42 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
 - **Back office authentication** — JWT (`PyJWT`, HS256), not sessions/cookies, so the API stays
   fully stateless and the same `Authorization: Bearer <token>` pattern works identically whether the
   frontend is served from the same origin or not. Credentials are a single hard-coded admin account
-  read from config (`ADMIN_USERNAME`/`ADMIN_PASSWORD`) — no users table, no self-registration, no
-  password hashing — a deliberate choice for a self-hosted, single-operator tool where the "users
-  table" would otherwise be a table with exactly one row forever. `require_admin` is a FastAPI
-  dependency applied per-route (categories/recipes: only the mutating verbs) or once at the router
-  level (`imports`, since every route there is back-office-only); all GET routes on recipes/
-  categories stay open since the front office calls them unauthenticated. The token carries no
-  role/permissions (there's only one account to have permissions), just `sub`/`exp`, so `require_admin`
-  is only ever checking "is this a validly-signed, unexpired token," not doing any authorization
-  logic. React stores the token in `localStorage` (same pattern as the language preference) and a
-  single `onUnauthorized` callback registered on `api/client.ts` logs the user out automatically the
-  moment any protected call comes back `401` (expired token, or `JWT_SECRET` rotated) instead of every
-  form independently showing a stale error forever.
+  — username from config (`ADMIN_USERNAME`), password from the `app_settings` row (editable from the
+  Settings page, see below) — no users table, no self-registration, no password hashing — a
+  deliberate choice for a self-hosted, single-operator tool where the "users table" would otherwise
+  be a table with exactly one row forever. `require_admin` is a FastAPI dependency applied per-route
+  (categories/recipes: only the mutating verbs) or once at the router level (`imports`, `settings`,
+  since every route on those is back-office-only); all GET routes on recipes/categories/languages
+  stay open since the front office calls them unauthenticated. The token carries no role/permissions
+  (there's only one account to have permissions), just `sub`/`exp`, so `require_admin` is only ever
+  checking "is this a validly-signed, unexpired token," not doing any authorization logic. React
+  stores the token in `localStorage` (same pattern as the language preference) and a single
+  `onUnauthorized` callback registered on `api/client.ts` logs the user out automatically the moment
+  any protected call comes back `401` (expired token, or `JWT_SECRET` rotated) instead of every form
+  independently showing a stale error forever.
+- **Admin-editable settings** — `SUPPORTED_LANGUAGES`, `DEFAULT_LANGUAGE`, `ADMIN_PASSWORD`,
+  `ANTHROPIC_API_KEY`, and the import pipeline's rate limit/timeout/HTML-size/image-size knobs live
+  in a single-row `app_settings` Postgres table (`id=1`), not `.env`, and are editable from a back
+  office **Settings** page (`SettingsManager` → `GET`/`PATCH /settings`). Two other approaches were
+  considered and rejected: rewriting `.env` and restarting the affected containers would need the
+  API container to hold the Docker socket to restart itself/`worker` — giving a back-office web form
+  host-level control over the Docker daemon, a real privilege escalation for what's meant to be a
+  small self-hosted tool; rewriting `.env` without a restart wouldn't actually apply anything, since
+  `pydantic-settings` reads the file once at process startup. Storing the editable subset in Postgres
+  instead sidesteps both: `api` reads it fresh per request (it already opens a DB session per
+  request via `Depends(get_db)`, so this is free), and `worker` reads it once per import job (not
+  per HTTP call within a job) via `worker/app/settings_service.py` — no cache, no Docker socket, no
+  restart, and a change reaches the very next request or job. `.env` still seeds the row's *initial*
+  value, applied once by migration `0006`, so upgrading an existing deployment changes nothing until
+  an admin actually edits something. Secrets (`admin_password`, `anthropic_api_key`) are
+  write-only over the API — `GET /settings` returns `*_is_set: bool`, never the value — and the
+  `SettingsManager` form leaves those fields blank with a "leave blank to keep the current value"
+  placeholder rather than ever trying to redisplay them. `ADMIN_USERNAME`, `JWT_SECRET`,
+  `JWT_EXPIRES_MINUTES`, `DATABASE_URL`, `RABBITMQ_URL`, and `VITE_API_BASE_URL` stay `.env`-only —
+  either infra-level (DB/queue connection strings), security-sensitive in a way that shouldn't be
+  editable from the same login it protects (`JWT_SECRET`), or, for `VITE_API_BASE_URL`, physically
+  impossible to hot-apply since Vite bakes it into the frontend's JS bundle at build time, not
+  something a runtime settings row could ever change.
 - **Guard against pasting a URL into the manual "Add recipe" form** — a real, repeated failure
   mode in practice: the back office has two separate forms (`ImportManager` for real URL imports,
   `RecipeManager` for hand-authoring), and a URL pasted into the latter's title or an ingredient
@@ -566,8 +625,9 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   against `SUPPORTED_LANGUAGES` at the application layer, not a Postgres/SQLAlchemy enum, so adding
   a language is a config change, never a migration.
 - **Language configuration** — `SUPPORTED_LANGUAGES` (default `ro,en`) and `DEFAULT_LANGUAGE`
-  (default `ro`) are `.env` variables read by both `api` and `worker`, and exposed to the frontend
-  via `GET /languages` so the two never drift out of sync. Recipe-read endpoints
+  (default `ro`) live in `app_settings` (see "Admin-editable settings" above), read by both `api`
+  and `worker`, and exposed to the frontend via `GET /languages` so the two never drift out of sync.
+  Recipe-read endpoints
   (`GET /recipes`, `GET /recipes/{id}`) accept `?language=`; if that translation doesn't exist for a
   given recipe (partial translation, or Claude failed on one language), the response falls back to
   `DEFAULT_LANGUAGE`'s translation rather than 404ing or returning empty fields, and reports which

@@ -1,7 +1,5 @@
 import anthropic
 
-from app.config import settings
-
 MODEL = "claude-sonnet-5"
 
 _EXTRACT_RECIPE_TOOL = {
@@ -54,13 +52,13 @@ class RecipeExtractionError(Exception):
     pass
 
 
-def _client() -> anthropic.Anthropic:
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
+def _client(api_key: str) -> anthropic.Anthropic:
+    return anthropic.Anthropic(api_key=api_key)
 
 
-def extract_recipe(html: str, languages: list[str]) -> dict:
+def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
     languages_str = ", ".join(languages)
-    response = _client().messages.create(
+    response = _client(api_key).messages.create(
         model=MODEL,
         max_tokens=4096,
         tools=[_EXTRACT_RECIPE_TOOL],

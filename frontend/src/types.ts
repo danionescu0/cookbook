@@ -45,3 +45,28 @@ export interface ImportJob {
   error: string | null;
   created_at: string;
 }
+
+export interface Settings {
+  supported_languages: string;
+  default_language: string;
+  admin_password_is_set: boolean;
+  anthropic_api_key_is_set: boolean;
+  default_rate_limit_requests_per_minute: number;
+  scrape_timeout_seconds: number;
+  max_html_chars: number;
+  image_max_dimension: number;
+  image_max_size_kb: number;
+}
+
+export interface SettingsUpdate {
+  supported_languages?: string;
+  default_language?: string;
+  // Omit or send "" to leave the current secret unchanged — the UI never has the real value.
+  admin_password?: string;
+  anthropic_api_key?: string;
+  default_rate_limit_requests_per_minute?: number;
+  scrape_timeout_seconds?: number;
+  max_html_chars?: number;
+  image_max_dimension?: number;
+  image_max_size_kb?: number;
+}

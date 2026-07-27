@@ -3,6 +3,7 @@ import { CategoryManager } from "./backoffice/CategoryManager";
 import { ImportManager } from "./backoffice/ImportManager";
 import { LoginForm } from "./backoffice/LoginForm";
 import { RecipeManager } from "./backoffice/RecipeManager";
+import { SettingsManager } from "./backoffice/SettingsManager";
 import { useAuth } from "./auth/AuthContext";
 import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
 import { RecipeDetail } from "./frontoffice/RecipeDetail";
@@ -51,6 +52,7 @@ function BackofficePage() {
       <CategoryManager />
       <ImportManager />
       <RecipeManager />
+      <SettingsManager />
     </div>
   );
 }

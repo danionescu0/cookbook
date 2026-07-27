@@ -50,16 +50,32 @@ def test_extract_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> N
     fake_response = SimpleNamespace(
         content=[FakeBlock("tool_use", "extracted_recipe", expected)]
     )
-    monkeypatch.setattr(claude_client, "_client", lambda: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
-    result = claude_client.extract_recipe("<html></html>", ["ro", "en"])
+    result = claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
 
     assert result == expected
 
 
 def test_extract_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("text")])
-    monkeypatch.setattr(claude_client, "_client", lambda: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
-        claude_client.extract_recipe("<html></html>", ["ro", "en"])
+        claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
+
+
+def test_extract_recipe_uses_the_given_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A key changed via the Settings backoffice page must reach the next Anthropic call
+    # directly, not a value cached from process startup.
+    received_keys = []
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    monkeypatch.setattr(
+        claude_client,
+        "_client",
+        lambda api_key: received_keys.append(api_key) or FakeClient(fake_response),
+    )
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "sk-ant-live-key")
+
+    assert received_keys == ["sk-ant-live-key"]

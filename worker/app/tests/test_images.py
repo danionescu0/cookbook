@@ -6,6 +6,22 @@ import pytest
 from PIL import Image
 
 from app import images
+from app.settings_service import SettingsSnapshot
+
+
+def _snapshot(**overrides: object) -> SettingsSnapshot:
+    defaults = dict(
+        supported_languages="ro,en",
+        default_language="ro",
+        anthropic_api_key="",
+        default_rate_limit_requests_per_minute=6,
+        scrape_timeout_seconds=15.0,
+        max_html_chars=200_000,
+        image_max_dimension=1600,
+        image_max_size_kb=500,
+    )
+    defaults.update(overrides)
+    return SettingsSnapshot(**defaults)  # type: ignore[arg-type]
 
 
 class FakeResponse:
@@ -44,12 +60,12 @@ def _images_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
 def test_process_images_downloads_resizes_and_saves(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(images.settings, "image_max_dimension", 50)
-    monkeypatch.setattr(images.settings, "image_max_size_kb", 500)
     content = _solid_png_bytes((200, 200))
     monkeypatch.setattr(images.httpx, "get", lambda *a, **k: FakeResponse(content))
 
-    result = images.process_images(["https://example.com/photo.png"])
+    result = images.process_images(
+        ["https://example.com/photo.png"], _snapshot(image_max_dimension=50, image_max_size_kb=500)
+    )
 
     assert len(result) == 1
     assert result[0].startswith("/images/")
@@ -68,7 +84,7 @@ def test_process_images_skips_failed_download(monkeypatch: pytest.MonkeyPatch) -
 
     monkeypatch.setattr(images.httpx, "get", fake_get)
 
-    assert images.process_images(["https://example.com/broken.png"]) == []
+    assert images.process_images(["https://example.com/broken.png"], _snapshot()) == []
 
 
 def test_process_images_skips_non_image_content(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,7 +92,7 @@ def test_process_images_skips_non_image_content(monkeypatch: pytest.MonkeyPatch)
         images.httpx, "get", lambda *a, **k: FakeResponse(b"<html>not an image</html>")
     )
 
-    assert images.process_images(["https://example.com/notanimage"]) == []
+    assert images.process_images(["https://example.com/notanimage"], _snapshot()) == []
 
 
 def test_process_images_continues_after_one_failure(
@@ -92,7 +108,7 @@ def test_process_images_continues_after_one_failure(
     monkeypatch.setattr(images.httpx, "get", fake_get)
 
     result = images.process_images(
-        ["https://example.com/bad.png", "https://example.com/good.png"]
+        ["https://example.com/bad.png", "https://example.com/good.png"], _snapshot()
     )
 
     assert len(result) == 1
@@ -103,12 +119,13 @@ def test_process_images_reduces_quality_to_respect_max_size_kb(
 ) -> None:
     # Verified empirically: this 400x400 gradient encodes to ~8.5KB at quality 85 but ~5KB by
     # quality 40, so a 5KB budget forces the loop to actually step down instead of a no-op.
-    monkeypatch.setattr(images.settings, "image_max_dimension", 800)
-    monkeypatch.setattr(images.settings, "image_max_size_kb", 5)
     content = _high_entropy_png_bytes((400, 400))
     monkeypatch.setattr(images.httpx, "get", lambda *a, **k: FakeResponse(content))
 
-    result = images.process_images(["https://example.com/detailed.png"])
+    result = images.process_images(
+        ["https://example.com/detailed.png"],
+        _snapshot(image_max_dimension=800, image_max_size_kb=5),
+    )
 
     saved_path = tmp_path / result[0].removeprefix("/images/")
     assert saved_path.stat().st_size <= 5 * 1024
@@ -119,12 +136,13 @@ def test_process_images_stops_at_quality_floor_even_if_still_over_budget(
 ) -> None:
     # An unreasonably tight budget should still terminate (not loop forever) and save
     # whatever the quality floor produces, rather than raising or hanging.
-    monkeypatch.setattr(images.settings, "image_max_dimension", 800)
-    monkeypatch.setattr(images.settings, "image_max_size_kb", 1)
     content = _high_entropy_png_bytes((400, 400))
     monkeypatch.setattr(images.httpx, "get", lambda *a, **k: FakeResponse(content))
 
-    result = images.process_images(["https://example.com/detailed.png"])
+    result = images.process_images(
+        ["https://example.com/detailed.png"],
+        _snapshot(image_max_dimension=800, image_max_size_kb=1),
+    )
 
     assert len(result) == 1
     saved_path = tmp_path / result[0].removeprefix("/images/")

@@ -66,15 +66,17 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _create_job(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
     monkeypatch.setattr(
-        handlers, "extract_recipe", lambda html, languages: _TWO_LANGUAGE_EXTRACTION
+        handlers,
+        "extract_recipe",
+        lambda html, languages, api_key: _TWO_LANGUAGE_EXTRACTION,
     )
     process_images_calls = []
     monkeypatch.setattr(
         handlers,
         "process_images",
-        lambda urls: process_images_calls.append(urls) or ["/images/stored.jpg"],
+        lambda urls, app_settings: process_images_calls.append(urls) or ["/images/stored.jpg"],
     )
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
@@ -106,7 +108,7 @@ def test_handle_import_job_fails_when_robots_disallow(
 ) -> None:
     job = _create_job(db_session)
 
-    def _raise(url: str) -> str:
+    def _raise(url: str, app_settings: object) -> str:
         raise ScrapeDisallowedError("robots.txt on example.com disallows fetching this page")
 
     monkeypatch.setattr(handlers, "fetch_page", _raise)
@@ -124,7 +126,7 @@ def test_handle_import_job_fails_on_fetch_error(
 ) -> None:
     job = _create_job(db_session)
 
-    def _raise(url: str) -> str:
+    def _raise(url: str, app_settings: object) -> str:
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(handlers, "fetch_page", _raise)
@@ -140,9 +142,9 @@ def test_handle_import_job_fails_on_extraction_error(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _create_job(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
 
-    def _raise(html: str, languages: list[str]) -> dict:
+    def _raise(html: str, languages: list[str], api_key: str) -> dict:
         raise RecipeExtractionError("Claude did not return a structured recipe")
 
     monkeypatch.setattr(handlers, "extract_recipe", _raise)
@@ -159,9 +161,11 @@ def test_handle_import_job_fails_when_translations_empty(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     job = _create_job(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
     monkeypatch.setattr(
-        handlers, "extract_recipe", lambda html, languages: {"images": [], "translations": []}
+        handlers,
+        "extract_recipe",
+        lambda html, languages, api_key: {"images": [], "translations": []},
     )
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)

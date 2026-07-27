@@ -81,3 +81,22 @@ class RecipeTranslation(Base):
     tips: Mapped[list[str]] = mapped_column(JSON, default=list)
 
     recipe: Mapped["Recipe"] = relationship(back_populates="translations")
+
+
+class AppSettings(Base):
+    # Kept in sync by hand with api/app/models/app_settings.py — see that module's docstring
+    # for what each column means. The worker only ever reads this table (via
+    # app.settings_service.get_settings); api owns writes and the migration that creates/seeds
+    # it. Same "kept in sync by hand" caveat as ImportJobStatus above.
+    __tablename__ = "app_settings"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    supported_languages: Mapped[str] = mapped_column(String(100), nullable=False)
+    default_language: Mapped[str] = mapped_column(String(10), nullable=False)
+    admin_password: Mapped[str] = mapped_column(String(200), nullable=False)
+    anthropic_api_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    default_rate_limit_requests_per_minute: Mapped[int] = mapped_column(nullable=False)
+    scrape_timeout_seconds: Mapped[float] = mapped_column(nullable=False)
+    max_html_chars: Mapped[int] = mapped_column(nullable=False)
+    image_max_dimension: Mapped[int] = mapped_column(nullable=False)
+    image_max_size_kb: Mapped[int] = mapped_column(nullable=False)

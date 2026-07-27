@@ -22,8 +22,20 @@ class DomainRateLimiter:
         self._clock = clock
         self._sleep = sleep
 
-    def wait(self, domain: str, crawl_delay_seconds: float | None = None) -> None:
-        interval = crawl_delay_seconds if crawl_delay_seconds is not None else self._default_interval
+    def wait(
+        self,
+        domain: str,
+        crawl_delay_seconds: float | None = None,
+        default_requests_per_minute: int | None = None,
+    ) -> None:
+        if crawl_delay_seconds is not None:
+            interval = crawl_delay_seconds
+        elif default_requests_per_minute is not None:
+            # Overrides the interval baked in at construction, so a rate change made through the
+            # Settings backoffice page applies to the very next request, not just new instances.
+            interval = 60.0 / default_requests_per_minute
+        else:
+            interval = self._default_interval
 
         last = self._last_request_at.get(domain)
         if last is not None:

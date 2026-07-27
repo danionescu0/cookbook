@@ -5,12 +5,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import require_admin
-from app.config import settings
 from app.database import get_db
 from app.models.category import Category
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_translation import RecipeTranslation
 from app.schemas.recipe import RecipeCreate, RecipeRead, RecipeUpdate
+from app.settings_service import get_settings
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 
@@ -45,14 +45,14 @@ def _ensure_not_a_pasted_url(payload: RecipeCreate) -> None:
         )
 
 
-def _resolve_translation(recipe: Recipe, language: str) -> RecipeTranslation:
+def _resolve_translation(recipe: Recipe, language: str, default_language: str) -> RecipeTranslation:
     by_language = {t.language: t for t in recipe.translations}
-    translation = by_language.get(language) or by_language.get(settings.default_language)
+    translation = by_language.get(language) or by_language.get(default_language)
     return translation or next(iter(by_language.values()))
 
 
-def _serialize(recipe: Recipe, language: str) -> RecipeRead:
-    translation = _resolve_translation(recipe, language)
+def _serialize(recipe: Recipe, language: str, default_language: str) -> RecipeRead:
+    translation = _resolve_translation(recipe, language, default_language)
     return RecipeRead(
         id=recipe.id,
         category_id=recipe.category_id,
@@ -74,9 +74,10 @@ def _serialize(recipe: Recipe, language: str) -> RecipeRead:
 @router.get("", response_model=list[RecipeRead])
 def list_recipes(
     category_id: int | None = None,
-    language: str = Query(default=settings.default_language),
+    language: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> list[RecipeRead]:
+    default_language = get_settings(db).default_language
     stmt = (
         select(Recipe)
         .options(selectinload(Recipe.translations))
@@ -85,7 +86,7 @@ def list_recipes(
     if category_id is not None:
         stmt = stmt.where(Recipe.category_id == category_id)
     recipes = list(db.scalars(stmt))
-    return [_serialize(recipe, language) for recipe in recipes]
+    return [_serialize(recipe, language or default_language, default_language) for recipe in recipes]
 
 
 @router.post("", response_model=RecipeRead, status_code=201, dependencies=[Depends(require_admin)])
@@ -93,8 +94,9 @@ def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)) -> Recip
     _ensure_category_exists(db, payload.category_id)
     _ensure_not_a_pasted_url(payload)
 
-    language = payload.language or settings.default_language
-    if language not in settings.supported_languages_list:
+    app_settings = get_settings(db)
+    language = payload.language or app_settings.default_language
+    if language not in app_settings.supported_languages_list:
         raise HTTPException(status_code=400, detail=f"Unsupported language: {language}")
 
     recipe = Recipe(category_id=payload.category_id, images=payload.images)
@@ -111,19 +113,20 @@ def create_recipe(payload: RecipeCreate, db: Session = Depends(get_db)) -> Recip
     db.add(recipe)
     db.commit()
     db.refresh(recipe)
-    return _serialize(recipe, language)
+    return _serialize(recipe, language, app_settings.default_language)
 
 
 @router.get("/{recipe_id}", response_model=RecipeRead)
 def get_recipe(
     recipe_id: int,
-    language: str = Query(default=settings.default_language),
+    language: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> RecipeRead:
     # Returns full detail regardless of status, so this also serves as the moderation
     # "preview" for unapproved recipes — no separate preview endpoint needed.
+    default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
-    return _serialize(recipe, language)
+    return _serialize(recipe, language or default_language, default_language)
 
 
 @router.post(
@@ -131,24 +134,26 @@ def get_recipe(
 )
 def approve_recipe(
     recipe_id: int,
-    language: str = Query(default=settings.default_language),
+    language: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> RecipeRead:
+    default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
     recipe.status = RecipeStatus.APPROVED
     recipe.approved_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(recipe)
-    return _serialize(recipe, language)
+    return _serialize(recipe, language or default_language, default_language)
 
 
 @router.put("/{recipe_id}", response_model=RecipeRead, dependencies=[Depends(require_admin)])
 def update_recipe(
     recipe_id: int,
     payload: RecipeUpdate,
-    language: str = Query(default=settings.default_language),
+    language: str | None = Query(default=None),
     db: Session = Depends(get_db),
 ) -> RecipeRead:
+    default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
 
     updates = payload.model_dump(exclude_unset=True)
@@ -160,7 +165,7 @@ def update_recipe(
 
     db.commit()
     db.refresh(recipe)
-    return _serialize(recipe, language)
+    return _serialize(recipe, language or default_language, default_language)
 
 
 @router.delete("/{recipe_id}", status_code=204, dependencies=[Depends(require_admin)])

@@ -70,6 +70,41 @@ const ro: Translation = {
       failed: "Eșuat",
     },
   },
+  settingsManager: {
+    heading: "Setări",
+    supportedLanguagesLabel: "Limbi disponibile",
+    supportedLanguagesHelp:
+      "Coduri de limbă separate prin virgulă în care site-ul traduce rețetele, ex. ro,en. Adăugarea unui cod aici nu retraduce rețetele deja existente.",
+    defaultLanguageLabel: "Limbă implicită",
+    defaultLanguageHelp:
+      "Afișată atunci când limba vizitatorului nu este disponibilă pentru o rețetă. Trebuie să fie una dintre limbile disponibile de mai sus.",
+    adminPasswordLabel: "Parolă panou admin",
+    adminPasswordHelp:
+      "Parola pentru autentificarea în acest panou admin. Sesiunile deja active rămân conectate până expiră.",
+    anthropicApiKeyLabel: "Cheie API Anthropic",
+    anthropicApiKeyHelp:
+      "Folosită de worker-ul de import pentru a cere lui Claude extragerea și traducerea rețetelor dintr-un URL.",
+    secretSetPlaceholder: "Lasă necompletat pentru a păstra valoarea curentă",
+    secretUnsetPlaceholder: "Nesetat",
+    rateLimitLabel: "Limită import (cereri/minut)",
+    rateLimitHelp:
+      "Numărul maxim de cereri pe minut pe care worker-ul de import le face către un singur site sursă. Crawl-delay-ul propriu al site-ului din robots.txt, dacă există, are prioritate.",
+    scrapeTimeoutLabel: "Timeout preluare (secunde)",
+    scrapeTimeoutHelp:
+      "Cât timp așteaptă worker-ul de import răspunsul unei pagini sau imagini înainte de a renunța la acea cerere.",
+    maxHtmlCharsLabel: "HTML maxim trimis către Claude (caractere)",
+    maxHtmlCharsHelp:
+      "Paginile de rețete mai lungi decât atât sunt trunchiate înainte de a fi trimise spre extragere.",
+    imageMaxDimensionLabel: "Dimensiune maximă imagine (px)",
+    imageMaxDimensionHelp:
+      "Fotografiile rețetelor sunt redimensionate astfel încât nicio latură să nu depășească acest număr de pixeli înainte de a fi salvate.",
+    imageMaxSizeKbLabel: "Dimensiune maximă imagine (KB)",
+    imageMaxSizeKbHelp:
+      "Fotografiile rețetelor sunt recomprimate până ajung sub această dimensiune, sau până calitatea atinge pragul minim.",
+    apply: "Aplică",
+    applying: "Se aplică…",
+    applied: "Setările au fost aplicate.",
+  },
 };
 
 export default ro;

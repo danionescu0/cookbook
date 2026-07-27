@@ -66,6 +66,40 @@ const en = {
       failed: "Failed",
     },
   },
+  settingsManager: {
+    heading: "Settings",
+    supportedLanguagesLabel: "Supported languages",
+    supportedLanguagesHelp:
+      "Comma-separated language codes the site translates recipes into, e.g. ro,en. Adding a code here doesn't retranslate recipes that already exist.",
+    defaultLanguageLabel: "Default language",
+    defaultLanguageHelp:
+      "Shown when a visitor's language isn't available for a recipe. Must be one of the supported languages above.",
+    adminPasswordLabel: "Back office password",
+    adminPasswordHelp:
+      "Password for logging into this back office. Existing sessions stay signed in until they expire.",
+    anthropicApiKeyLabel: "Anthropic API key",
+    anthropicApiKeyHelp:
+      "Used by the import worker to ask Claude to extract and translate recipes from a URL.",
+    secretSetPlaceholder: "Leave blank to keep the current value",
+    secretUnsetPlaceholder: "Not set",
+    rateLimitLabel: "Import rate limit (requests/minute)",
+    rateLimitHelp:
+      "Maximum requests per minute the import worker makes to a single source site. A site's own robots.txt crawl-delay, if published, overrides this.",
+    scrapeTimeoutLabel: "Scrape timeout (seconds)",
+    scrapeTimeoutHelp:
+      "How long the import worker waits for a page or image to respond before giving up on that request.",
+    maxHtmlCharsLabel: "Max HTML sent to Claude (characters)",
+    maxHtmlCharsHelp: "Recipe pages longer than this are truncated before being sent for extraction.",
+    imageMaxDimensionLabel: "Max image dimension (px)",
+    imageMaxDimensionHelp:
+      "Recipe photos are downscaled so neither side exceeds this many pixels before being stored.",
+    imageMaxSizeKbLabel: "Max image size (KB)",
+    imageMaxSizeKbHelp:
+      "Recipe photos are re-compressed until they're under this file size, or until image quality hits its floor.",
+    apply: "Apply",
+    applying: "Applying…",
+    applied: "Settings applied.",
+  },
 };
 
 export type Translation = typeof en;
