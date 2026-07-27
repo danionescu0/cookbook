@@ -2,22 +2,31 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, BASE_URL } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
-import type { Recipe } from "../types";
+import { NutritionPanel } from "./NutritionPanel";
+import type { Nutrition, Recipe } from "../types";
 
 export function RecipeDetail() {
   const { id } = useParams<{ id: string }>();
   const { language, t } = useLanguage();
   const [recipe, setRecipe] = useState<Recipe | null>(null);
+  const [nutrition, setNutrition] = useState<Nutrition | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
     setRecipe(null);
+    setNutrition(null);
     setError(null);
     api
       .getRecipe(Number(id), language)
       .then(setRecipe)
       .catch((e) => setError(String(e)));
+    // Nutrition is best-effort: a recipe that hasn't been enriched yet (or a lookup hiccup)
+    // shouldn't block the rest of the page from rendering, so failures here are swallowed.
+    api
+      .getNutrition(Number(id))
+      .then(setNutrition)
+      .catch(() => setNutrition(null));
   }, [id, language]);
 
   if (error) {
@@ -47,6 +56,9 @@ export function RecipeDetail() {
   }
 
   const image = recipe.images[0];
+  const gramsByIndex = new Map(
+    (nutrition?.per_ingredient ?? []).map((item) => [item.index, item.estimated_grams])
+  );
 
   return (
     <article className="mx-auto max-w-3xl">
@@ -77,12 +89,20 @@ export function RecipeDetail() {
               {t.detail.ingredients}
             </h2>
             <ul className="mt-3 space-y-2">
-              {recipe.ingredients.map((ingredient) => (
-                <li key={ingredient} className="flex gap-2 text-ink/90">
-                  <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-terracotta" />
-                  {ingredient}
-                </li>
-              ))}
+              {recipe.ingredients.map((ingredient, index) => {
+                const grams = gramsByIndex.get(index);
+                return (
+                  <li key={index} className="flex gap-2 text-ink/90">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-terracotta" />
+                    <span>
+                      {ingredient}
+                      {grams !== undefined && (
+                        <span className="text-ink/50"> ({Math.round(grams)}g)</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
@@ -120,6 +140,8 @@ export function RecipeDetail() {
           </ul>
         </section>
       )}
+
+      {nutrition && <NutritionPanel nutrition={nutrition} />}
     </article>
   );
 }

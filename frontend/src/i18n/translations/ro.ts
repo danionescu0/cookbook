@@ -8,6 +8,8 @@ const ro: Translation = {
     recipes: "Rețete",
     backoffice: "Panou admin",
     logout: "Deconectare",
+    backofficeRecipes: "Rețete",
+    backofficeSettings: "Setări",
   },
   login: {
     heading: "Autentificare panou admin",
@@ -84,6 +86,9 @@ const ro: Translation = {
     anthropicApiKeyLabel: "Cheie API Anthropic",
     anthropicApiKeyHelp:
       "Folosită de worker-ul de import pentru a cere lui Claude extragerea și traducerea rețetelor dintr-un URL.",
+    calorieNinjasApiKeyLabel: "Cheie API CalorieNinjas",
+    calorieNinjasApiKeyHelp:
+      "Folosită pentru a căuta valorile nutriționale ale ingredientelor. Cheie gratuită: calorieninjas.com/api.",
     secretSetPlaceholder: "Lasă necompletat pentru a păstra valoarea curentă",
     secretUnsetPlaceholder: "Nesetat",
     rateLimitLabel: "Limită import (cereri/minut)",
@@ -104,6 +109,33 @@ const ro: Translation = {
     apply: "Aplică",
     applying: "Se aplică…",
     applied: "Setările au fost aplicate.",
+  },
+  nutrition: {
+    heading: "Valori nutriționale",
+    calories: "Calorii",
+    protein: "Proteine",
+    carbs: "Carbohidrați",
+    sugars: "Zaharuri",
+    fat: "Grăsimi",
+    servesEstimate: "Porții: ~{count}",
+    perServing: "Per porție",
+    wholeRecipe: "Rețeta întreagă",
+    estimateNote: "estimat din cantitățile de ingrediente",
+  },
+  ingredientRefresh: {
+    heading: "Date nutriționale ingrediente",
+    description:
+      "Reface datele nutriționale CalorieNinjas pentru fiecare ingredient deja existent în baza de date — util după adăugarea unei chei API (ingredientele rezolvate înainte de asta au valori zero) sau dacă datele sursă s-au schimbat. Nu re-parsează lista de ingrediente a niciunei rețete; pentru asta folosește \"Calculează valori nutriționale\" pe o rețetă.",
+    button: "Reparsează toate ingredientele",
+    buttonBusy: "Se reparsează…",
+    statuses: {
+      never_run: "Nu a rulat încă.",
+      queued: "În coadă…",
+      processing: "Se reparsează ingredientele…",
+      done: "Finalizat.",
+      failed: "Eșuat.",
+    },
+    updatedCount: "{count} ingredient(e) actualizat(e)",
   },
 };
 

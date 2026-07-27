@@ -4,6 +4,8 @@ const en = {
     recipes: "Recipes",
     backoffice: "Back office",
     logout: "Log out",
+    backofficeRecipes: "Recipes",
+    backofficeSettings: "Settings",
   },
   login: {
     heading: "Back office login",
@@ -80,6 +82,9 @@ const en = {
     anthropicApiKeyLabel: "Anthropic API key",
     anthropicApiKeyHelp:
       "Used by the import worker to ask Claude to extract and translate recipes from a URL.",
+    calorieNinjasApiKeyLabel: "CalorieNinjas API key",
+    calorieNinjasApiKeyHelp:
+      "Used to look up ingredient nutrition facts when enriching a recipe. Free key: calorieninjas.com/api.",
     secretSetPlaceholder: "Leave blank to keep the current value",
     secretUnsetPlaceholder: "Not set",
     rateLimitLabel: "Import rate limit (requests/minute)",
@@ -99,6 +104,33 @@ const en = {
     apply: "Apply",
     applying: "Applying…",
     applied: "Settings applied.",
+  },
+  nutrition: {
+    heading: "Nutrition",
+    calories: "Calories",
+    protein: "Protein",
+    carbs: "Carbs",
+    sugars: "Sugars",
+    fat: "Fat",
+    servesEstimate: "Serves ~{count}",
+    perServing: "Per serving",
+    wholeRecipe: "Whole recipe",
+    estimateNote: "estimated from ingredient quantities",
+  },
+  ingredientRefresh: {
+    heading: "Ingredient nutrition data",
+    description:
+      "Re-fetches CalorieNinjas nutrition data for every ingredient already in the database — useful after adding an API key (ingredients resolved before that have zeroed-out values) or if the source data has changed. This does not re-parse any recipe's ingredient list; use \"Enrich nutrition\" on a recipe for that.",
+    button: "Reparse all ingredients",
+    buttonBusy: "Reparsing…",
+    statuses: {
+      never_run: "Never run yet.",
+      queued: "Queued…",
+      processing: "Reparsing ingredients…",
+      done: "Done.",
+      failed: "Failed.",
+    },
+    updatedCount: "{count} ingredient(s) updated",
   },
 };
 

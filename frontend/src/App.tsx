@@ -1,5 +1,6 @@
-import { Link, NavLink, Route, Routes } from "react-router-dom";
+import { Link, NavLink, Outlet, Route, Routes } from "react-router-dom";
 import { CategoryManager } from "./backoffice/CategoryManager";
+import { IngredientRefreshPanel } from "./backoffice/IngredientRefreshPanel";
 import { ImportManager } from "./backoffice/ImportManager";
 import { LoginForm } from "./backoffice/LoginForm";
 import { RecipeManager } from "./backoffice/RecipeManager";
@@ -40,19 +41,44 @@ function LanguageSwitcher() {
   );
 }
 
-function BackofficePage() {
+function RecipesPage() {
+  return (
+    <div className="space-y-10">
+      <CategoryManager />
+      <ImportManager />
+      <RecipeManager />
+    </div>
+  );
+}
+
+function SettingsPage() {
+  return (
+    <div className="space-y-10">
+      <SettingsManager />
+      <IngredientRefreshPanel />
+    </div>
+  );
+}
+
+function BackofficeLayout() {
   const { isAuthenticated } = useAuth();
+  const { t } = useLanguage();
 
   if (!isAuthenticated) {
     return <LoginForm />;
   }
 
   return (
-    <div className="space-y-10">
-      <CategoryManager />
-      <ImportManager />
-      <RecipeManager />
-      <SettingsManager />
+    <div className="space-y-6">
+      <nav className="flex gap-4 border-b border-olive-light pb-3 text-sm" aria-label="Backoffice">
+        <NavLink to="/backoffice" end className={navLinkClasses}>
+          {t.nav.backofficeRecipes}
+        </NavLink>
+        <NavLink to="/backoffice/settings" className={navLinkClasses}>
+          {t.nav.backofficeSettings}
+        </NavLink>
+      </nav>
+      <Outlet />
     </div>
   );
 }
@@ -91,7 +117,10 @@ export function App() {
         <Routes>
           <Route path="/" element={<RecipeBrowser />} />
           <Route path="/recipes/:id" element={<RecipeDetail />} />
-          <Route path="/backoffice" element={<BackofficePage />} />
+          <Route path="/backoffice" element={<BackofficeLayout />}>
+            <Route index element={<RecipesPage />} />
+            <Route path="settings" element={<SettingsPage />} />
+          </Route>
         </Routes>
       </main>
     </div>

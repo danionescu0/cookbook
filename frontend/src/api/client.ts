@@ -1,4 +1,14 @@
-import type { Category, ImportJob, Recipe, RecipeDraft, Settings, SettingsUpdate } from "../types";
+import type {
+  Category,
+  ImportJob,
+  IngredientRefreshJob,
+  IngredientRefreshStatus,
+  Nutrition,
+  Recipe,
+  RecipeDraft,
+  Settings,
+  SettingsUpdate,
+} from "../types";
 
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
 
@@ -94,4 +104,10 @@ export const api = {
   getSettings: () => request<Settings>("/settings"),
   updateSettings: (patch: SettingsUpdate) =>
     request<Settings>("/settings", { method: "PATCH", body: JSON.stringify(patch) }),
+
+  getNutrition: (recipeId: number) => request<Nutrition>(`/recipes/${recipeId}/nutrition`),
+
+  getIngredientRefreshStatus: () => request<IngredientRefreshStatus>("/ingredients/refresh"),
+  createIngredientRefreshJob: () =>
+    request<IngredientRefreshJob>("/ingredients/refresh", { method: "POST" }),
 };

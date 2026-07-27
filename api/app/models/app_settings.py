@@ -21,6 +21,9 @@ class AppSettings(Base):
     default_language: Mapped[str] = mapped_column(String(10), nullable=False)
     admin_password: Mapped[str] = mapped_column(String(200), nullable=False)
     anthropic_api_key: Mapped[str] = mapped_column(String(200), nullable=False)
+    # CalorieNinjas API key, used by the nutrition-enrichment job — see README Design Decisions
+    # ("Ingredient nutrition"). Get a free one at calorieninjas.com/api.
+    calorie_ninjas_api_key: Mapped[str] = mapped_column(String(200), nullable=False, default="")
     default_rate_limit_requests_per_minute: Mapped[int] = mapped_column(Integer, nullable=False)
     scrape_timeout_seconds: Mapped[float] = mapped_column(Float, nullable=False)
     max_html_chars: Mapped[int] = mapped_column(Integer, nullable=False)

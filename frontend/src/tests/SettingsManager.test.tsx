@@ -20,6 +20,7 @@ const baseSettings: Settings = {
   default_language: "ro",
   admin_password_is_set: true,
   anthropic_api_key_is_set: false,
+  calorie_ninjas_api_key_is_set: false,
   default_rate_limit_requests_per_minute: 6,
   scrape_timeout_seconds: 15,
   max_html_chars: 200_000,

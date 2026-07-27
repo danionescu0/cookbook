@@ -9,6 +9,7 @@ import type { Recipe } from "../types";
 vi.mock("../api/client", () => ({
   api: {
     getRecipe: vi.fn(),
+    getNutrition: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
 }));
@@ -34,6 +35,16 @@ const cake: Recipe = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  // Not under test here (see NutritionPanel.test.tsx) — just needs to resolve so RecipeDetail's
+  // best-effort fetch doesn't reject.
+  mockedApi.getNutrition.mockResolvedValue({
+    status: "not_enriched",
+    error: null,
+    estimated_servings: null,
+    totals: null,
+    per_serving: null,
+    per_ingredient: [],
+  });
 });
 
 function renderDetail(id = "1") {

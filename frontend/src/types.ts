@@ -51,6 +51,7 @@ export interface Settings {
   default_language: string;
   admin_password_is_set: boolean;
   anthropic_api_key_is_set: boolean;
+  calorie_ninjas_api_key_is_set: boolean;
   default_rate_limit_requests_per_minute: number;
   scrape_timeout_seconds: number;
   max_html_chars: number;
@@ -64,9 +65,50 @@ export interface SettingsUpdate {
   // Omit or send "" to leave the current secret unchanged — the UI never has the real value.
   admin_password?: string;
   anthropic_api_key?: string;
+  calorie_ninjas_api_key?: string;
   default_rate_limit_requests_per_minute?: number;
   scrape_timeout_seconds?: number;
   max_html_chars?: number;
   image_max_dimension?: number;
   image_max_size_kb?: number;
+}
+
+export type NutritionStatus = "not_enriched" | "queued" | "processing" | "done" | "failed";
+
+export interface NutritionTotals {
+  calories: number;
+  protein_g: number;
+  carbs_g: number;
+  sugars_g: number;
+  fat_g: number;
+}
+
+export interface NutritionIngredient {
+  index: number;
+  estimated_grams: number;
+  grams_source: "api_lookup" | "claude_estimate";
+}
+
+export interface Nutrition {
+  status: NutritionStatus;
+  error: string | null;
+  estimated_servings: number | null;
+  totals: NutritionTotals | null;
+  per_serving: NutritionTotals | null;
+  per_ingredient: NutritionIngredient[];
+}
+
+export type IngredientRefreshState = "never_run" | "queued" | "processing" | "done" | "failed";
+
+export interface IngredientRefreshStatus {
+  status: IngredientRefreshState;
+  error: string | null;
+  ingredients_updated: number | null;
+}
+
+export interface IngredientRefreshJob {
+  id: number;
+  status: IngredientRefreshState;
+  error: string | null;
+  ingredients_updated: number | null;
 }

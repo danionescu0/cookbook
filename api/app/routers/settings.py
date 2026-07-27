@@ -18,6 +18,7 @@ def _serialize(row: AppSettings) -> SettingsRead:
         default_language=row.default_language,
         admin_password_is_set=bool(row.admin_password),
         anthropic_api_key_is_set=bool(row.anthropic_api_key),
+        calorie_ninjas_api_key_is_set=bool(row.calorie_ninjas_api_key),
         default_rate_limit_requests_per_minute=row.default_rate_limit_requests_per_minute,
         scrape_timeout_seconds=row.scrape_timeout_seconds,
         max_html_chars=row.max_html_chars,

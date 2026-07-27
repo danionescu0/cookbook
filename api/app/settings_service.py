@@ -29,6 +29,7 @@ def get_settings(db: Session) -> AppSettings:
         default_language="ro",
         admin_password=env_settings.admin_password,
         anthropic_api_key="",
+        calorie_ninjas_api_key="",
         default_rate_limit_requests_per_minute=6,
         scrape_timeout_seconds=15.0,
         max_html_chars=200_000,
@@ -80,6 +81,8 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         row.admin_password = updates["admin_password"]
     if updates.get("anthropic_api_key"):
         row.anthropic_api_key = updates["anthropic_api_key"]
+    if updates.get("calorie_ninjas_api_key"):
+        row.calorie_ninjas_api_key = updates["calorie_ninjas_api_key"]
 
     for field in (
         "default_rate_limit_requests_per_minute",

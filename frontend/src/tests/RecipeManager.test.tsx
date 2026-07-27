@@ -1,6 +1,6 @@
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecipeManager } from "../backoffice/RecipeManager";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
@@ -55,8 +55,13 @@ const pendingSoup: Recipe = {
 
 beforeEach(() => {
   vi.resetAllMocks();
+  vi.useFakeTimers({ shouldAdvanceTime: true });
   mockedApi.listCategories.mockResolvedValue([desserts]);
   mockedApi.listRecipes.mockResolvedValue([cake]);
+});
+
+afterEach(() => {
+  vi.useRealTimers();
 });
 
 function renderManager() {
@@ -147,4 +152,5 @@ describe("RecipeManager", () => {
 
     expect(screen.queryByText("A warm soup.")).not.toBeInTheDocument();
   });
+
 });

@@ -27,28 +27,40 @@ scraped and cleaned up by the import pipeline:
 
 <img src="docs/screenshots/frontoffice-home.jpg" alt="Recipe grid on the front office home page, filterable by category" width="800">
 
-Recipe detail page showing the parsed title, image, description, ingredients, and numbered steps:
+Recipe detail page showing the parsed title, image, description, ingredients (each annotated with
+an estimated gram weight), and numbered steps:
 
 <img src="docs/screenshots/frontoffice-recipe-detail.jpg" alt="Recipe detail page with parsed ingredients and steps" width="800">
 
-**Back office** — JWT-gated admin area (see [Design Decisions](#design-decisions)):
+Nutrition panel at the bottom of the recipe page — calories/protein/carbs/sugars/fat per serving,
+plus the estimated serving count, computed live from the ingredient database rather than stored
+on the recipe (see [Design Decisions](#design-decisions), "Ingredient nutrition"):
+
+<img src="docs/screenshots/frontoffice-nutrition-panel.jpg" alt="Nutrition panel showing calories, protein, carbs, sugars, and fat per serving with icons" width="800">
+
+**Back office** — JWT-gated admin area, split into two pages (**Recipes** / **Setări**) behind a
+small sub-nav — see [Design Decisions](#design-decisions):
 
 <img src="docs/screenshots/backoffice-login.jpg" alt="Back office login form" width="800">
 
-Category management and the URL import queue, which tracks each scrape job through
+Recipes page: category management and the URL import queue, which tracks each scrape job through
 pending → queued → fetching → processing → done:
 
-<img src="docs/screenshots/backoffice-categories-import.jpg" alt="Back office category manager and import-from-URL queue" width="800">
+<img src="docs/screenshots/backoffice-categories-import.jpg" alt="Back office Recipes page: category manager, import-from-URL queue, and the Recipes/Settings sub-nav" width="800">
 
-Recipe manager, where imported recipes are previewed and approved before they go live:
+Further down the same page, the recipe manager — imported recipes are previewed and approved
+before they go live; nutrition enrichment now happens automatically right after import, with no
+button to click:
 
-<img src="docs/screenshots/backoffice-recipes.jpg" alt="Back office recipe manager with approve/delete actions" width="800">
+<img src="docs/screenshots/backoffice-recipes.jpg" alt="Back office recipe manager with preview/approve/delete actions" width="800">
 
-Settings manager, where the admin-editable subset of config (languages, credentials, and the
-import pipeline's rate limit/timeout/image tuning) can be changed and applied live — see
+Settings page: the admin-editable subset of config (languages, credentials including the
+CalorieNinjas API key, and the import pipeline's rate limit/timeout/image tuning) can be
+changed and applied live, and a "Reparsează toate ingredientele" ("Reparse all ingredients")
+button re-fetches CalorieNinjas data for every ingredient already in the database — see
 [Design Decisions](#design-decisions):
 
-<img src="docs/screenshots/backoffice-settings.jpg" alt="Back office settings manager with the Settings applied confirmation showing" width="800">
+<img src="docs/screenshots/backoffice-settings.jpg" alt="Back office Settings page including the CalorieNinjas API key field and the Reparse all ingredients panel" width="800">
 
 ## Status
 
@@ -102,6 +114,28 @@ state:
       single-row `app_settings` Postgres table instead of `.env`, editable from the back office and
       applied live — no container restart, no Docker socket access from the app. `.env` only seeds
       that row's initial value via migration `0006`. See [Design Decisions](#design-decisions).
+- [x] Ingredient nutrition: automatic, not a button — a successful import queues a nutrition job
+      (own `nutrition_jobs` queue, consumed by the same worker container, right after the import
+      job that created the recipe) that asks Claude to parse each ingredient line into a canonical
+      food name/quantity/unit, then resolves that against the CalorieNinjas API for both the
+      per-100g nutrient panel and a real per-line gram estimate (falling back to Claude's own gram
+      guess when the lookup finds nothing) — see [Design Decisions](#design-decisions). The
+      resulting `ingredients` + `recipe_ingredient_links` rows are the only thing stored; a
+      recipe's calories/protein/carbs/sugars/fat totals are computed live by
+      `GET /recipes/{id}/nutrition` (join + sum), never cached in the DB. The front office shows a
+      nutrition panel (per serving, with an estimated servings count) and annotates each ingredient
+      line with its estimated gram weight.
+- [x] Ingredient nutrition data refresh: a global **"Reparse all ingredients"** button in the back
+      office Settings page (own `ingredient_refresh_jobs` queue, same worker container) re-fetches
+      CalorieNinjas data for every `Ingredient` row already in the database, by its normalized name
+      (e.g. an ingredient resolved before a CalorieNinjas key was configured, left at zeroed
+      placeholder values). Unlike the per-import nutrition job above, this doesn't touch Claude or
+      any recipe's ingredient list — it only refreshes the shared nutrition-reference rows. See
+      [Design Decisions](#design-decisions).
+- [x] Backoffice split into two pages behind a small sub-nav: **Recipes** (`/backoffice` —
+      categories, URL import, recipe manager) and **Settings** (`/backoffice/settings` —
+      `SettingsManager` + the ingredient refresh button above), so the settings form isn't buried
+      at the bottom of an ever-growing single page.
 - [ ] Bulk URL lists / bookmark-file upload in the import form (single URL only for now)
 - [ ] Bookmark-file import
 - [ ] Reverse proxy (Caddy/Nginx) in front of frontend + API
@@ -113,7 +147,8 @@ state:
   [AllRecipes](https://www.allrecipes.com/shredded-zucchini-casserole-recipe-11747790): hero image,
   description, ingredients, steps, tips.
 - **Back office** — username/password-protected admin area (JWT login, single admin account in
-  config) with full CRUD for categories and recipes.
+  config) with full CRUD for categories and recipes, split into a **Recipes** page and a
+  **Settings** page behind a small sub-nav.
 - **Single-URL scraping, reviewed before scraping happens** — submit a URL + category in the back
   office; it sits as a pending request until an admin clicks Approve, which is what actually
   triggers the fetch/Claude/image pipeline.
@@ -134,6 +169,15 @@ state:
 - **Live-editable settings** — languages, the back office password, the Anthropic API key, and the
   import pipeline's rate limit/timeout/image tuning can all be changed from a back office Settings
   page, with each change taking effect immediately (no restart).
+- **Estimated nutrition per recipe** — automatically resolved right after import (no admin action
+  needed) against the CalorieNinjas API (nutrients + a real per-line gram estimate, with an
+  LLM-parsed gram guess as fallback), and the front office shows calories/protein/carbs/sugars/fat
+  per serving plus an estimated gram weight next to each ingredient — all clearly labelled as
+  estimates, computed live rather than stored.
+- **Ingredient data refresh** — a separate back office button re-fetches CalorieNinjas nutrition
+  data for every ingredient already resolved in the database, without touching Claude or any
+  recipe's text — useful for fixing ingredients that were resolved before a CalorieNinjas key was
+  configured.
 
 ## Architecture
 
@@ -189,9 +233,10 @@ scrape from ever blocking a user-facing API request.
 | UI language              | Hand-rolled i18n (`src/i18n/`), no library                | Small static dictionary per language (`ro`, `en`); one site-wide switcher drives both UI text and which recipe translation is fetched |
 | API backend             | Python + FastAPI                                         | REST API; JWT (`PyJWT`) username/password auth for the back office, single hard-coded admin account in config |
 | Scraper workers         | Python + Pika (RabbitMQ client), httpx (fetch), stdlib `urllib.robotparser`, Pillow (image resize/compress) | Consume import jobs, respect robots.txt + rate limits, fetch pages, download + process images |
-| AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call |
-| Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import jobs |
-| Database                | PostgreSQL                                                | Recipes, categories, import status, a single-row `app_settings` table for admin-editable config — no users table (see Design Decisions) |
+| AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call; a second tool-use call parses ingredient lines into structured food/quantity/unit for nutrition lookup |
+| Nutrition data           | CalorieNinjas API                                         | Free tier, single natural-language query per lookup; provides both per-100g nutrient panels and a real per-line gram estimate for common ingredients — see Design Decisions ("Ingredient nutrition") |
+| Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import/nutrition jobs; three queues (`import_jobs`, `nutrition_jobs`, `ingredient_refresh_jobs`) are all consumed by the same worker container |
+| Database                | PostgreSQL                                                | Recipes, categories, import status, a single-row `app_settings` table for admin-editable config, `ingredients`/`recipe_ingredient_links` for nutrition — no users table (see Design Decisions) |
 | Image storage           | Docker named volume (`images_data`), mounted into both `api` and `worker`, served by the API via `StaticFiles` at `/images` | Worker downloads + writes JPEGs there; API serves them read-only; not hotlinked from source sites |
 | Reverse proxy           | Caddy (or Nginx)                                          | TLS termination, routes `/` to SPA and `/api` to backend |
 | Orchestration            | Docker Compose                                            | One compose stack for local dev (Fedora) and prod (Raspberry Pi, arm64 images) |
@@ -206,12 +251,20 @@ cookbook/
 ├── .env.example
 ├── frontend/                       # React + TypeScript SPA (front office + back office)
 │   ├── src/
-│   │   ├── frontoffice/             # RecipeBrowser (home), RecipeDetail (/recipes/:id),
+│   │   ├── frontoffice/             # RecipeBrowser (home), RecipeDetail (/recipes/:id) + NutritionPanel
+│   │   │                            #   (calories/protein/carbs/sugars/fat per serving, icon tiles),
 │   │   │                            #   CategoryNav, RecipeCard — approved recipes only
 │   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL, approve-to-trigger,
-│   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve),
+│   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve —
+│   │   │                            #   nutrition enrichment is automatic on import, no button here),
 │   │   │                            #   SettingsManager (view/edit app_settings, Apply = live PATCH),
-│   │   │                            #   LoginForm — all gated behind AuthContext
+│   │   │                            #   IngredientRefreshPanel ("Reparse all ingredients" button,
+│   │   │                            #   polls while queued/processing), LoginForm — all gated
+│   │   │                            #   behind AuthContext. App.tsx's BackofficeLayout renders
+│   │   │                            #   LoginForm when unauthenticated, else a Recipes/Settings
+│   │   │                            #   sub-nav + <Outlet /> across nested /backoffice routes
+│   │   ├── ui/                      # buttonStyles.ts, nutritionIcons.tsx (hand-rolled inline SVGs:
+│   │   │                            #   flame/drumstick/wheat/sugar-cubes/droplet/servings)
 │   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout,
 │   │   │                            #   token in localStorage)
 │   │   ├── i18n/                    # config.ts (SUPPORTED_LANGUAGES, default "ro"), translations/
@@ -226,12 +279,23 @@ cookbook/
 │   │   ├── routers/                # auth.py (POST /auth/login), categories.py, recipes.py
 │   │   │                           #   (CRUD + /approve), imports.py (CRUD + /approve, deferred
 │   │   │                           #   publish, router-level require_admin), languages.py,
-│   │   │                           #   settings.py (GET/PATCH /settings, router-level require_admin)
-│   │   ├── models/                 # SQLAlchemy models (Category, Recipe, RecipeTranslation, ImportJob,
-│   │   │                           #   AppSettings — single-row admin-editable settings table)
-│   │   ├── schemas/                # Pydantic request/response schemas
+│   │   │                           #   settings.py (GET/PATCH /settings, router-level require_admin),
+│   │   │                           #   nutrition.py (GET /recipes/{id}/nutrition, public + live-
+│   │   │                           #   computed — no POST here, the worker queues its own
+│   │   │                           #   nutrition job right after a successful import),
+│   │   │                           #   ingredients.py (GET/POST /ingredients/refresh, both admin —
+│   │   │                           #   global "reparse all ingredients" job, not per-recipe)
+│   │   ├── models/                 # SQLAlchemy models (Category, Recipe [+estimated_servings],
+│   │   │                           #   RecipeTranslation, ImportJob, AppSettings — single-row
+│   │   │                           #   admin-editable settings table, Ingredient — canonical
+│   │   │                           #   per-100g nutrition reference, RecipeIngredientLink — the
+│   │   │                           #   stored ingredient-line-to-Ingredient+grams mapping,
+│   │   │                           #   NutritionJob, IngredientRefreshJob)
+│   │   ├── schemas/                # Pydantic request/response schemas, incl. nutrition.py,
+│   │   │                           #   ingredient_refresh.py
 │   │   ├── tests/                  # pytest, FastAPI TestClient
-│   │   ├── queue.py                # RabbitMQ publisher (pika)
+│   │   ├── queue.py                # RabbitMQ publisher (pika) — publish_import_job,
+│   │   │                           #   publish_nutrition_job, publish_ingredient_refresh_job
 │   │   ├── auth.py                 # create_access_token, require_admin (FastAPI dependency)
 │   │   ├── settings_service.py     # get_settings (get-or-create), update_settings (validates +
 │   │   │                           #   masks secrets) — see Design Decisions
@@ -242,23 +306,49 @@ cookbook/
 │   │                                 #   lives in app_settings/settings_service instead (see below)
 │   ├── migrations/                 # Alembic (categories/recipes 0001, import_jobs 0002, category_id
 │   │                                #   0003, recipe_translations split 0004, pending status 0005,
-│   │                                #   app_settings table seeded from .env 0006)
+│   │                                #   app_settings table seeded from .env 0006, ingredient
+│   │                                #   nutrition tables + estimated_servings + usda_api_key 0007,
+│   │                                #   ingredient_refresh_jobs 0008, rename usda_api_key ->
+│   │                                #   calorie_ninjas_api_key + drop usda_fdc_id 0009)
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
 │   └── Dockerfile
 └── worker/                         # RabbitMQ consumer: fetch -> Claude -> download images -> insert
     ├── app/
-    │   ├── consumer.py             # connects (with retry), consumes `import_jobs` queue
+    │   ├── consumer.py             # connects (with retry), consumes `import_jobs`,
+    │   │                           #   `nutrition_jobs`, AND `ingredient_refresh_jobs` on one
+    │   │                           #   connection/channel — same container, see Design Decisions
+    │   │                           #   ("Ingredient nutrition")
     │   ├── handlers.py             # handle_import_job — orchestrates fetch -> extract -> process
-    │   │                           #   images -> insert recipe + one translation row per language
+    │   │                           #   images -> insert recipe + one translation row per language;
+    │   │                           #   on success, also creates + publishes a NutritionJob for the
+    │   │                           #   new recipe (auto-enrichment, no manual button — see below)
+    │   ├── queue.py                # publish_nutrition_job — used by handlers.py to auto-enqueue
+    │   │                           #   enrichment right after a successful import
+    │   ├── nutrition_handlers.py   # handle_nutrition_job — Claude-parses ingredient lines ->
+    │   │                           #   resolves each against the local Ingredient cache or
+    │   │                           #   CalorieNinjas -> writes RecipeIngredientLink rows +
+    │   │                           #   recipe.estimated_servings; one bad ingredient line is
+    │   │                           #   skipped, not a whole-job failure
+    │   ├── ingredient_refresh_handlers.py  # handle_ingredient_refresh_job — re-fetches
+    │   │                           #   CalorieNinjas data for every existing Ingredient row by its
+    │   │                           #   normalized name; one ingredient's failure is skipped, not a
+    │   │                           #   whole-job failure
+    │   ├── nutrition_api_client.py # lookup_nutrition (CalorieNinjas REST API, one call per
+    │   │                           #   natural-language query), extract_nutrients_per_100g
     │   ├── scraping.py             # robots.txt check + fetch_page (httpx), ScrapeDisallowedError
     │   ├── rate_limiter.py         # DomainRateLimiter — in-memory, per-domain, process-local
-    │   ├── claude_client.py        # single tool-use call to Claude: extract/clean, one translation
-    │   │                           #   per `SUPPORTED_LANGUAGES` entry, in the same call
+    │   ├── claude_client.py        # extract_recipe — single tool-use call: extract/clean, one
+    │   │                           #   translation per `SUPPORTED_LANGUAGES` entry, in the same
+    │   │                           #   call; parse_ingredients_for_nutrition — second tool-use call,
+    │   │                           #   ingredient lines -> structured food/quantity/unit/grams +
+    │   │                           #   estimated_servings
     │   ├── images.py               # process_images — download, downscale, compress to JPEG,
     │   │                           #   save under images_dir; skips (not fails) bad images
-    │   ├── models.py               # ImportJob, Recipe, RecipeTranslation, AppSettings (mirror the
-    │   │                           #   API's models; see Design Decisions)
+    │   ├── models.py               # ImportJob, Recipe [+estimated_servings], RecipeTranslation,
+    │   │                           #   AppSettings, Ingredient, RecipeIngredientLink, NutritionJob,
+    │   │                           #   IngredientRefreshJob (mirror the API's models; see Design
+    │   │                           #   Decisions)
     │   ├── settings_service.py     # get_settings — reads app_settings fresh once per job (no
     │   │                           #   cache), read-only from the worker's side
     │   ├── tests/                  # pytest, in-memory SQLite, httpx/Claude client mocked
@@ -350,7 +440,8 @@ CRUD, no AI involved).
    a default max dimension/size (configurable in the admin settings).
 6. Worker inserts the recipe into PostgreSQL already `status = approved` (the human review already
    happened at step 2 — see [Design Decisions](#design-decisions)), with one `recipe_translations`
-   row per language, and `added_at`/`approved_at` timestamps.
+   row per language, and `added_at`/`approved_at` timestamps. Right after that commit, the worker
+   automatically queues a nutrition job for the new recipe — see workflow #5 below.
 
 **Current state:** all six steps are built end to end for single URLs (bulk lists aren't wired).
 `POST /imports` creates a `pending` job and does *not* publish it. `POST /imports/{id}/approve`
@@ -405,6 +496,33 @@ approving the import *request*, instead. Still no reject action, but `/backoffic
 mutating API route are now gated behind the JWT admin login — see [Design
 Decisions](#design-decisions).
 
+### 5. Ingredient nutrition
+1. Set a CalorieNinjas API key in Backoffice → Settings first (free signup:
+   [calorieninjas.com/api](https://calorieninjas.com/api)) — without one, enrichment still runs and
+   produces gram estimates, but every nutrient figure comes back 0.
+2. No button to click: the moment a URL import finishes successfully (workflow #2, step 6), the
+   worker automatically queues a nutrition job for the new recipe (own `nutrition_jobs` queue, same
+   worker container, right after the import job that created the recipe) — see
+   [Design Decisions](#design-decisions) for why this replaced the original per-recipe
+   **"Enrich nutrition"** button.
+3. The worker asks Claude to parse each ingredient line into a canonical food name/quantity/unit,
+   resolves each against the CalorieNinjas API (reusing a cached `Ingredient` row if that food's
+   already been resolved for another recipe), and writes one `recipe_ingredient_links` row per
+   ingredient plus an `estimated_servings` guess on the recipe.
+4. `GET /recipes/{id}/nutrition` (public, used by the front office) computes calories/protein/
+   carbs/sugars/fat live from those rows on every request — nothing is precomputed or cached, so
+   correcting an `Ingredient` row later instantly fixes every recipe that uses it. The recipe page
+   shows a nutrition panel (per serving) and an estimated gram weight next to each ingredient line.
+   It also reports the status of the recipe's latest nutrition job (`not_enriched`/`queued`/
+   `processing`/`done`/`failed`), so a manually-authored recipe (workflow #1, which has no import
+   job to trigger off of) simply shows `not_enriched` rather than an error.
+5. Added a CalorieNinjas key *after* some ingredients were already resolved without one (so they're
+   stuck at zeroed placeholder values)? Click **Reparsează toate ingredientele** ("Reparse all
+   ingredients") on the Settings page — it re-fetches CalorieNinjas data for every `Ingredient` row
+   in one global job (own `ingredient_refresh_jobs` queue), matched by its normalized name. It
+   doesn't call Claude and doesn't touch any recipe's ingredient list — see
+   [Design Decisions](#design-decisions).
+
 ## Data Model (sketch)
 
 - *(no users table)* — back office auth is a single hard-coded admin account: username from config
@@ -413,7 +531,8 @@ Decisions](#design-decisions).
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
   yet, see [Design Decisions](#design-decisions))
 - **recipes** — id, category_id, images, source_url (nullable, set when imported), status
-  (`unapproved` \| `approved`), added_at, approved_at — language-independent fields only; text
+  (`unapproved` \| `approved`), added_at, approved_at, estimated_servings (nullable — set by the
+  nutrition-enrichment job, not the original import) — language-independent fields only; text
   content lives in **recipe_translations**
 - **recipe_translations** — id, recipe_id (FK → recipes.id), language (e.g. `ro`, `en` — a plain
   string validated against `SUPPORTED_LANGUAGES`, not a DB enum, so a new language never needs a
@@ -426,12 +545,29 @@ Decisions](#design-decisions).
   `pending` means created but not yet approved/published to RabbitMQ; approving is what moves it to
   `queued`
 - **app_settings** — a single row (id=1), not a real multi-row table: supported_languages,
-  default_language, admin_password, anthropic_api_key, default_rate_limit_requests_per_minute,
-  scrape_timeout_seconds, max_html_chars, image_max_dimension, image_max_size_kb. Seeded once from
-  `.env` by migration `0006`; editable live from the back office Settings page from then on — see
+  default_language, admin_password, anthropic_api_key, calorie_ninjas_api_key,
+  default_rate_limit_requests_per_minute, scrape_timeout_seconds, max_html_chars,
+  image_max_dimension, image_max_size_kb. Seeded once from `.env` by migration `0006`/`0007`;
+  editable live from the back office Settings page from then on — see
   [Design Decisions](#design-decisions)
-- **settings** — key/value store for admin-configurable defaults, e.g. `scrape_rate_limit_per_domain`,
-  `image_max_dimension`, `image_max_size_kb`
+- **ingredients** — id, name (Claude's canonical English food name, e.g. "onion") — the only key
+  used to match/reuse a row, since CalorieNinjas has no stable per-food id — and
+  calories/protein/carbs/sugars/fat_per_100g (zeroed placeholders when nothing matched, rather than
+  a skipped row). Resolved once and reused across every recipe that contains the same ingredient
+- **recipe_ingredient_links** — id, recipe_id (FK → recipes.id), ingredient_index (position in
+  recipe_translations.ingredients), ingredient_id (FK → ingredients.id), raw_text,
+  estimated_grams, grams_source (`api_lookup` \| `claude_estimate`); unique on
+  (recipe_id, ingredient_index). The only nutrition data actually stored — see
+  [Design Decisions](#design-decisions), "Ingredient nutrition"
+- **nutrition_jobs** — id, recipe_id (FK → recipes.id), status
+  (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Created and queued by the
+  worker itself (`handlers._enqueue_nutrition_job`), automatically, right after a successful
+  import — not by an API route; mirrors `import_jobs`' shape but simpler (no `pending` gate — it's
+  queued immediately)
+- **ingredient_refresh_jobs** — id, status (`queued` \| `processing` \| `done` \| `failed`), error,
+  ingredients_updated (nullable — how many `ingredients` rows the job actually changed), created_at.
+  Global, not per-recipe — created by `POST /ingredients/refresh`; `GET /ingredients/refresh`
+  returns the latest one (or `{"status": "never_run"}` if none exists yet)
 
 ## Deployment
 
@@ -447,9 +583,9 @@ Decisions](#design-decisions).
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 56 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected. Settings: `GET`/`PATCH /settings` require admin, secrets never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), a changed `admin_password` is reflected immediately by `/auth/login`, an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields |
-| Worker              | `pytest`                           | 32 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language; each failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache) |
-| Frontend            | Vitest + React Testing Library     | 36 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure. `SettingsManager`: loads and displays current settings, secret fields stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, shows a success message on save and the server error on failure |
+| API backend        | `pytest` + FastAPI `TestClient`    | 69 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected. Settings: `GET`/`PATCH /settings` require admin, secrets (including `calorie_ninjas_api_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), a changed `admin_password` is reflected immediately by `/auth/login`, an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes |
+| Worker              | `pytest`                           | 65 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client) and `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams + servings parsing), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; an unexpected error inside the enqueue helper itself is swallowed the same way; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache). `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` and sets `estimated_servings` on success, prefers a CalorieNinjas gram figure over Claude's own estimate when one matches, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id) |
+| Frontend            | Vitest + React Testing Library     | 45 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure. `SettingsManager`: loads and displays current settings, secret fields (including the CalorieNinjas key) stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -530,6 +666,40 @@ Notes on the current setup:
   rate limit from the Settings form and clicking **Apply** persisted immediately (`GET /settings`
   reflected it right away, and it survived a full page reload) with no container restart of any
   kind — confirming the live-apply requirement this feature was built around.
+- Ingredient nutrition was verified end to end against a real, already-imported recipe: clicking
+  **Calculează valori nutriționale** ("Enrich nutrition") in the browser showed
+  "Valori nutriționale: se calculează…" immediately, and settled to "Valori nutriționale:
+  finalizat" a few seconds later via the same 3s poll used elsewhere — confirmed in the worker
+  logs that the job was consumed off the new `nutrition_jobs` queue and made a real
+  `POST https://api.anthropic.com/v1/messages` call, and in Postgres that it correctly created
+  nine `ingredients` rows (one per ingredient line) and nine `recipe_ingredient_links` rows.
+  Since this environment has no `USDA_API_KEY` configured, every ingredient correctly fell back to
+  the zeroed-placeholder path (`usda_fdc_id IS NULL`, `grams_source='claude_estimate'`) rather
+  than failing the job — Claude's own gram estimates (e.g. "1 small onion" → 50g) and servings
+  estimate (2) still came through correctly. The front office recipe page then showed a per-
+  ingredient gram annotation on every line and the full nutrition panel (icons, per-serving
+  macros, "Serves ~2" badge); the backoffice Settings page showed the new "Cheie API USDA
+  FoodData Central" field, correctly marked "Nesetat" (not set).
+- The backoffice split and the "Reparse all ingredients" button were also verified live: the new
+  Recipes/Settings sub-nav renders and switches correctly (`/backoffice` and
+  `/backoffice/settings`, both gated behind the same login), and clicking **Reparsează toate
+  ingredientele** with no USDA key configured correctly queued a job, was picked up by the worker
+  off the third (`ingredient_refresh_jobs`) queue, and settled to "Eșuat." with the exact message
+  `handle_ingredient_refresh_job` raises for a missing key — confirmed directly in Postgres
+  (`ingredient_refresh_jobs` row: `status=FAILED`, matching `error` text) as well as in the UI.
+- The USDA → CalorieNinjas swap was verified live with a real API key against the real
+  `api.calorieninjas.com` service, not just mocked unit tests: `PATCH /settings` with a real
+  CalorieNinjas key confirmed `calorie_ninjas_api_key_is_set: true`, and enriching a real recipe
+  made real `GET api.calorieninjas.com/v1/nutrition` calls (visible in the worker logs, all
+  `HTTP 200`). One recipe's totals initially came back all zero — traced to stale, already-zeroed
+  `Ingredient` rows left over from earlier testing before the real key existed, reused correctly by
+  the by-name caching design rather than a bug — and running **"Reparse all ingredients"** fixed
+  them in one global job, confirming that feature does exactly what it was built for. Separately,
+  live `curl` testing against CalorieNinjas surfaced the decimal-quantity parser bug described above
+  (`"5.5 medium tomato"` → `serving_size_g: 6765`, i.e. `55 × 123g`, not `5.5 × 123g ≈ 676g`,
+  reproduced with a second food too); after adding the rounding workaround and restarting the
+  worker, re-enriching the same recipe resolved that line to `738g` (`6 × 123g`, matching the
+  rounded quantity) instead.
 
 Conventions:
 - Unit tests live next to the code they cover (`api/app/tests/test_*.py`, `worker/app/tests/test_*.py`,
@@ -585,9 +755,10 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   any protected call comes back `401` (expired token, or `JWT_SECRET` rotated) instead of every form
   independently showing a stale error forever.
 - **Admin-editable settings** — `SUPPORTED_LANGUAGES`, `DEFAULT_LANGUAGE`, `ADMIN_PASSWORD`,
-  `ANTHROPIC_API_KEY`, and the import pipeline's rate limit/timeout/HTML-size/image-size knobs live
-  in a single-row `app_settings` Postgres table (`id=1`), not `.env`, and are editable from a back
-  office **Settings** page (`SettingsManager` → `GET`/`PATCH /settings`). Two other approaches were
+  `ANTHROPIC_API_KEY`, `CALORIE_NINJAS_API_KEY`, and the import pipeline's rate limit/timeout/HTML-size/
+  image-size knobs live in a single-row `app_settings` Postgres table (`id=1`), not `.env`, and are
+  editable from a back office **Settings** page (`SettingsManager` → `GET`/`PATCH /settings`). Two
+  other approaches were
   considered and rejected: rewriting `.env` and restarting the affected containers would need the
   API container to hold the Docker socket to restart itself/`worker` — giving a back-office web form
   host-level control over the Docker daemon, a real privilege escalation for what's meant to be a
@@ -607,6 +778,89 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   editable from the same login it protects (`JWT_SECRET`), or, for `VITE_API_BASE_URL`, physically
   impossible to hot-apply since Vite bakes it into the frontend's JS bundle at build time, not
   something a runtime settings row could ever change.
+- **Ingredient nutrition** — recipes rarely give exact weights ("1 onion," "a pinch of salt"), and
+  there's no scrapeable public source for "how many grams is 1 onion." The original choice was USDA
+  FoodData Central (free, official, both a nutrient panel and portion-weight data in one place), but
+  its public API turned out to be effectively unreachable in practice — the signup page 502'd, and
+  the API itself failed with what looked like bot protection across multiple browsers/networks — so
+  it was replaced with the **CalorieNinjas API**, a free-tier nutrition API that takes a single
+  natural-language query (e.g. `"1 medium onion"` or `"100g onion"`) and returns both a nutrient
+  panel and a `serving_size_g` figure for that exact phrase, no separate search-then-lookup dance
+  required. Claude is used only to *parse* the messy, multi-language ingredient text into structured
+  `(food_name, quantity, unit)` — a text-understanding task it's good at — never to invent the
+  nutrition numbers themselves, since fabricated-but-confident nutrition figures are a worse failure
+  mode than an admittedly-approximate lookup. When CalorieNinjas has no match for a line, the worker
+  falls back to Claude's own gram guess rather than dropping the ingredient, and records which
+  source won (`grams_source: api_lookup | claude_estimate`) so that distinction isn't hidden.
+  Resolution runs once per recipe, not once per language translation — ingredient lines across
+  languages are assumed to stay in the same order/count (a Claude-emits-parallel-arrays assumption
+  already made by recipe extraction itself), so the same `ingredient_index` values work for
+  whichever translation the front office happens to be displaying.
+  <br><br>
+  This also simplified the design compared to the original USDA plan: instead of a
+  search-for-a-food-id call followed by a separate portion-matching step (fuzzy-matching a parsed
+  unit like "medium" against a list of USDA portion descriptions), it's **one CalorieNinjas call per
+  lookup** — the per-100g cache call (`"100g <name>"`) and the per-line gram call (the exact
+  quantity+unit+food phrase) are each a single query that returns a directly usable answer, with no
+  separate matching logic to maintain. The one wrinkle: CalorieNinjas' own query parser has a
+  confirmed bug where a decimal quantity like `5.5` gets its decimal point stripped and is
+  misread as `55`, throwing the returned `serving_size_g` off by roughly 10x (`"5.5 medium tomato"`
+  came back as if it were `"55 medium tomato"`). The worker works around this by rounding the
+  quantity to the nearest whole number before building the query string
+  (`nutrition_handlers._quantity_for_query`) — a small precision trade-off against an order-of-
+  magnitude error.
+  <br><br>
+  What's stored vs. computed is the other half of this decision: the ingredient-line → canonical-
+  ingredient + gram-estimate *mapping* (`recipe_ingredient_links`) is expensive to produce (a
+  Claude call plus CalorieNinjas lookups) and doesn't change on its own, so it's persisted. A
+  recipe's actual calories/protein/carbs/sugars/fat *totals* are cheap to produce from that mapping
+  (one join + sum), so they're **never** stored — `GET /recipes/{id}/nutrition` computes them fresh
+  on every request, which means editing an `Ingredient` row (e.g. correcting a bad match) instantly
+  corrects every recipe that uses it, with nothing to invalidate or re-run.
+  <br><br>
+  The enrichment job runs in the **same worker container** as recipe import, on a second RabbitMQ
+  queue (`nutrition_jobs`) consumed on the same connection — not a separate service, since it's
+  the same kind of work (an async job triggered by the import pipeline) and splitting it would only
+  add another container, queue, and deploy step for no real isolation benefit at this scale.
+  `ingredients` rows are also reused across recipes (matched by normalized name — CalorieNinjas has
+  no stable per-food id the way a USDA `fdc_id` did) so a common ingredient like "onion" only costs
+  a real lookup once, not once per recipe.
+  <br><br>
+  Triggering was originally a **per-recipe button** in `RecipeManager` (`POST
+  /recipes/{id}/nutrition`) that an admin had to remember to click after every import. That's an
+  unnecessary manual step for something that should always happen — every imported recipe needs
+  nutrition data, there's no case where an admin would deliberately skip it — so it was replaced
+  with an automatic trigger: `handlers.handle_import_job` creates the `NutritionJob` row and
+  publishes it itself, right after a successful import commits (see `_enqueue_nutrition_job` in
+  `worker/app/handlers.py`), the same way the old button's `POST` endpoint used to. That endpoint
+  and the button were removed rather than kept around as an unused manual-retry path — if
+  enrichment fails for one recipe (e.g. a transient CalorieNinjas error), there's currently no way
+  to retry just that recipe short of re-importing it; this was a deliberate simplicity trade-off,
+  revisit if that turns out to matter in practice. A one-time backfill (the same
+  `_enqueue_nutrition_job` helper, run manually once for every pre-existing recipe with no
+  `recipe_ingredient_links` yet) caught every recipe that predated this change.
+- **Ingredient data refresh is global, not per-recipe** — the natural first instinct for "the
+  numbers are wrong/missing, fix them" would be to re-enrich the affected recipe, but that wouldn't
+  actually help even if a per-recipe retry existed: `_get_or_create_ingredient` reuses an existing
+  `Ingredient` row by name without re-querying CalorieNinjas, so reparsing a recipe never refreshes
+  an ingredient it's already seen. This matters concretely for the most common case — an admin adds
+  a CalorieNinjas API key *after* some recipes were already imported (and auto-enriched) without
+  one, leaving their ingredients at zeroed placeholder values — re-importing those recipes wouldn't
+  fix a thing, and they can't be re-imported anyway without duplicating them.
+  **"Reparse all ingredients"** (`POST /ingredients/refresh`, own `ingredient_refresh_jobs` queue,
+  same worker container) instead operates directly on the `ingredients` table: for each row, a
+  fresh `"100g <name>"` lookup. It never touches Claude or any recipe's ingredient list — only the
+  shared nutrition-reference data — and one ingredient's CalorieNinjas failure doesn't stop the
+  rest, same "skip, don't fail the batch" pattern used throughout this worker.
+- **Backoffice split into Recipes/Settings pages** — `SettingsManager` kept growing (languages,
+  three secrets, five pipeline-tuning numbers, now the ingredient-refresh panel) at the bottom of
+  the same single `/backoffice` page as categories, import, and the recipe list, pushing genuinely
+  different concerns — "manage content" vs. "configure the system" — into one long scroll. Nested
+  React Router routes (`/backoffice` → Recipes, `/backoffice/settings` → Settings) behind a small
+  `BackofficeLayout` sub-nav split them without touching the top-level nav, auth gate, or any
+  existing manager component — `CategoryManager`/`ImportManager`/`RecipeManager` moved into a
+  `RecipesPage` wrapper, `SettingsManager` + the new `IngredientRefreshPanel` into a `SettingsPage`
+  wrapper, neither manager itself was touched.
 - **Guard against pasting a URL into the manual "Add recipe" form** — a real, repeated failure
   mode in practice: the back office has two separate forms (`ImportManager` for real URL imports,
   `RecipeManager` for hand-authoring), and a URL pasted into the latter's title or an ingredient

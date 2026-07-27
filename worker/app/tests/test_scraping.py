@@ -10,6 +10,7 @@ def _snapshot(**overrides: object) -> SettingsSnapshot:
         supported_languages="ro,en",
         default_language="ro",
         anthropic_api_key="",
+        calorie_ninjas_api_key="",
         default_rate_limit_requests_per_minute=6,
         scrape_timeout_seconds=15.0,
         max_html_chars=200_000,

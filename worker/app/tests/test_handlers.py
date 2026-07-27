@@ -11,7 +11,15 @@ from app import handlers
 from app.claude_client import RecipeExtractionError
 from app.database import Base
 from app.handlers import handle_import_job
-from app.models import ImportJob, ImportJobStatus, Recipe, RecipeStatus, RecipeTranslation
+from app.models import (
+    ImportJob,
+    ImportJobStatus,
+    NutritionJob,
+    NutritionJobStatus,
+    Recipe,
+    RecipeStatus,
+    RecipeTranslation,
+)
 from app.scraping import ScrapeDisallowedError
 
 
@@ -78,6 +86,12 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
         "process_images",
         lambda urls, app_settings: process_images_calls.append(urls) or ["/images/stored.jpg"],
     )
+    published = []
+    monkeypatch.setattr(
+        handlers,
+        "publish_nutrition_job",
+        lambda job_id, recipe_id: published.append((job_id, recipe_id)),
+    )
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
 
@@ -101,6 +115,64 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     assert by_language["ro"].title == "Prăjitură"
     assert by_language["en"].title == "Cake"
     assert by_language["en"].ingredients == ["flour", "sugar"]
+
+    # A successful import auto-enqueues nutrition enrichment — no more manual "Enrich nutrition"
+    # button; see README Design Decisions ("Ingredient nutrition").
+    nutrition_job = db_session.scalars(select(NutritionJob)).one()
+    assert nutrition_job.recipe_id == recipe.id
+    assert nutrition_job.status == NutritionJobStatus.QUEUED
+    assert published == [(nutrition_job.id, recipe.id)]
+
+
+def test_handle_import_job_marks_nutrition_job_failed_when_publish_fails(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The import itself already succeeded — a broken queue publish for the *follow-up* nutrition
+    # job must not turn a successful import into a reported failure.
+    job = _create_job(db_session)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(
+        handlers, "extract_recipe", lambda html, languages, api_key: _TWO_LANGUAGE_EXTRACTION
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+
+    def _raise_publish(job_id: int, recipe_id: int) -> None:
+        raise RuntimeError("rabbitmq unreachable")
+
+    monkeypatch.setattr(handlers, "publish_nutrition_job", _raise_publish)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert job.error is None
+
+    nutrition_job = db_session.scalars(select(NutritionJob)).one()
+    assert nutrition_job.status == NutritionJobStatus.FAILED
+    assert "failed to publish to queue" in nutrition_job.error
+
+
+def test_handle_import_job_still_succeeds_when_nutrition_enqueue_itself_raises(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(db_session)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(
+        handlers, "extract_recipe", lambda html, languages, api_key: _TWO_LANGUAGE_EXTRACTION
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+
+    def _raise(db: object, recipe_id: int) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(handlers, "_enqueue_nutrition_job", _raise)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert job.error is None
+    assert db_session.scalars(select(Recipe)).first() is not None
 
 
 def test_handle_import_job_fails_when_robots_disallow(

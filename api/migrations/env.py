@@ -9,7 +9,11 @@ from app.models import (  # noqa: F401  (registers models on Base.metadata)
     AppSettings,
     Category,
     ImportJob,
+    Ingredient,
+    IngredientRefreshJob,
+    NutritionJob,
     Recipe,
+    RecipeIngredientLink,
     RecipeTranslation,
 )
 

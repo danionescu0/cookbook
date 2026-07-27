@@ -79,3 +79,36 @@ def test_extract_recipe_uses_the_given_api_key(monkeypatch: pytest.MonkeyPatch) 
     claude_client.extract_recipe("<html></html>", ["ro"], "sk-ant-live-key")
 
     assert received_keys == ["sk-ant-live-key"]
+
+
+def test_parse_ingredients_for_nutrition_returns_tool_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = {
+        "estimated_servings": 4,
+        "items": [
+            {
+                "line_index": 0,
+                "food_name": "onion",
+                "quantity": 1,
+                "unit": "medium",
+                "estimated_grams": 110,
+            }
+        ],
+    }
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "parsed_ingredients", expected)])
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    result = claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
+
+    assert result == expected
+
+
+def test_parse_ingredients_for_nutrition_raises_when_no_tool_use_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("text")])
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    with pytest.raises(claude_client.IngredientParseError):
+        claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")

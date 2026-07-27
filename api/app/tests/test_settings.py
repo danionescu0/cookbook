@@ -22,9 +22,11 @@ def test_get_settings_returns_defaults_and_masks_secrets(client: TestClient) -> 
     assert body["image_max_dimension"] == 1600
     assert body["image_max_size_kb"] == 500
     assert body["admin_password_is_set"] is True
+    assert body["calorie_ninjas_api_key_is_set"] is False
     # No raw secret value ever appears in the response body.
     assert "admin_password" not in body
     assert "anthropic_api_key" not in body
+    assert "calorie_ninjas_api_key" not in body
 
 
 def test_patch_settings_requires_admin(unauthenticated_client: TestClient) -> None:
@@ -132,6 +134,17 @@ def test_patch_settings_updates_anthropic_api_key(client: TestClient) -> None:
 
     assert response.status_code == 200
     assert response.json()["anthropic_api_key_is_set"] is True
+
+
+def test_patch_settings_updates_calorie_ninjas_api_key(client: TestClient) -> None:
+    before = client.get("/settings").json()
+    assert before["calorie_ninjas_api_key_is_set"] is False
+    assert "calorie_ninjas_api_key" not in before
+
+    response = client.patch("/settings", json={"calorie_ninjas_api_key": "calorie-ninjas-test-key"})
+
+    assert response.status_code == 200
+    assert response.json()["calorie_ninjas_api_key_is_set"] is True
 
 
 def test_patch_settings_partial_update_leaves_other_fields_untouched(client: TestClient) -> None:

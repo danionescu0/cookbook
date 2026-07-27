@@ -12,6 +12,7 @@ interface FormState {
   defaultLanguage: string;
   adminPassword: string;
   anthropicApiKey: string;
+  calorieNinjasApiKey: string;
   rateLimit: string;
   scrapeTimeoutSeconds: string;
   maxHtmlChars: string;
@@ -25,6 +26,7 @@ function toFormState(settings: Settings): FormState {
     defaultLanguage: settings.default_language,
     adminPassword: "",
     anthropicApiKey: "",
+    calorieNinjasApiKey: "",
     rateLimit: String(settings.default_rate_limit_requests_per_minute),
     scrapeTimeoutSeconds: String(settings.scrape_timeout_seconds),
     maxHtmlChars: String(settings.max_html_chars),
@@ -96,6 +98,7 @@ export function SettingsManager() {
         default_language: form.defaultLanguage.trim(),
         ...(form.adminPassword ? { admin_password: form.adminPassword } : {}),
         ...(form.anthropicApiKey ? { anthropic_api_key: form.anthropicApiKey } : {}),
+        ...(form.calorieNinjasApiKey ? { calorie_ninjas_api_key: form.calorieNinjasApiKey } : {}),
         default_rate_limit_requests_per_minute: Number(form.rateLimit),
         scrape_timeout_seconds: Number(form.scrapeTimeoutSeconds),
         max_html_chars: Number(form.maxHtmlChars),
@@ -174,6 +177,15 @@ export function SettingsManager() {
           value={form.anthropicApiKey}
           placeholder={secretPlaceholder(settings.anthropic_api_key_is_set)}
           onChange={(v) => update({ anthropicApiKey: v })}
+        />
+        <Field
+          id="settings-calorie-ninjas-api-key"
+          type="password"
+          label={t.settingsManager.calorieNinjasApiKeyLabel}
+          help={t.settingsManager.calorieNinjasApiKeyHelp}
+          value={form.calorieNinjasApiKey}
+          placeholder={secretPlaceholder(settings.calorie_ninjas_api_key_is_set)}
+          onChange={(v) => update({ calorieNinjasApiKey: v })}
         />
         <Field
           id="settings-rate-limit"

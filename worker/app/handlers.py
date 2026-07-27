@@ -8,11 +8,38 @@ from sqlalchemy.orm import Session
 
 from app.claude_client import RecipeExtractionError, extract_recipe
 from app.images import process_images
-from app.models import ImportJob, ImportJobStatus, Recipe, RecipeStatus, RecipeTranslation
+from app.models import (
+    ImportJob,
+    ImportJobStatus,
+    NutritionJob,
+    NutritionJobStatus,
+    Recipe,
+    RecipeStatus,
+    RecipeTranslation,
+)
+from app.queue import publish_nutrition_job
 from app.scraping import ScrapeDisallowedError, fetch_page
 from app.settings_service import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _enqueue_nutrition_job(db: Session, recipe_id: int) -> None:
+    # Mirrors what the old manual "Enrich nutrition" button used to do via
+    # POST /recipes/{id}/nutrition — enrichment is now automatic, triggered right after a
+    # successful import instead of by an admin click. See README Design Decisions
+    # ("Ingredient nutrition").
+    job = NutritionJob(recipe_id=recipe_id, status=NutritionJobStatus.QUEUED)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    try:
+        publish_nutrition_job(job.id, recipe_id)
+    except Exception as exc:
+        job.status = NutritionJobStatus.FAILED
+        job.error = f"failed to publish to queue: {exc}"
+        db.commit()
 
 
 def handle_import_job(body: bytes, db: Session) -> None:
@@ -74,9 +101,19 @@ def handle_import_job(body: bytes, db: Session) -> None:
             translations=translations,
         )
         db.add(recipe)
+        db.flush()  # assigns recipe.id, needed below, without committing yet
 
         job.status = ImportJobStatus.DONE
         db.commit()
+
+        try:
+            _enqueue_nutrition_job(db, recipe.id)
+        except Exception:
+            # The import itself already succeeded and committed above — a problem enqueueing
+            # nutrition enrichment (e.g. a DB hiccup) must not turn a successful import into a
+            # reported failure.
+            logger.exception("failed to auto-enqueue nutrition job for recipe %s", recipe.id)
+            db.rollback()
     except ScrapeDisallowedError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = str(exc)

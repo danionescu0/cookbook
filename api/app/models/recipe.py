@@ -23,6 +23,9 @@ class Recipe(Base):
     status: Mapped[RecipeStatus] = mapped_column(
         Enum(RecipeStatus, native_enum=False), default=RecipeStatus.APPROVED
     )
+    # Set by the nutrition-enrichment job (see nutrition_job.py), not the original import — null
+    # until an admin clicks "Enrich nutrition" for this recipe.
+    estimated_servings: Mapped[int | None] = mapped_column(nullable=True)
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

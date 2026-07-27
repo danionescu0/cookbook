@@ -9,11 +9,22 @@ from pika.spec import Basic, BasicProperties
 from app.config import settings
 from app.database import SessionLocal
 from app.handlers import handle_import_job
-from app.models import ImportJob, ImportJobStatus
+from app.ingredient_refresh_handlers import handle_ingredient_refresh_job
+from app.models import (
+    ImportJob,
+    ImportJobStatus,
+    IngredientRefreshJob,
+    IngredientRefreshJobStatus,
+    NutritionJob,
+    NutritionJobStatus,
+)
+from app.nutrition_handlers import handle_nutrition_job
 
 logger = logging.getLogger(__name__)
 
 IMPORT_JOBS_QUEUE = "import_jobs"
+NUTRITION_JOBS_QUEUE = "nutrition_jobs"
+INGREDIENT_REFRESH_JOBS_QUEUE = "ingredient_refresh_jobs"
 
 
 def _on_message(
@@ -47,6 +58,62 @@ def _on_message(
     channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
+def _on_nutrition_message(
+    channel: BlockingChannel,
+    method: Basic.Deliver,
+    properties: BasicProperties,
+    body: bytes,
+) -> None:
+    db = SessionLocal()
+    try:
+        handle_nutrition_job(body, db)
+    except Exception as exc:
+        # Same reasoning as _on_message above: handle_nutrition_job already catches the failure
+        # modes it knows about, so anything escaping here is unexpected and must still be
+        # recorded rather than leaving the job stuck at "processing" forever.
+        logger.exception("unhandled error processing nutrition job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            job = db.get(NutritionJob, payload.get("job_id"))
+            if job is not None:
+                job.status = NutritionJobStatus.FAILED
+                job.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record nutrition job failure after crash")
+    finally:
+        db.close()
+    channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
+def _on_ingredient_refresh_message(
+    channel: BlockingChannel,
+    method: Basic.Deliver,
+    properties: BasicProperties,
+    body: bytes,
+) -> None:
+    db = SessionLocal()
+    try:
+        handle_ingredient_refresh_job(body, db)
+    except Exception as exc:
+        # Same reasoning as the other two callbacks above.
+        logger.exception("unhandled error processing ingredient refresh job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            job = db.get(IngredientRefreshJob, payload.get("job_id"))
+            if job is not None:
+                job.status = IngredientRefreshJobStatus.FAILED
+                job.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record ingredient refresh job failure after crash")
+    finally:
+        db.close()
+    channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
 def connect_with_retry(
     max_attempts: int = 10, delay_seconds: float = 3.0
 ) -> pika.BlockingConnection:
@@ -67,10 +134,23 @@ def run() -> None:
     connection = connect_with_retry()
     channel = connection.channel()
     channel.queue_declare(queue=IMPORT_JOBS_QUEUE, durable=True)
+    channel.queue_declare(queue=NUTRITION_JOBS_QUEUE, durable=True)
+    channel.queue_declare(queue=INGREDIENT_REFRESH_JOBS_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=IMPORT_JOBS_QUEUE, on_message_callback=_on_message)
+    channel.basic_consume(queue=NUTRITION_JOBS_QUEUE, on_message_callback=_on_nutrition_message)
+    channel.basic_consume(
+        queue=INGREDIENT_REFRESH_JOBS_QUEUE, on_message_callback=_on_ingredient_refresh_message
+    )
 
-    logger.info("worker started, waiting for import jobs on %s", IMPORT_JOBS_QUEUE)
+    # One worker process/container consumes all three queues on the same connection — see README
+    # Design Decisions ("Ingredient nutrition") for why this wasn't split into a separate service.
+    logger.info(
+        "worker started, waiting for jobs on %s, %s, and %s",
+        IMPORT_JOBS_QUEUE,
+        NUTRITION_JOBS_QUEUE,
+        INGREDIENT_REFRESH_JOBS_QUEUE,
+    )
     try:
         channel.start_consuming()
     except KeyboardInterrupt:
