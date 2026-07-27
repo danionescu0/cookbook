@@ -6,6 +6,7 @@ go live.
 
 ## Contents
 
+- [Screenshots](#screenshots)
 - [Status](#status)
 - [Features](#features)
 - [Architecture](#architecture)
@@ -18,6 +19,30 @@ go live.
 - [Testing](#testing)
 - [Design Decisions](#design-decisions)
 - [Original Spec](#original-spec)
+
+## Screenshots
+
+**Front office** — public recipe browsing, filterable by category, with recipes that were
+scraped and cleaned up by the import pipeline:
+
+<img src="docs/screenshots/frontoffice-home.jpg" alt="Recipe grid on the front office home page, filterable by category" width="800">
+
+Recipe detail page showing the parsed title, image, description, ingredients, and numbered steps:
+
+<img src="docs/screenshots/frontoffice-recipe-detail.jpg" alt="Recipe detail page with parsed ingredients and steps" width="800">
+
+**Back office** — JWT-gated admin area (see [Design Decisions](#design-decisions)):
+
+<img src="docs/screenshots/backoffice-login.jpg" alt="Back office login form" width="800">
+
+Category management and the URL import queue, which tracks each scrape job through
+pending → queued → fetching → processing → done:
+
+<img src="docs/screenshots/backoffice-categories-import.jpg" alt="Back office category manager and import-from-URL queue" width="800">
+
+Recipe manager, where imported recipes are previewed and approved before they go live:
+
+<img src="docs/screenshots/backoffice-recipes.jpg" alt="Back office recipe manager with approve/delete actions" width="800">
 
 ## Status
 
