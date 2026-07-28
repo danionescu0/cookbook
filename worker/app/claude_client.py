@@ -157,6 +157,47 @@ _PARSE_RECIPE_TEXT_TOOL = {
 }
 
 
+_TRANSLATE_RECIPE_TOOL = {
+    "name": "translated_recipe",
+    "description": (
+        "A recipe's title, description, ingredients, steps, and tips translated from one "
+        "language into each of the given target languages. This is a faithful translation of "
+        "already-clean, just-edited content — not a fresh extraction — so the same number of "
+        "ingredient/step/tip lines, in the same order, with the same quantities, must come back "
+        "for every target language."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "translations": {
+                "type": "array",
+                "description": "One entry per target language code.",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "language": {"type": "string"},
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "ingredients": {"type": "array", "items": {"type": "string"}},
+                        "steps": {"type": "array", "items": {"type": "string"}},
+                        "tips": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": [
+                        "language",
+                        "title",
+                        "description",
+                        "ingredients",
+                        "steps",
+                        "tips",
+                    ],
+                },
+            },
+        },
+        "required": ["translations"],
+    },
+}
+
+
 class RecipeExtractionError(Exception):
     pass
 
@@ -249,6 +290,39 @@ def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dic
 
     for block in response.content:
         if block.type == "tool_use" and block.name == "extracted_recipe_text":
+            return block.input
+
+    raise RecipeExtractionError("Claude did not return a structured recipe")
+
+
+def translate_recipe(source: dict, target_languages: list[str], api_key: str) -> dict:
+    languages_str = ", ".join(target_languages)
+    prompt_lines = [
+        "Translate this recipe faithfully into each of these language codes: "
+        f"{languages_str}. Keep the same number of ingredient, step, and tip lines in the same "
+        "order, with the same quantities — this is a translation of content that was just "
+        "hand-edited, not a fresh recipe extraction, so nothing should be added, removed, or "
+        "reinterpreted.",
+        "",
+        f"Title: {source.get('title', '')}",
+        f"Description: {source.get('description', '')}",
+        "Ingredients:",
+        *source.get("ingredients", []),
+        "Steps:",
+        *source.get("steps", []),
+        "Tips:",
+        *source.get("tips", []),
+    ]
+    response = _client(api_key).messages.create(
+        model=MODEL,
+        max_tokens=4096,
+        tools=[_TRANSLATE_RECIPE_TOOL],
+        tool_choice={"type": "tool", "name": "translated_recipe"},
+        messages=[{"role": "user", "content": "\n".join(prompt_lines)}],
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "translated_recipe":
             return block.input
 
     raise RecipeExtractionError("Claude did not return a structured recipe")

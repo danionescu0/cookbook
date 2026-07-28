@@ -145,3 +145,39 @@ def test_parse_recipe_from_text_raises_when_no_tool_use_block(
 
     with pytest.raises(claude_client.RecipeExtractionError):
         claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key")
+
+
+def test_translate_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = {
+        "translations": [
+            {
+                "language": "en",
+                "title": "Cake",
+                "description": "A cake.",
+                "ingredients": ["flour", "sugar"],
+                "steps": ["mix", "bake"],
+                "tips": [],
+            }
+        ]
+    }
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", expected)])
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    source = {
+        "title": "Prăjitură",
+        "description": "O prăjitură.",
+        "ingredients": ["făină", "zahăr"],
+        "steps": ["amestecă", "coace"],
+        "tips": [],
+    }
+    result = claude_client.translate_recipe(source, ["en"], "test-key")
+
+    assert result == expected
+
+
+def test_translate_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("text")])
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    with pytest.raises(claude_client.RecipeExtractionError):
+        claude_client.translate_recipe({"title": "Soup"}, ["ro"], "test-key")

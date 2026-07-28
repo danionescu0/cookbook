@@ -55,3 +55,8 @@ class RecipeRead(BaseModel):
     steps: list[str]
     tips: list[str]
     available_languages: list[str]
+
+    # "translating" | "recalculating_nutrition" | None — set while a just-saved edit is still
+    # being propagated to other languages and/or nutrition is being re-enriched. See
+    # routers/recipes.py's _processing_statuses.
+    processing_status: str | None = None

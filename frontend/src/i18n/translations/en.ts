@@ -59,6 +59,10 @@ const en = {
     imagesLabel: "Images",
     removeImage: "Remove image",
     pasteImageHint: "Paste an image, or choose a file — you can add more than one.",
+    processingStatus: {
+      translating: "Translating…",
+      recalculating_nutrition: "Recalculating nutrition…",
+    },
   },
   importManager: {
     heading: "Import from URL",

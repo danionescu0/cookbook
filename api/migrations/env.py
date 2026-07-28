@@ -15,6 +15,7 @@ from app.models import (  # noqa: F401  (registers models on Base.metadata)
     Recipe,
     RecipeIngredientLink,
     RecipeTranslation,
+    TranslationSyncJob,
 )
 
 config = context.config

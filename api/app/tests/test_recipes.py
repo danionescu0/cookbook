@@ -1,4 +1,10 @@
+import pytest
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
+
+from app.models.nutrition_job import NutritionJob, NutritionJobStatus
+from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
+from app.routers import recipes as recipes_router
 
 
 def _create_category(client: TestClient, name: str = "Desserts") -> int:
@@ -178,7 +184,10 @@ def test_approve_recipe_not_found(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_update_recipe_edits_the_current_translation(client: TestClient) -> None:
+def test_update_recipe_edits_the_current_translation(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(recipes_router, "publish_translation_sync_job", lambda *a: None)
     category_id = _create_category(client)
     created = client.post(
         "/recipes",
@@ -216,8 +225,9 @@ def test_update_recipe_edits_the_current_translation(client: TestClient) -> None
 
 
 def test_update_recipe_translation_partial_fields_leave_others_untouched(
-    client: TestClient,
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    monkeypatch.setattr(recipes_router, "publish_translation_sync_job", lambda *a: None)
     category_id = _create_category(client)
     created = client.post(
         "/recipes",
@@ -243,7 +253,10 @@ def test_update_recipe_translation_partial_fields_leave_others_untouched(
     assert body["ingredients"] == ["water"]
 
 
-def test_update_recipe_translation_creates_a_missing_language(client: TestClient) -> None:
+def test_update_recipe_translation_creates_a_missing_language(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(recipes_router, "publish_translation_sync_job", lambda *a: None)
     category_id = _create_category(client)
     created = client.post(
         "/recipes", json={"title": "Soup", "category_id": category_id, "language": "en"}
@@ -260,6 +273,195 @@ def test_update_recipe_translation_creates_a_missing_language(client: TestClient
     assert body["language"] == "ro"
     assert body["title"] == "Ciorbă"
     assert sorted(body["available_languages"]) == ["en", "ro"]
+
+
+def test_update_recipe_translation_edit_enqueues_translation_sync_job(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={
+            "title": "Ciorbă",
+            "category_id": category_id,
+            "language": "ro",
+            "ingredients": ["apă"],
+        },
+    ).json()
+    published = []
+    monkeypatch.setattr(
+        recipes_router,
+        "publish_translation_sync_job",
+        lambda job_id, recipe_id: published.append((job_id, recipe_id)),
+    )
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"ingredients": ["apă", "sare"]}},
+        params={"language": "ro"},
+    )
+
+    assert response.status_code == 200
+    assert len(published) == 1
+    assert published[0][1] == created["id"]
+
+
+def test_update_recipe_title_only_edit_also_enqueues_translation_sync_job(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not just ingredients — title/description/steps/tips need to stay in sync across
+    # languages too, so any edited field triggers propagation.
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={"title": "Ciorbă", "category_id": category_id, "language": "ro", "ingredients": ["apă"]},
+    ).json()
+    published = []
+    monkeypatch.setattr(
+        recipes_router,
+        "publish_translation_sync_job",
+        lambda job_id, recipe_id: published.append((job_id, recipe_id)),
+    )
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"title": "Ciorbă de legume"}},
+        params={"language": "ro"},
+    )
+
+    assert response.status_code == 200
+    assert len(published) == 1
+
+
+def test_update_recipe_editing_non_default_language_enqueues_sync_from_that_language(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Editing "en" (not the site default "ro") must still propagate — sourced *from* the
+    # language actually edited, not always from the default.
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={"title": "Soup", "category_id": category_id, "language": "en", "ingredients": ["water"]},
+    ).json()
+    published = []
+    monkeypatch.setattr(
+        recipes_router,
+        "publish_translation_sync_job",
+        lambda job_id, recipe_id: published.append((job_id, recipe_id)),
+    )
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"ingredients": ["water", "salt"]}},
+        params={"language": "en"},
+    )
+
+    assert response.status_code == 200
+    assert len(published) == 1
+
+
+def test_update_recipe_response_shows_translating_status_right_after_edit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(recipes_router, "publish_translation_sync_job", lambda *a: None)
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={"title": "Ciorbă", "category_id": category_id, "language": "ro", "ingredients": ["apă"]},
+    ).json()
+    assert created["processing_status"] is None
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"ingredients": ["apă", "sare"]}},
+        params={"language": "ro"},
+    )
+
+    assert response.json()["processing_status"] == "translating"
+
+
+def test_list_recipes_shows_processing_status_from_active_jobs(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(recipes_router, "publish_translation_sync_job", lambda *a: None)
+    category_id = _create_category(client)
+    idle = client.post(
+        "/recipes", json={"title": "Idle Soup", "category_id": category_id, "language": "ro"}
+    ).json()
+    busy = client.post(
+        "/recipes", json={"title": "Busy Soup", "category_id": category_id, "language": "ro"}
+    ).json()
+    client.put(
+        f"/recipes/{busy['id']}",
+        json={"translation": {"title": "Busy Soup 2"}},
+        params={"language": "ro"},
+    )
+
+    response = client.get("/recipes")
+
+    statuses = {r["id"]: r["processing_status"] for r in response.json()}
+    assert statuses[idle["id"]] is None
+    assert statuses[busy["id"]] == "translating"
+
+
+def test_get_recipe_shows_recalculating_nutrition_status(
+    client: TestClient, db_session: Session
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id, "language": "ro"}
+    ).json()
+    db_session.add(NutritionJob(recipe_id=created["id"], status=NutritionJobStatus.QUEUED))
+    db_session.commit()
+
+    response = client.get(f"/recipes/{created['id']}")
+
+    assert response.json()["processing_status"] == "recalculating_nutrition"
+
+
+def test_processing_status_prioritizes_translating_over_nutrition(
+    client: TestClient, db_session: Session
+) -> None:
+    # Both active at once shouldn't normally happen mid-pipeline (nutrition only starts once
+    # translating finishes), but if it ever does, "translating" is the earlier phase and should
+    # win rather than flicker between the two on repeated polls.
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id, "language": "ro"}
+    ).json()
+    db_session.add(NutritionJob(recipe_id=created["id"], status=NutritionJobStatus.PROCESSING))
+    db_session.add(
+        TranslationSyncJob(
+            recipe_id=created["id"], source_language="ro", status=TranslationSyncJobStatus.PROCESSING
+        )
+    )
+    db_session.commit()
+
+    response = client.get(f"/recipes/{created['id']}")
+
+    assert response.json()["processing_status"] == "translating"
+
+
+def test_update_recipe_without_translation_does_not_enqueue_sync_job(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    other_category_id = _create_category(client, "Mains")
+    created = client.post(
+        "/recipes",
+        json={"title": "Ciorbă", "category_id": category_id, "language": "ro", "ingredients": ["apă"]},
+    ).json()
+    published = []
+    monkeypatch.setattr(
+        recipes_router,
+        "publish_translation_sync_job",
+        lambda job_id, recipe_id: published.append((job_id, recipe_id)),
+    )
+
+    response = client.put(f"/recipes/{created['id']}", json={"category_id": other_category_id})
+
+    assert response.status_code == 200
+    assert published == []
 
 
 def test_delete_recipe(client: TestClient) -> None:

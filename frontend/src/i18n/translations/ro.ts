@@ -63,6 +63,10 @@ const ro: Translation = {
     imagesLabel: "Imagini",
     removeImage: "Șterge imaginea",
     pasteImageHint: "Lipește o imagine, sau alege un fișier — poți adăuga mai multe.",
+    processingStatus: {
+      translating: "Se traduce…",
+      recalculating_nutrition: "Se recalculează valorile nutriționale…",
+    },
   },
   importManager: {
     heading: "Importă din URL",

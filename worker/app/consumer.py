@@ -17,14 +17,18 @@ from app.models import (
     IngredientRefreshJobStatus,
     NutritionJob,
     NutritionJobStatus,
+    TranslationSyncJob,
+    TranslationSyncJobStatus,
 )
 from app.nutrition_handlers import handle_nutrition_job
+from app.translation_sync_handlers import handle_translation_sync_job
 
 logger = logging.getLogger(__name__)
 
 IMPORT_JOBS_QUEUE = "import_jobs"
 NUTRITION_JOBS_QUEUE = "nutrition_jobs"
 INGREDIENT_REFRESH_JOBS_QUEUE = "ingredient_refresh_jobs"
+TRANSLATION_SYNC_JOBS_QUEUE = "translation_sync_jobs"
 
 
 def _on_message(
@@ -114,6 +118,33 @@ def _on_ingredient_refresh_message(
     channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
+def _on_translation_sync_message(
+    channel: BlockingChannel,
+    method: Basic.Deliver,
+    properties: BasicProperties,
+    body: bytes,
+) -> None:
+    db = SessionLocal()
+    try:
+        handle_translation_sync_job(body, db)
+    except Exception as exc:
+        # Same reasoning as the other callbacks above.
+        logger.exception("unhandled error processing translation sync job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            job = db.get(TranslationSyncJob, payload.get("job_id"))
+            if job is not None:
+                job.status = TranslationSyncJobStatus.FAILED
+                job.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record translation sync job failure after crash")
+    finally:
+        db.close()
+    channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
 def connect_with_retry(
     max_attempts: int = 10, delay_seconds: float = 3.0
 ) -> pika.BlockingConnection:
@@ -136,20 +167,25 @@ def run() -> None:
     channel.queue_declare(queue=IMPORT_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=NUTRITION_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=INGREDIENT_REFRESH_JOBS_QUEUE, durable=True)
+    channel.queue_declare(queue=TRANSLATION_SYNC_JOBS_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=IMPORT_JOBS_QUEUE, on_message_callback=_on_message)
     channel.basic_consume(queue=NUTRITION_JOBS_QUEUE, on_message_callback=_on_nutrition_message)
     channel.basic_consume(
         queue=INGREDIENT_REFRESH_JOBS_QUEUE, on_message_callback=_on_ingredient_refresh_message
     )
+    channel.basic_consume(
+        queue=TRANSLATION_SYNC_JOBS_QUEUE, on_message_callback=_on_translation_sync_message
+    )
 
-    # One worker process/container consumes all three queues on the same connection — see README
+    # One worker process/container consumes all four queues on the same connection — see README
     # Design Decisions ("Ingredient nutrition") for why this wasn't split into a separate service.
     logger.info(
-        "worker started, waiting for jobs on %s, %s, and %s",
+        "worker started, waiting for jobs on %s, %s, %s, and %s",
         IMPORT_JOBS_QUEUE,
         NUTRITION_JOBS_QUEUE,
         INGREDIENT_REFRESH_JOBS_QUEUE,
+        TRANSLATION_SYNC_JOBS_QUEUE,
     )
     try:
         channel.start_consuming()

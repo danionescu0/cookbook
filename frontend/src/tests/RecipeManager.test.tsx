@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecipeManager } from "../backoffice/RecipeManager";
@@ -37,6 +37,7 @@ const cake: Recipe = {
   added_at: "2026-07-23T00:00:00Z",
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
+  processing_status: null,
 };
 const pendingSoup: Recipe = {
   id: 2,
@@ -53,6 +54,7 @@ const pendingSoup: Recipe = {
   added_at: "2026-07-23T00:00:00Z",
   approved_at: null,
   available_languages: ["en"],
+  processing_status: null,
 };
 
 beforeEach(() => {
@@ -208,5 +210,32 @@ describe("RecipeManager", () => {
         expect.any(String)
       )
     );
+  });
+
+  it("shows a processing-status badge and polls until it clears", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.listRecipes
+      .mockResolvedValueOnce([cake])
+      .mockResolvedValueOnce([{ ...cake, processing_status: "translating" }])
+      .mockResolvedValue([cake]);
+    mockedApi.updateRecipe.mockResolvedValue({ ...cake, processing_status: "translating" });
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    expect(await screen.findByText("Translating…")).toBeInTheDocument();
+    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(2); // initial load + reload after save
+
+    // Polling kicks in because the reloaded recipe still has a processing_status.
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(3);
+    await waitFor(() => expect(screen.queryByText("Translating…")).not.toBeInTheDocument());
+
+    // Now settled — no further polling.
+    await act(() => vi.advanceTimersByTimeAsync(3000));
+    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(3);
   });
 });

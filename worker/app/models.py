@@ -178,3 +178,25 @@ class IngredientRefreshJob(Base):
     ingredients_updated: Mapped[int | None] = mapped_column(Integer, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class TranslationSyncJobStatus(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/translation_sync_job.py's TranslationSyncJobStatus.
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class TranslationSyncJob(Base):
+    __tablename__ = "translation_sync_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False)
+    source_language: Mapped[str] = mapped_column(String(10), nullable=False)
+    status: Mapped[TranslationSyncJobStatus] = mapped_column(
+        Enum(TranslationSyncJobStatus, native_enum=False), default=TranslationSyncJobStatus.QUEUED
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

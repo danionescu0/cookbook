@@ -6,6 +6,8 @@ export interface Category {
 
 export type RecipeStatus = "unapproved" | "approved";
 
+export type RecipeProcessingStatus = "translating" | "recalculating_nutrition" | null;
+
 export interface Recipe {
   id: number;
   title: string;
@@ -21,6 +23,7 @@ export interface Recipe {
   added_at: string;
   approved_at: string | null;
   available_languages: string[];
+  processing_status: RecipeProcessingStatus;
 }
 
 export type RecipeDraft = Pick<

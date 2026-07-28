@@ -54,6 +54,15 @@ export function RecipeManager() {
     reload();
   }, [language]);
 
+  // Poll while any recipe is mid-edit-pipeline (translating, or nutrition re-enriching
+  // afterward) — same pattern as ImportManager's job-status polling, since those transitions
+  // only happen in the background worker, not through any action here.
+  useEffect(() => {
+    if (!recipes.some((recipe) => recipe.processing_status)) return;
+    const interval = setInterval(reload, 3000);
+    return () => clearInterval(interval);
+  }, [recipes]);
+
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     if (!title.trim() || categoryId === "") return;
@@ -225,6 +234,11 @@ export function RecipeManager() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-ink">
                 {recipe.title} <em className="text-sm text-ink/50 not-italic">({recipe.status})</em>
+                {recipe.processing_status && (
+                  <span className="ml-2 rounded-full bg-terracotta/10 px-2 py-0.5 text-xs font-medium text-terracotta">
+                    {t.recipeManager.processingStatus[recipe.processing_status]}
+                  </span>
+                )}
               </span>
               <div className="flex flex-wrap gap-2">
                 <button

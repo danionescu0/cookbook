@@ -31,6 +31,7 @@ const cake: Recipe = {
   added_at: "2026-07-23T00:00:00Z",
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
+  processing_status: null,
 };
 
 beforeEach(() => {

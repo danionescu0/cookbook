@@ -7,6 +7,7 @@ from app.models.nutrition_job import NutritionJob, NutritionJobStatus
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_ingredient_link import RecipeIngredientLink
 from app.models.recipe_translation import RecipeTranslation
+from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
 
 __all__ = [
     "AppSettings",
@@ -23,4 +24,6 @@ __all__ = [
     "RecipeIngredientLink",
     "RecipeStatus",
     "RecipeTranslation",
+    "TranslationSyncJob",
+    "TranslationSyncJobStatus",
 ]
