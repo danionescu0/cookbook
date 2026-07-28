@@ -54,6 +54,15 @@ const ro: Translation = {
     ingredients: "Ingrediente",
     steps: "Pași",
     tips: "Sfaturi",
+    edit: "Editează",
+    cancel: "Anulează",
+    save: "Salvează",
+    descriptionLabel: "Descriere",
+    stepsLabel: "Pași (unul pe linie)",
+    tipsLabel: "Sfaturi (unul pe linie)",
+    imagesLabel: "Imagini",
+    removeImage: "Șterge imaginea",
+    pasteImageHint: "Lipește o imagine, sau alege un fișier — poți adăuga mai multe.",
   },
   importManager: {
     heading: "Importă din URL",
@@ -63,6 +72,8 @@ const ro: Translation = {
     add: "Adaugă",
     approve: "Aprobă",
     delete: "Șterge",
+    instagramHint:
+      "Funcționează și linkurile către postări sau reels de Instagram — rețeta este citită din descriere și comentarii, iar o fotografie reprezentativă este preluată automat. Nimic diferit de făcut: lipește linkul și adaugă-l ca pe orice alt URL.",
     statuses: {
       pending: "În așteptare",
       queued: "În coadă",

@@ -11,6 +11,28 @@ function toLines(text: string): string[] {
     .filter(Boolean);
 }
 
+interface EditForm {
+  title: string;
+  description: string;
+  ingredients: string;
+  steps: string;
+  tips: string;
+  categoryId: number | "";
+  images: string[];
+}
+
+function toEditForm(recipe: Recipe): EditForm {
+  return {
+    title: recipe.title,
+    description: recipe.description,
+    ingredients: recipe.ingredients.join("\n"),
+    steps: recipe.steps.join("\n"),
+    tips: recipe.tips.join("\n"),
+    categoryId: recipe.category_id,
+    images: recipe.images,
+  };
+}
+
 export function RecipeManager() {
   const { language, t } = useLanguage();
   const [categories, setCategories] = useState<Category[]>([]);
@@ -20,6 +42,9 @@ export function RecipeManager() {
   const [ingredients, setIngredients] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editForm, setEditForm] = useState<EditForm | null>(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
 
   const reload = () =>
     api.listRecipes(undefined, language).then(setRecipes).catch((e) => setError(String(e)));
@@ -66,6 +91,63 @@ export function RecipeManager() {
     setError(null);
     try {
       await api.approveRecipe(id);
+      await reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const startEdit = (recipe: Recipe) => {
+    setPreviewId(null);
+    setEditingId(recipe.id);
+    setEditForm(toEditForm(recipe));
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditForm(null);
+  };
+
+  const uploadImages = async (files: FileList | File[]) => {
+    setError(null);
+    setUploadingImage(true);
+    try {
+      for (const file of Array.from(files)) {
+        if (!file.type.startsWith("image/")) continue;
+        const { url } = await api.uploadImage(file);
+        setEditForm((form) => (form ? { ...form, images: [...form.images, url] } : form));
+      }
+    } catch (e) {
+      setError(String(e));
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  const removeImage = (url: string) => {
+    setEditForm((form) => (form ? { ...form, images: form.images.filter((i) => i !== url) } : form));
+  };
+
+  const handleSaveEdit = async () => {
+    if (!editForm || editingId === null || editForm.categoryId === "") return;
+    setError(null);
+    try {
+      await api.updateRecipe(
+        editingId,
+        {
+          category_id: editForm.categoryId,
+          images: editForm.images,
+          translation: {
+            title: editForm.title.trim(),
+            description: editForm.description,
+            ingredients: toLines(editForm.ingredients),
+            steps: toLines(editForm.steps),
+            tips: toLines(editForm.tips),
+          },
+        },
+        language
+      );
+      cancelEdit();
       await reload();
     } catch (e) {
       setError(String(e));
@@ -152,6 +234,13 @@ export function RecipeManager() {
                 >
                   {previewId === recipe.id ? t.recipeManager.hidePreview : t.recipeManager.preview}
                 </button>
+                <button
+                  type="button"
+                  onClick={() => (editingId === recipe.id ? cancelEdit() : startEdit(recipe))}
+                  className={secondaryButton}
+                >
+                  {editingId === recipe.id ? t.recipeManager.cancel : t.recipeManager.edit}
+                </button>
                 {recipe.status === "unapproved" && (
                   <button
                     type="button"
@@ -170,6 +259,138 @@ export function RecipeManager() {
                 </button>
               </div>
             </div>
+
+            {editingId === recipe.id && editForm && (
+              <div className="mt-3 flex flex-col gap-3 rounded-md bg-olive-light p-4">
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.titleLabel}
+                  </label>
+                  <input
+                    value={editForm.title}
+                    onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.categoryLabel}
+                  </label>
+                  <select
+                    value={editForm.categoryId}
+                    onChange={(e) =>
+                      setEditForm({ ...editForm, categoryId: Number(e.target.value) })
+                    }
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  >
+                    {categories.map((category) => (
+                      <option key={category.id} value={category.id}>
+                        {category.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.descriptionLabel}
+                  </label>
+                  <textarea
+                    value={editForm.description}
+                    onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                    rows={2}
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.ingredientsLabel}
+                  </label>
+                  <textarea
+                    value={editForm.ingredients}
+                    onChange={(e) => setEditForm({ ...editForm, ingredients: e.target.value })}
+                    rows={3}
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.stepsLabel}
+                  </label>
+                  <textarea
+                    value={editForm.steps}
+                    onChange={(e) => setEditForm({ ...editForm, steps: e.target.value })}
+                    rows={3}
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.tipsLabel}
+                  </label>
+                  <textarea
+                    value={editForm.tips}
+                    onChange={(e) => setEditForm({ ...editForm, tips: e.target.value })}
+                    rows={2}
+                    className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <label className="text-sm font-medium text-ink/70">
+                    {t.recipeManager.imagesLabel}
+                  </label>
+                  <div className="flex flex-wrap gap-3">
+                    {editForm.images.map((image) => (
+                      <div key={image} className="relative">
+                        <img
+                          src={`${BASE_URL}${image}`}
+                          alt=""
+                          className="h-24 w-24 rounded-md object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeImage(image)}
+                          aria-label={t.recipeManager.removeImage}
+                          className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-terracotta text-sm text-white shadow"
+                        >
+                          ×
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <div
+                    onPaste={(e) => {
+                      const files = Array.from(e.clipboardData.files);
+                      if (files.length > 0) uploadImages(files);
+                    }}
+                  >
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      disabled={uploadingImage}
+                      onChange={(e) => e.target.files && uploadImages(e.target.files)}
+                      className="text-sm text-ink/70"
+                    />
+                    <p className="mt-1 text-xs text-ink/50">{t.recipeManager.pasteImageHint}</p>
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <button type="button" onClick={handleSaveEdit} className={primaryButton}>
+                    {t.recipeManager.save}
+                  </button>
+                  <button type="button" onClick={cancelEdit} className={secondaryButton}>
+                    {t.recipeManager.cancel}
+                  </button>
+                </div>
+              </div>
+            )}
 
             {previewId === recipe.id && (
               <div className="mt-3 rounded-md bg-olive-light p-4">

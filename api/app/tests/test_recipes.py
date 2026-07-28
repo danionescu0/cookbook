@@ -178,6 +178,90 @@ def test_approve_recipe_not_found(client: TestClient) -> None:
     assert response.status_code == 404
 
 
+def test_update_recipe_edits_the_current_translation(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "language": "en",
+            "ingredients": ["water"],
+        },
+    ).json()
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={
+            "images": ["/images/new.jpg"],
+            "translation": {
+                "title": "Better Soup",
+                "description": "Now with more flavor.",
+                "ingredients": ["water", "salt"],
+                "steps": ["boil", "serve"],
+            },
+        },
+        params={"language": "en"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "Better Soup"
+    assert body["description"] == "Now with more flavor."
+    assert body["ingredients"] == ["water", "salt"]
+    assert body["steps"] == ["boil", "serve"]
+    assert body["images"] == ["/images/new.jpg"]
+    # tips wasn't included in the update — left untouched, not wiped to [].
+    assert body["tips"] == []
+
+
+def test_update_recipe_translation_partial_fields_leave_others_untouched(
+    client: TestClient,
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "language": "en",
+            "description": "Original description.",
+            "ingredients": ["water"],
+        },
+    ).json()
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"title": "Renamed Soup"}},
+        params={"language": "en"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "Renamed Soup"
+    assert body["description"] == "Original description."
+    assert body["ingredients"] == ["water"]
+
+
+def test_update_recipe_translation_creates_a_missing_language(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id, "language": "en"}
+    ).json()
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"title": "Ciorbă", "ingredients": ["apă"]}},
+        params={"language": "ro"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["language"] == "ro"
+    assert body["title"] == "Ciorbă"
+    assert sorted(body["available_languages"]) == ["en", "ro"]
+
+
 def test_delete_recipe(client: TestClient) -> None:
     category_id = _create_category(client)
     created = client.post(

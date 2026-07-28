@@ -156,12 +156,24 @@ def update_recipe(
     default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
 
-    updates = payload.model_dump(exclude_unset=True)
+    updates = payload.model_dump(exclude_unset=True, exclude={"translation"})
     if "category_id" in updates:
         _ensure_category_exists(db, updates["category_id"])
 
     for field, value in updates.items():
         setattr(recipe, field, value)
+
+    if payload.translation is not None:
+        target_language = language or default_language
+        by_language = {t.language: t for t in recipe.translations}
+        translation = by_language.get(target_language)
+        if translation is None:
+            translation = RecipeTranslation(
+                recipe_id=recipe.id, language=target_language, title="", description=""
+            )
+            recipe.translations.append(translation)
+        for field, value in payload.translation.model_dump(exclude_unset=True).items():
+            setattr(translation, field, value)
 
     db.commit()
     db.refresh(recipe)

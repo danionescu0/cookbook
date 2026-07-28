@@ -71,6 +71,7 @@ export function ImportManager() {
       <h2 id="imports-heading" className="font-serif text-2xl font-semibold text-ink">
         {t.importManager.heading}
       </h2>
+      <p className="mt-1 text-sm text-ink/60">{t.importManager.instagramHint}</p>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex min-w-64 flex-1 flex-col gap-1">

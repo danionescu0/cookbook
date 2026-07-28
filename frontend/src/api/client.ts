@@ -6,6 +6,7 @@ import type {
   Nutrition,
   Recipe,
   RecipeDraft,
+  RecipeUpdate,
   Settings,
   SettingsUpdate,
 } from "../types";
@@ -88,8 +89,34 @@ export const api = {
     request<Recipe>(`/recipes/${id}${language ? `?language=${language}` : ""}`),
   createRecipe: (draft: RecipeDraft) =>
     request<Recipe>("/recipes", { method: "POST", body: JSON.stringify(draft) }),
+  updateRecipe: (id: number, patch: RecipeUpdate, language?: string) =>
+    request<Recipe>(`/recipes/${id}${language ? `?language=${language}` : ""}`, {
+      method: "PUT",
+      body: JSON.stringify(patch),
+    }),
   deleteRecipe: (id: number) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
   approveRecipe: (id: number) => request<Recipe>(`/recipes/${id}/approve`, { method: "POST" }),
+
+  // Multipart, not JSON — bypasses the `request` helper (which always sets
+  // Content-Type: application/json) so the browser can set its own multipart boundary.
+  uploadImage: async (file: File): Promise<{ url: string }> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+    const response = await fetch(`${BASE_URL}/images`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      if (response.status === 401) onUnauthorized?.();
+      const body = await response.text();
+      throw new Error(extractErrorMessage(body) ?? `Request failed (${response.status})`);
+    }
+    return (await response.json()) as { url: string };
+  },
 
   listImportJobs: () => request<ImportJob[]>("/imports"),
   createImportJob: (source: string, categoryId: number) =>

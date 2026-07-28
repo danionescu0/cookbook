@@ -115,6 +115,48 @@ _PARSE_INGREDIENTS_TOOL = {
 }
 
 
+_PARSE_RECIPE_TEXT_TOOL = {
+    "name": "extracted_recipe_text",
+    "description": (
+        "The cleaned-up recipe extracted from a social-media post's caption and comments, "
+        "translated into each requested language. No image list — unlike HTML-page extraction, "
+        "the post's image is already resolved independently of this call."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "translations": {
+                "type": "array",
+                "description": (
+                    "One entry per requested language code. Empty array if no recipe is "
+                    "present in the text at all."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "language": {"type": "string"},
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "ingredients": {"type": "array", "items": {"type": "string"}},
+                        "steps": {"type": "array", "items": {"type": "string"}},
+                        "tips": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": [
+                        "language",
+                        "title",
+                        "description",
+                        "ingredients",
+                        "steps",
+                        "tips",
+                    ],
+                },
+            },
+        },
+        "required": ["translations"],
+    },
+}
+
+
 class RecipeExtractionError(Exception):
     pass
 
@@ -180,3 +222,33 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
             return block.input
 
     raise IngredientParseError("Claude did not return parsed ingredients")
+
+
+def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dict:
+    languages_str = ", ".join(languages)
+    response = _client(api_key).messages.create(
+        model=MODEL,
+        max_tokens=4096,
+        tools=[_PARSE_RECIPE_TEXT_TOOL],
+        tool_choice={"type": "tool", "name": "extracted_recipe_text"},
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are extracting a cooking recipe from a social media post's caption and "
+                    "comments (e.g. an Instagram post or reel). The recipe may be entirely in "
+                    "the caption, or split between the caption and a comment. Ignore unrelated "
+                    "comments (praise, questions, hashtags, engagement bait, other users' posts). "
+                    "Produce one translation for each of these language codes: "
+                    f"{languages_str}. If no recipe is present anywhere in the text, return an "
+                    f"empty translations array. Here is the post's text:\n\n{text}"
+                ),
+            }
+        ],
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "extracted_recipe_text":
+            return block.input
+
+    raise RecipeExtractionError("Claude did not return a structured recipe")

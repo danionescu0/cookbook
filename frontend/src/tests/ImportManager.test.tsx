@@ -53,6 +53,12 @@ afterEach(() => {
 });
 
 describe("ImportManager", () => {
+  it("explains that Instagram links are also supported", async () => {
+    renderManager();
+
+    expect(await screen.findByText(/Instagram post and reel links/)).toBeInTheDocument();
+  });
+
   it("submits a URL and category, creating a pending job", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mockedApi.createImportJob.mockResolvedValue(pendingJob);

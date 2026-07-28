@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -5,7 +7,7 @@ from sqlalchemy.orm import Session
 from app.auth import require_admin
 from app.database import get_db
 from app.models.category import Category
-from app.models.import_job import ImportJob, ImportJobStatus
+from app.models.import_job import ImportJob, ImportJobStatus, ImportJobType
 from app.models.recipe import Recipe
 from app.queue import publish_import_job
 from app.schemas.import_job import ImportJobCreate, ImportJobRead
@@ -15,6 +17,17 @@ from app.schemas.import_job import ImportJobCreate, ImportJobRead
 router = APIRouter(prefix="/imports", tags=["imports"], dependencies=[Depends(require_admin)])
 
 _APPROVABLE_STATUSES = {ImportJobStatus.PENDING, ImportJobStatus.FAILED}
+
+_INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "instagr.am"}
+
+
+def _detect_job_type(source: str) -> ImportJobType:
+    # Instagram posts need a different fetch path entirely (headless-browser rendering rather
+    # than a plain HTML GET — see worker/app/instagram_client.py) since Instagram serves mostly
+    # client-side-rendered content. Detected here, once, at creation time so the rest of the
+    # pipeline (approval, queueing, the worker's dispatch) just branches on job.type.
+    host = (urlparse(source).hostname or "").lower()
+    return ImportJobType.INSTAGRAM if host in _INSTAGRAM_HOSTS else ImportJobType.SINGLE
 
 
 def _get_or_404(db: Session, job_id: int) -> ImportJob:
@@ -50,7 +63,11 @@ def create_import_job(payload: ImportJobCreate, db: Session = Depends(get_db)) -
     _ensure_category_exists(db, payload.category_id)
     _ensure_source_not_already_imported(db, payload.source)
 
-    job = ImportJob(source=payload.source, category_id=payload.category_id)
+    job = ImportJob(
+        source=payload.source,
+        category_id=payload.category_id,
+        type=_detect_job_type(payload.source),
+    )
     db.add(job)
     db.commit()
     db.refresh(job)

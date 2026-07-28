@@ -28,6 +28,21 @@ export type RecipeDraft = Pick<
   "title" | "description" | "ingredients" | "steps" | "tips" | "images" | "language" | "category_id"
 >;
 
+export interface RecipeTranslationUpdate {
+  title?: string;
+  description?: string;
+  ingredients?: string[];
+  steps?: string[];
+  tips?: string[];
+}
+
+export interface RecipeUpdate {
+  category_id?: number;
+  status?: RecipeStatus;
+  images?: string[];
+  translation?: RecipeTranslationUpdate;
+}
+
 export type ImportJobStatus =
   | "pending"
   | "queued"
@@ -39,7 +54,7 @@ export type ImportJobStatus =
 export interface ImportJob {
   id: number;
   category_id: number;
-  type: "single" | "bulk" | "bookmark";
+  type: "single" | "bulk" | "bookmark" | "instagram";
   source: string;
   status: ImportJobStatus;
   error: string | null;

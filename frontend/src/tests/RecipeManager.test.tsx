@@ -11,6 +11,8 @@ vi.mock("../api/client", () => ({
     listCategories: vi.fn(),
     listRecipes: vi.fn(),
     createRecipe: vi.fn(),
+    updateRecipe: vi.fn(),
+    uploadImage: vi.fn(),
     deleteRecipe: vi.fn(),
     approveRecipe: vi.fn(),
   },
@@ -153,4 +155,58 @@ describe("RecipeManager", () => {
     expect(screen.queryByText("A warm soup.")).not.toBeInTheDocument();
   });
 
+  it("edits a recipe's text fields and saves via the API", async () => {
+    const user = userEvent.setup();
+    mockedApi.updateRecipe.mockResolvedValue({ ...cake, title: "Better Cake" });
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+    const titleInput = screen.getAllByDisplayValue("Cake")[0];
+    await user.clear(titleInput);
+    await user.type(titleInput, "Better Cake");
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateRecipe).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({
+          category_id: 1,
+          images: [],
+          translation: expect.objectContaining({ title: "Better Cake" }),
+        }),
+        expect.any(String)
+      )
+    );
+  });
+
+  it("uploads a pasted/selected image in edit mode and can remove it before saving", async () => {
+    const user = userEvent.setup();
+    mockedApi.uploadImage.mockResolvedValue({ url: "/images/new.jpg" });
+    mockedApi.updateRecipe.mockResolvedValue(cake);
+
+    renderManager();
+    await screen.findByText(/Cake/);
+    await user.click(screen.getByRole("button", { name: "Edit" }));
+
+    const file = new File(["fake image bytes"], "photo.png", { type: "image/png" });
+    const fileInput = document.querySelector('input[type="file"]') as HTMLInputElement;
+    await user.upload(fileInput, file);
+
+    await waitFor(() => expect(mockedApi.uploadImage).toHaveBeenCalledWith(file));
+    const thumbnail = await screen.findByRole("button", { name: "Remove image" });
+    expect(document.querySelector('img[src="http://localhost:8000/images/new.jpg"]')).toBeTruthy();
+
+    await user.click(thumbnail);
+    await user.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateRecipe).toHaveBeenCalledWith(
+        1,
+        expect.objectContaining({ images: [] }),
+        expect.any(String)
+      )
+    );
+  });
 });

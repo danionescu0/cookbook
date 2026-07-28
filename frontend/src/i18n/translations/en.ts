@@ -50,6 +50,15 @@ const en = {
     ingredients: "Ingredients",
     steps: "Steps",
     tips: "Tips",
+    edit: "Edit",
+    cancel: "Cancel",
+    save: "Save",
+    descriptionLabel: "Description",
+    stepsLabel: "Steps (one per line)",
+    tipsLabel: "Tips (one per line)",
+    imagesLabel: "Images",
+    removeImage: "Remove image",
+    pasteImageHint: "Paste an image, or choose a file — you can add more than one.",
   },
   importManager: {
     heading: "Import from URL",
@@ -59,6 +68,8 @@ const en = {
     add: "Add",
     approve: "Approve",
     delete: "Delete",
+    instagramHint:
+      "Instagram post and reel links work too — the recipe is read from the caption and comments, and a preview photo is grabbed automatically. Nothing to do differently: paste the link and add it like any other URL.",
     statuses: {
       pending: "Pending",
       queued: "Queued",

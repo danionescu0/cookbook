@@ -11,9 +11,11 @@ from app import handlers
 from app.claude_client import RecipeExtractionError
 from app.database import Base
 from app.handlers import handle_import_job
+from app.instagram_client import InstagramFetchError, InstagramPost
 from app.models import (
     ImportJob,
     ImportJobStatus,
+    ImportJobType,
     NutritionJob,
     NutritionJobStatus,
     Recipe,
@@ -39,8 +41,12 @@ def db_session() -> Generator[Session, None, None]:
         Base.metadata.drop_all(bind=engine)
 
 
-def _create_job(db: Session, source: str = "https://example.com/recipe") -> ImportJob:
-    job = ImportJob(source=source, category_id=1)
+def _create_job(
+    db: Session,
+    source: str = "https://example.com/recipe",
+    type: ImportJobType = ImportJobType.SINGLE,
+) -> ImportJob:
+    job = ImportJob(source=source, category_id=1, type=type)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -250,3 +256,102 @@ def test_handle_import_job_fails_when_translations_empty(
 
 def test_handle_import_job_ignores_unknown_job_id(db_session: Session) -> None:
     handle_import_job(json.dumps({"job_id": 999}).encode(), db_session)
+
+
+_ONE_LANGUAGE_TEXT_EXTRACTION = {
+    "translations": [
+        {
+            "language": "ro",
+            "title": "Batoane cu mere",
+            "description": "",
+            "ingredients": ["mere", "fulgi de ovaz"],
+            "steps": ["amestecă", "coace"],
+            "tips": [],
+        }
+    ]
+}
+
+
+def test_handle_import_job_instagram_inserts_recipe_from_caption_text(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session, source="https://www.instagram.com/p/abc123/", type=ImportJobType.INSTAGRAM
+    )
+    monkeypatch.setattr(
+        handlers,
+        "fetch_instagram_post",
+        lambda url, timeout_seconds: InstagramPost(
+            text="caption + comments", image_url="https://scontent.cdninstagram.com/photo.jpg"
+        ),
+    )
+    monkeypatch.setattr(
+        handlers,
+        "parse_recipe_from_text",
+        lambda text, languages, api_key: _ONE_LANGUAGE_TEXT_EXTRACTION,
+    )
+    process_images_calls = []
+    monkeypatch.setattr(
+        handlers,
+        "process_images",
+        lambda urls, app_settings: process_images_calls.append(urls) or ["/images/ig.jpg"],
+    )
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert job.error is None
+    # The image comes from what fetch_instagram_post resolved (the post's own og:image), not
+    # from anything Claude's text-only extraction returns.
+    assert process_images_calls == [["https://scontent.cdninstagram.com/photo.jpg"]]
+
+    recipe = db_session.scalars(select(Recipe)).one()
+    assert recipe.source_url == job.source
+    assert recipe.images == ["/images/ig.jpg"]
+    translation = db_session.scalars(select(RecipeTranslation)).one()
+    assert translation.title == "Batoane cu mere"
+
+
+def test_handle_import_job_instagram_fails_cleanly_when_fetch_raises(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session, source="https://www.instagram.com/p/private/", type=ImportJobType.INSTAGRAM
+    )
+
+    def _raise(url: str, timeout_seconds: float) -> InstagramPost:
+        raise InstagramFetchError("Instagram asked for a login on this post")
+
+    monkeypatch.setattr(handlers, "fetch_instagram_post", _raise)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.FAILED
+    assert job.error == "Instagram asked for a login on this post"
+    assert db_session.scalars(select(Recipe)).first() is None
+
+
+def test_handle_import_job_instagram_fails_when_no_recipe_in_text(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session, source="https://www.instagram.com/p/norecipe/", type=ImportJobType.INSTAGRAM
+    )
+    monkeypatch.setattr(
+        handlers,
+        "fetch_instagram_post",
+        lambda url, timeout_seconds: InstagramPost(text="just a selfie, no recipe", image_url=None),
+    )
+    monkeypatch.setattr(
+        handlers, "parse_recipe_from_text", lambda text, languages, api_key: {"translations": []}
+    )
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.FAILED
+    assert job.error == "Claude returned no translations"
+    assert db_session.scalars(select(Recipe)).first() is None

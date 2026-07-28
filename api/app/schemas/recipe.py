@@ -17,9 +17,24 @@ class RecipeCreate(BaseModel):
     tips: list[str] = []
 
 
+class RecipeTranslationUpdate(BaseModel):
+    title: str | None = None
+    description: str | None = None
+    ingredients: list[str] | None = None
+    steps: list[str] | None = None
+    tips: list[str] | None = None
+
+
 class RecipeUpdate(BaseModel):
     category_id: int | None = None
     status: RecipeStatus | None = None
+    images: list[str] | None = None
+    # Which translation this applies to comes from the `language` query param (same one GET
+    # already uses to resolve a response) rather than a second field here — an earlier version
+    # had both, and they could silently disagree (caught by a test where the query param and a
+    # separate body field pointed at different languages, and the query param's language quietly
+    # lost). One source of truth removes that whole failure mode.
+    translation: RecipeTranslationUpdate | None = None
 
 
 class RecipeRead(BaseModel):

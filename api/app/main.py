@@ -8,6 +8,7 @@ from app.config import settings
 from app.routers import (
     auth,
     categories,
+    images,
     imports,
     ingredients,
     languages,
@@ -28,6 +29,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(categories.router)
 app.include_router(recipes.router)
+app.include_router(images.router)
 app.include_router(imports.router)
 app.include_router(languages.router)
 app.include_router(nutrition.router)

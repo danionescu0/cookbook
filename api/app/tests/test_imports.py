@@ -35,6 +35,28 @@ def test_create_import_job_stays_pending_and_does_not_publish(
     assert published == []  # not published until approved
 
 
+@pytest.mark.parametrize(
+    ("source", "expected_type"),
+    [
+        ("https://www.instagram.com/p/DPa1bP5DZhP/", "instagram"),
+        ("https://instagram.com/reel/DPa1bP5DZhP/", "instagram"),
+        ("https://instagr.am/p/DPa1bP5DZhP/", "instagram"),
+        ("https://example.com/some-recipe", "single"),
+        # A different site with "instagram" somewhere in the path/host must not false-positive.
+        ("https://not-instagram.com/p/DPa1bP5DZhP/", "single"),
+    ],
+)
+def test_create_import_job_detects_instagram_urls(
+    client: TestClient, source: str, expected_type: str
+) -> None:
+    category_id = _create_category(client)
+
+    response = client.post("/imports", json={"source": source, "category_id": category_id})
+
+    assert response.status_code == 201
+    assert response.json()["type"] == expected_type
+
+
 def test_create_import_job_rejects_unknown_category(client: TestClient) -> None:
     response = client.post(
         "/imports", json={"source": "https://example.com/recipe", "category_id": 999}

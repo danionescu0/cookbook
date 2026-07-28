@@ -112,3 +112,36 @@ def test_parse_ingredients_for_nutrition_raises_when_no_tool_use_block(
 
     with pytest.raises(claude_client.IngredientParseError):
         claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
+
+
+def test_parse_recipe_from_text_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected = {
+        "translations": [
+            {
+                "language": "ro",
+                "title": "Batoane cu mere",
+                "description": "",
+                "ingredients": ["mere", "fulgi de ovaz"],
+                "steps": ["amestecă", "coace"],
+                "tips": [],
+            }
+        ]
+    }
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_recipe_text", expected)]
+    )
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    result = claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key")
+
+    assert result == expected
+
+
+def test_parse_recipe_from_text_raises_when_no_tool_use_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("text")])
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+
+    with pytest.raises(claude_client.RecipeExtractionError):
+        claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key")

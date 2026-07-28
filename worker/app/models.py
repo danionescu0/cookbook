@@ -11,6 +11,7 @@ class ImportJobType(str, enum.Enum):
     SINGLE = "single"
     BULK = "bulk"
     BOOKMARK = "bookmark"
+    INSTAGRAM = "instagram"
 
 
 class ImportJobStatus(str, enum.Enum):
