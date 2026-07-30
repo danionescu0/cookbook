@@ -72,6 +72,7 @@ export function ImportManager() {
         {t.importManager.heading}
       </h2>
       <p className="mt-1 text-sm text-ink/60">{t.importManager.instagramHint}</p>
+      <p className="mt-1 text-sm text-ink/60">{t.importManager.privateHint}</p>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex min-w-64 flex-1 flex-col gap-1">
@@ -122,7 +123,14 @@ export function ImportManager() {
           <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
             <div>
               <p className="break-all text-ink">{job.source}</p>
-              <p className="text-sm text-ink/50">{t.importManager.statuses[job.status]}</p>
+              <p className="text-sm text-ink/50">
+                {t.importManager.statuses[job.status]}
+                {job.created_by_username && (
+                  <span className="ml-2">
+                    {t.importManager.importedBy.replace("{username}", job.created_by_username)}
+                  </span>
+                )}
+              </p>
               {job.error && <p className="text-sm text-red-700">{job.error}</p>}
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">

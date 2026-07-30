@@ -45,8 +45,9 @@ def _create_job(
     db: Session,
     source: str = "https://example.com/recipe",
     type: ImportJobType = ImportJobType.SINGLE,
+    created_by_user_id: int = 1,
 ) -> ImportJob:
-    job = ImportJob(source=source, category_id=1, type=type)
+    job = ImportJob(source=source, category_id=1, type=type, created_by_user_id=created_by_user_id)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -113,6 +114,9 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     assert recipe.status == RecipeStatus.APPROVED
     assert recipe.approved_at is not None
     assert recipe.images == ["/images/stored.jpg"]  # what process_images returned
+    # Owned by whoever created the import job — imports are never shared, no matter what.
+    assert recipe.owner_user_id == job.created_by_user_id
+    assert recipe.is_shared is False
     assert process_images_calls == [["https://example.com/cake.jpg"]]  # resolved against source_url
 
     translations = db_session.scalars(select(RecipeTranslation)).all()

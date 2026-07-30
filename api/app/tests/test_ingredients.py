@@ -20,6 +20,19 @@ def test_create_ingredient_refresh_job_requires_admin(
     assert response.status_code == 401
 
 
+def test_get_ingredient_refresh_status_rejects_a_plain_admin(admin_client: TestClient) -> None:
+    # Same Settings subpage as routers/settings.py — gated to super admin, not just admin.
+    response = admin_client.get("/ingredients/refresh")
+
+    assert response.status_code == 403
+
+
+def test_create_ingredient_refresh_job_rejects_a_plain_admin(admin_client: TestClient) -> None:
+    response = admin_client.post("/ingredients/refresh")
+
+    assert response.status_code == 403
+
+
 def test_get_ingredient_refresh_status_never_run(client: TestClient) -> None:
     response = client.get("/ingredients/refresh")
 

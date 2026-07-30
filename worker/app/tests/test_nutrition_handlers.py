@@ -37,7 +37,7 @@ def db_session() -> Generator[Session, None, None]:
 
 
 def _create_recipe(db: Session, ingredients: list[str]) -> Recipe:
-    recipe = Recipe(category_id=1)
+    recipe = Recipe(category_id=1, owner_user_id=1)
     recipe.translations.append(
         RecipeTranslation(language="ro", title="Rețetă", ingredients=ingredients)
     )
@@ -64,7 +64,15 @@ def _seed_app_settings(db: Session, calorie_ninjas_api_key: str = "") -> None:
             id=1,
             supported_languages="ro,en",
             default_language="ro",
-            admin_password="x",
+            smtp_host="",
+            smtp_port=587,
+            smtp_username="",
+            smtp_password="",
+            smtp_from_address="",
+            smtp_use_tls=True,
+            turnstile_site_key="",
+            turnstile_secret_key="",
+            public_site_url="",
             anthropic_api_key="",
             calorie_ninjas_api_key=calorie_ninjas_api_key,
             default_rate_limit_requests_per_minute=6,

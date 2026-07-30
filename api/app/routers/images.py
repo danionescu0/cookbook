@@ -4,13 +4,15 @@ from pathlib import Path
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import get_current_user
 from app.config import settings
 from app.database import get_db
 from app.image_processing import resize_and_compress
 from app.settings_service import get_settings
 
-router = APIRouter(prefix="/images", tags=["images"], dependencies=[Depends(require_admin)])
+# Any logged-in user, not just an admin — non-admins need to attach a photo to a recipe they're
+# submitting for review, same as the admin's own manual-create/edit forms.
+router = APIRouter(prefix="/images", tags=["images"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("", status_code=201)

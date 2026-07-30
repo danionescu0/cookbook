@@ -3,12 +3,16 @@ import type {
   ImportJob,
   IngredientRefreshJob,
   IngredientRefreshStatus,
+  LoginResponse,
   Nutrition,
+  PublicSettings,
   Recipe,
   RecipeDraft,
   RecipeUpdate,
   Settings,
   SettingsUpdate,
+  SignupRequest,
+  UserProfile,
 } from "../types";
 
 export const BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:8000";
@@ -66,12 +70,35 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await response.json()) as T;
 }
 
+function createRecipeRequest(draft: RecipeDraft): Promise<Recipe> {
+  return request<Recipe>("/recipes", { method: "POST", body: JSON.stringify(draft) });
+}
+
 export const api = {
   login: (username: string, password: string) =>
-    request<{ access_token: string; token_type: string }>("/auth/login", {
+    request<LoginResponse>("/auth/login", {
       method: "POST",
       body: JSON.stringify({ username, password }),
     }),
+  signup: (payload: SignupRequest) =>
+    request<{ detail: string }>("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
+  verifyEmail: (token: string) =>
+    request<{ detail: string }>("/auth/verify-email", {
+      method: "POST",
+      body: JSON.stringify({ token }),
+    }),
+  resendVerification: (username: string, turnstileToken: string) =>
+    request<{ detail: string }>("/auth/resend-verification", {
+      method: "POST",
+      body: JSON.stringify({ username, turnstile_token: turnstileToken }),
+    }),
+  me: () => request<UserProfile>("/users/me"),
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<void>("/users/me/password", {
+      method: "PATCH",
+      body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
+    }),
+  getPublicSettings: () => request<PublicSettings>("/settings/public"),
 
   listCategories: () => request<Category[]>("/categories"),
   createCategory: (name: string) =>
@@ -87,8 +114,11 @@ export const api = {
   },
   getRecipe: (id: number, language?: string) =>
     request<Recipe>(`/recipes/${id}${language ? `?language=${language}` : ""}`),
-  createRecipe: (draft: RecipeDraft) =>
-    request<Recipe>("/recipes", { method: "POST", body: JSON.stringify(draft) }),
+  createRecipe: createRecipeRequest,
+  // Same endpoint as createRecipe — the recipe lands owned by whoever's logged in, private
+  // unless is_shared was requested (see api/app/routers/recipes.py). Named separately here so
+  // call sites read as what they mean, not just how they're implemented.
+  submitRecipe: createRecipeRequest,
   updateRecipe: (id: number, patch: RecipeUpdate, language?: string) =>
     request<Recipe>(`/recipes/${id}${language ? `?language=${language}` : ""}`, {
       method: "PUT",
@@ -96,6 +126,15 @@ export const api = {
     }),
   deleteRecipe: (id: number) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
   approveRecipe: (id: number) => request<Recipe>(`/recipes/${id}/approve`, { method: "POST" }),
+  toggleShare: (id: number, isShared: boolean) =>
+    request<Recipe>(`/recipes/${id}/share`, {
+      method: "PATCH",
+      body: JSON.stringify({ is_shared: isShared }),
+    }),
+  favoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "POST" }),
+  unfavoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "DELETE" }),
+  listFavorites: () => request<Recipe[]>("/users/me/favorites"),
+  listMySubmissions: () => request<Recipe[]>("/users/me/submissions"),
 
   // Multipart, not JSON — bypasses the `request` helper (which always sets
   // Content-Type: application/json) so the browser can set its own multipart boundary.

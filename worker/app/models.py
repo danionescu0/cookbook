@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
+from sqlalchemy import Boolean, JSON, DateTime, Enum, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -40,6 +40,7 @@ class ImportJob(Base):
         Enum(ImportJobStatus, native_enum=False), default=ImportJobStatus.QUEUED
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -59,6 +60,8 @@ class Recipe(Base):
     status: Mapped[RecipeStatus] = mapped_column(
         Enum(RecipeStatus, native_enum=False), default=RecipeStatus.APPROVED
     )
+    owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
+    is_shared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
@@ -95,7 +98,6 @@ class AppSettings(Base):
     id: Mapped[int] = mapped_column(primary_key=True)
     supported_languages: Mapped[str] = mapped_column(String(100), nullable=False)
     default_language: Mapped[str] = mapped_column(String(10), nullable=False)
-    admin_password: Mapped[str] = mapped_column(String(200), nullable=False)
     anthropic_api_key: Mapped[str] = mapped_column(String(200), nullable=False)
     calorie_ninjas_api_key: Mapped[str] = mapped_column(String(200), nullable=False)
     default_rate_limit_requests_per_minute: Mapped[int] = mapped_column(nullable=False)
@@ -103,6 +105,15 @@ class AppSettings(Base):
     max_html_chars: Mapped[int] = mapped_column(nullable=False)
     image_max_dimension: Mapped[int] = mapped_column(nullable=False)
     image_max_size_kb: Mapped[int] = mapped_column(nullable=False)
+    smtp_host: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_port: Mapped[int] = mapped_column(nullable=False)
+    smtp_username: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_from_address: Mapped[str] = mapped_column(String(255), nullable=False)
+    smtp_use_tls: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    turnstile_site_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    turnstile_secret_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    public_site_url: Mapped[str] = mapped_column(String(255), nullable=False)
 
 
 class Ingredient(Base):
@@ -198,5 +209,51 @@ class TranslationSyncJob(Base):
         Enum(TranslationSyncJobStatus, native_enum=False), default=TranslationSyncJobStatus.QUEUED
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    # Kept in sync by hand with api/app/models/user.py — the worker only ever reads this table
+    # (to find the recipient's email address for a queued EmailJob), api owns writes.
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    username: Mapped[str] = mapped_column(String(50), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+
+
+class EmailJobStatus(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/email_job.py's EmailJobStatus.
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class EmailJob(Base):
+    __tablename__ = "email_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False)
+    status: Mapped[EmailJobStatus] = mapped_column(
+        Enum(EmailJobStatus, native_enum=False), default=EmailJobStatus.QUEUED
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class EmailVerificationToken(Base):
+    # Kept in sync by hand with api/app/models/email_verification_token.py — the worker only
+    # reads the newest unused token for a user to build the link inside a verification email.
+    __tablename__ = "email_verification_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

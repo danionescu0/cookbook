@@ -3,7 +3,6 @@ import re
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from app.config import settings as env_settings
 from app.models.app_settings import AppSettings
 from app.schemas.settings import SettingsUpdate
 
@@ -19,15 +18,12 @@ def get_settings(db: Session) -> AppSettings:
 
     # Defensive fallback for anything that skips the Alembic migration (e.g. the SQLite test
     # database, built from Base.metadata.create_all rather than `alembic upgrade head`). Mirrors
-    # migration 0006's seed defaults — hardcoded here too, since these 7 fields are DB-only from
-    # the start (never read from .env at all). admin_password is the one exception: it's still a
-    # genuine bootstrap secret, so it comes from the .env-backed Settings object like the
-    # migration does.
+    # migrations 0006/0017's seed defaults — hardcoded here too, since these fields are DB-only
+    # from the start (never read from .env at all).
     row = AppSettings(
         id=SETTINGS_ROW_ID,
         supported_languages="ro,en",
         default_language="ro",
-        admin_password=env_settings.admin_password,
         anthropic_api_key="",
         calorie_ninjas_api_key="",
         default_rate_limit_requests_per_minute=6,
@@ -35,6 +31,15 @@ def get_settings(db: Session) -> AppSettings:
         max_html_chars=200_000,
         image_max_dimension=1600,
         image_max_size_kb=500,
+        smtp_host="",
+        smtp_port=587,
+        smtp_username="",
+        smtp_password="",
+        smtp_from_address="",
+        smtp_use_tls=True,
+        turnstile_site_key="",
+        turnstile_secret_key="",
+        public_site_url="",
     )
     db.add(row)
     db.commit()
@@ -77,12 +82,9 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         )
 
     # Blank/omitted secret means "leave unchanged" — the UI never has the real value to send back.
-    if updates.get("admin_password"):
-        row.admin_password = updates["admin_password"]
-    if updates.get("anthropic_api_key"):
-        row.anthropic_api_key = updates["anthropic_api_key"]
-    if updates.get("calorie_ninjas_api_key"):
-        row.calorie_ninjas_api_key = updates["calorie_ninjas_api_key"]
+    for field in ("anthropic_api_key", "calorie_ninjas_api_key", "smtp_password", "turnstile_secret_key"):
+        if updates.get(field):
+            setattr(row, field, updates[field])
 
     for field in (
         "default_rate_limit_requests_per_minute",
@@ -90,6 +92,13 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         "max_html_chars",
         "image_max_dimension",
         "image_max_size_kb",
+        "smtp_host",
+        "smtp_port",
+        "smtp_username",
+        "smtp_from_address",
+        "smtp_use_tls",
+        "turnstile_site_key",
+        "public_site_url",
     ):
         if field in updates:
             setattr(row, field, updates[field])

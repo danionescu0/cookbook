@@ -40,6 +40,7 @@ export function RecipeManager() {
   const [title, setTitle] = useState("");
   const [categoryId, setCategoryId] = useState<number | "">("");
   const [ingredients, setIngredients] = useState("");
+  const [isShared, setIsShared] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
@@ -77,9 +78,11 @@ export function RecipeManager() {
         images: [],
         language,
         category_id: categoryId,
+        is_shared: isShared,
       });
       setTitle("");
       setIngredients("");
+      setIsShared(false);
       await reload();
     } catch (e) {
       setError(String(e));
@@ -100,6 +103,16 @@ export function RecipeManager() {
     setError(null);
     try {
       await api.approveRecipe(id);
+      await reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleToggleShare = async (recipe: Recipe) => {
+    setError(null);
+    try {
+      await api.toggleShare(recipe.id, !recipe.is_shared);
       await reload();
     } catch (e) {
       setError(String(e));
@@ -217,6 +230,11 @@ export function RecipeManager() {
           />
         </div>
 
+        <label className="flex items-center gap-2 text-sm text-ink">
+          <input type="checkbox" checked={isShared} onChange={(e) => setIsShared(e.target.checked)} />
+          {t.recipeSubmit.shareLabel}
+        </label>
+
         <button type="submit" className={primaryButton}>
           {t.recipeManager.add}
         </button>
@@ -234,6 +252,14 @@ export function RecipeManager() {
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-ink">
                 {recipe.title} <em className="text-sm text-ink/50 not-italic">({recipe.status})</em>
+                <span className="ml-2 text-sm text-ink/50">
+                  {t.recipeManager.submittedBy.replace("{username}", recipe.owner_username)}
+                </span>
+                {recipe.is_shared && (
+                  <span className="ml-2 rounded-full bg-olive/10 px-2 py-0.5 text-xs font-medium text-olive">
+                    {t.recipeManager.sharedBadge}
+                  </span>
+                )}
                 {recipe.processing_status && (
                   <span className="ml-2 rounded-full bg-terracotta/10 px-2 py-0.5 text-xs font-medium text-terracotta">
                     {t.recipeManager.processingStatus[recipe.processing_status]}
@@ -262,6 +288,16 @@ export function RecipeManager() {
                     className={primaryButton}
                   >
                     {t.recipeManager.approve}
+                  </button>
+                )}
+                {/* Imports (source_url set) never get a sharing control — always private. */}
+                {!recipe.source_url && (
+                  <button
+                    type="button"
+                    onClick={() => handleToggleShare(recipe)}
+                    className={secondaryButton}
+                  >
+                    {recipe.is_shared ? t.account.unshareAction : t.account.shareAction}
                   </button>
                 )}
                 <button

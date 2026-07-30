@@ -1,11 +1,16 @@
-import { Link, NavLink, Outlet, Route, Routes } from "react-router-dom";
+import { Link, Navigate, NavLink, Outlet, Route, Routes } from "react-router-dom";
+import { AccountPage } from "./account/AccountPage";
+import { RecipeSubmitForm } from "./account/RecipeSubmitForm";
 import { CategoryManager } from "./backoffice/CategoryManager";
 import { IngredientRefreshPanel } from "./backoffice/IngredientRefreshPanel";
 import { ImportManager } from "./backoffice/ImportManager";
 import { LoginForm } from "./backoffice/LoginForm";
 import { RecipeManager } from "./backoffice/RecipeManager";
 import { SettingsManager } from "./backoffice/SettingsManager";
+import { SignupForm } from "./auth/SignupForm";
+import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { useAuth } from "./auth/AuthContext";
+import { LandingPage } from "./frontoffice/LandingPage";
 import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
 import { RecipeDetail } from "./frontoffice/RecipeDetail";
 import { SUPPORTED_LANGUAGES } from "./i18n/config";
@@ -60,12 +65,25 @@ function SettingsPage() {
   );
 }
 
-function BackofficeLayout() {
+function RequireAuth({ children }: { children: React.ReactNode }) {
   const { isAuthenticated } = useAuth();
+  if (!isAuthenticated) return <Navigate to="/login" replace />;
+  return <>{children}</>;
+}
+
+function BackofficeLayout() {
+  const { isAuthenticated, user } = useAuth();
   const { t } = useLanguage();
 
   if (!isAuthenticated) {
-    return <LoginForm />;
+    return <Navigate to="/login" replace />;
+  }
+  if (!user?.is_admin) {
+    return (
+      <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        {t.backoffice.accessDenied}
+      </p>
+    );
   }
 
   return (
@@ -74,18 +92,38 @@ function BackofficeLayout() {
         <NavLink to="/backoffice" end className={navLinkClasses}>
           {t.nav.backofficeRecipes}
         </NavLink>
-        <NavLink to="/backoffice/settings" className={navLinkClasses}>
-          {t.nav.backofficeSettings}
-        </NavLink>
+        {user.is_super_admin && (
+          <NavLink to="/backoffice/settings" className={navLinkClasses}>
+            {t.nav.backofficeSettings}
+          </NavLink>
+        )}
       </nav>
       <Outlet />
     </div>
   );
 }
 
+function RequireSuperAdmin({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth();
+  const { t } = useLanguage();
+  if (!user?.is_super_admin) {
+    return (
+      <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+        {t.backoffice.accessDenied}
+      </p>
+    );
+  }
+  return <>{children}</>;
+}
+
+function HomeRoute() {
+  const { isAuthenticated } = useAuth();
+  return isAuthenticated ? <RecipeBrowser /> : <LandingPage />;
+}
+
 export function App() {
   const { t } = useLanguage();
-  const { isAuthenticated, logout } = useAuth();
+  const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <div className="min-h-screen bg-cream text-ink">
@@ -96,16 +134,32 @@ export function App() {
           </Link>
           <div className="flex items-center gap-4">
             <nav className="flex items-center gap-4 text-sm">
-              <NavLink to="/" end className={navLinkClasses}>
+              <NavLink to="/recipes" className={navLinkClasses}>
                 {t.nav.recipes}
               </NavLink>
-              <NavLink to="/backoffice" className={navLinkClasses}>
-                {t.nav.backoffice}
-              </NavLink>
-              {isAuthenticated && (
-                <button type="button" onClick={logout} className={secondaryButton}>
-                  {t.nav.logout}
-                </button>
+              {user?.is_admin && (
+                <NavLink to="/backoffice" className={navLinkClasses}>
+                  {t.nav.backoffice}
+                </NavLink>
+              )}
+              {isAuthenticated ? (
+                <>
+                  <NavLink to="/account" className={navLinkClasses}>
+                    {t.nav.account}
+                  </NavLink>
+                  <button type="button" onClick={logout} className={secondaryButton}>
+                    {t.nav.logout}
+                  </button>
+                </>
+              ) : (
+                <>
+                  <NavLink to="/login" className={navLinkClasses}>
+                    {t.nav.login}
+                  </NavLink>
+                  <NavLink to="/signup" className={navLinkClasses}>
+                    {t.nav.signup}
+                  </NavLink>
+                </>
               )}
             </nav>
             <LanguageSwitcher />
@@ -115,11 +169,38 @@ export function App() {
 
       <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
         <Routes>
-          <Route path="/" element={<RecipeBrowser />} />
+          <Route path="/" element={<HomeRoute />} />
+          <Route path="/recipes" element={<RecipeBrowser />} />
           <Route path="/recipes/:id" element={<RecipeDetail />} />
+          <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />} />
+          <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
+          <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route
+            path="/account"
+            element={
+              <RequireAuth>
+                <AccountPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/submit-recipe"
+            element={
+              <RequireAuth>
+                <RecipeSubmitForm />
+              </RequireAuth>
+            }
+          />
           <Route path="/backoffice" element={<BackofficeLayout />}>
             <Route index element={<RecipesPage />} />
-            <Route path="settings" element={<SettingsPage />} />
+            <Route
+              path="settings"
+              element={
+                <RequireSuperAdmin>
+                  <SettingsPage />
+                </RequireSuperAdmin>
+              }
+            />
           </Route>
         </Routes>
       </main>

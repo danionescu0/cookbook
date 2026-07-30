@@ -1,22 +1,22 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_super_admin
 from app.database import get_db
 from app.models.app_settings import AppSettings
 from app.schemas.settings import SettingsRead, SettingsUpdate
 from app.settings_service import get_settings, update_settings
 
-# Same reasoning as imports.py: every route here is back-office-only, so the whole router is
-# protected at once rather than route by route.
-router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_admin)])
+# Stricter than the rest of the back office (require_admin) — this page holds API keys, SMTP
+# credentials, and the Turnstile secret, so it's gated to the super-admin tier instead. See
+# users.is_super_admin.
+router = APIRouter(prefix="/settings", tags=["settings"], dependencies=[Depends(require_super_admin)])
 
 
 def _serialize(row: AppSettings) -> SettingsRead:
     return SettingsRead(
         supported_languages=row.supported_languages,
         default_language=row.default_language,
-        admin_password_is_set=bool(row.admin_password),
         anthropic_api_key_is_set=bool(row.anthropic_api_key),
         calorie_ninjas_api_key_is_set=bool(row.calorie_ninjas_api_key),
         default_rate_limit_requests_per_minute=row.default_rate_limit_requests_per_minute,
@@ -24,6 +24,15 @@ def _serialize(row: AppSettings) -> SettingsRead:
         max_html_chars=row.max_html_chars,
         image_max_dimension=row.image_max_dimension,
         image_max_size_kb=row.image_max_size_kb,
+        smtp_host=row.smtp_host,
+        smtp_port=row.smtp_port,
+        smtp_username=row.smtp_username,
+        smtp_from_address=row.smtp_from_address,
+        smtp_password_is_set=bool(row.smtp_password),
+        smtp_use_tls=row.smtp_use_tls,
+        turnstile_site_key=row.turnstile_site_key,
+        turnstile_secret_key_is_set=bool(row.turnstile_secret_key),
+        public_site_url=row.public_site_url,
     )
 
 

@@ -40,7 +40,15 @@ def _seed_app_settings(db: Session, supported_languages: str = "ro,en") -> None:
             id=1,
             supported_languages=supported_languages,
             default_language=supported_languages.split(",")[0],
-            admin_password="x",
+            smtp_host="",
+            smtp_port=587,
+            smtp_username="",
+            smtp_password="",
+            smtp_from_address="",
+            smtp_use_tls=True,
+            turnstile_site_key="",
+            turnstile_secret_key="",
+            public_site_url="",
             anthropic_api_key="test-key",
             calorie_ninjas_api_key="",
             default_rate_limit_requests_per_minute=6,
@@ -54,7 +62,7 @@ def _seed_app_settings(db: Session, supported_languages: str = "ro,en") -> None:
 
 
 def _create_recipe(db: Session, ro_ingredients: list[str] | None = None) -> Recipe:
-    recipe = Recipe(category_id=1)
+    recipe = Recipe(category_id=1, owner_user_id=1)
     recipe.translations.append(
         RecipeTranslation(language="ro", title="Ciorbă", ingredients=ro_ingredients or ["apă"])
     )

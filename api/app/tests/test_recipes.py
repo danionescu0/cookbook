@@ -475,3 +475,151 @@ def test_delete_recipe(client: TestClient) -> None:
 
     assert delete_response.status_code == 204
     assert get_response.status_code == 404
+
+
+def test_create_recipe_requires_login(unauthenticated_client: TestClient) -> None:
+    response = unauthenticated_client.post(
+        "/recipes", json={"title": "Soup", "category_id": 1, "ingredients": ["water"]}
+    )
+
+    assert response.status_code == 401
+
+
+def test_non_admin_private_submission_is_approved_immediately(
+    client: TestClient, user_client: TestClient
+) -> None:
+    # Default (no is_shared) is private — only the owner will ever see it, so there's nothing to
+    # moderate.
+    category_id = _create_category(client)
+
+    response = user_client.post(
+        "/recipes",
+        json={"title": "Soup", "category_id": category_id, "ingredients": ["water"]},
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "approved"
+    assert body["is_shared"] is False
+    assert body["owner_username"] == "regular"
+
+
+def test_non_admin_shared_submission_is_unapproved_and_tracks_owner(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+
+    response = user_client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "ingredients": ["water"],
+            "is_shared": True,
+        },
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "unapproved"
+    assert body["is_shared"] is True
+    assert body["owner_username"] == "regular"
+
+
+def test_admin_created_recipe_is_private_by_default_and_owned_by_the_admin(
+    client: TestClient,
+) -> None:
+    category_id = _create_category(client)
+
+    response = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id, "ingredients": ["water"]}
+    )
+
+    body = response.json()
+    assert body["owner_username"] == "admin"
+    assert body["is_shared"] is False
+
+
+def test_admin_can_share_a_recipe_immediately_without_moderation(client: TestClient) -> None:
+    category_id = _create_category(client)
+
+    response = client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "ingredients": ["water"],
+            "is_shared": True,
+        },
+    )
+
+    body = response.json()
+    assert body["is_shared"] is True
+    assert body["status"] == "approved"
+
+
+def test_non_admin_can_view_their_own_submission_but_not_approve_it(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    recipe_id = user_client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "ingredients": ["water"],
+            "is_shared": True,
+        },
+    ).json()["id"]
+
+    approve_response = user_client.post(f"/recipes/{recipe_id}/approve")
+    assert approve_response.status_code == 403
+
+    submissions = user_client.get("/users/me/submissions").json()
+    assert [r["id"] for r in submissions] == [recipe_id]
+
+
+def test_favorite_and_unfavorite_a_recipe(client: TestClient, user_client: TestClient) -> None:
+    category_id = _create_category(client)
+    recipe_id = client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "ingredients": ["water"],
+            "is_shared": True,
+        },
+    ).json()["id"]
+
+    add_response = user_client.post(f"/recipes/{recipe_id}/favorite")
+    assert add_response.status_code == 204
+    assert [r["id"] for r in user_client.get("/users/me/favorites").json()] == [recipe_id]
+
+    # Favoriting again is a no-op, not an error (idempotent).
+    assert user_client.post(f"/recipes/{recipe_id}/favorite").status_code == 204
+
+    remove_response = user_client.delete(f"/recipes/{recipe_id}/favorite")
+    assert remove_response.status_code == 204
+    assert user_client.get("/users/me/favorites").json() == []
+
+    # Removing again (already absent) is also a no-op.
+    assert user_client.delete(f"/recipes/{recipe_id}/favorite").status_code == 204
+
+
+def test_favoriting_a_private_recipe_you_dont_own_404s(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    recipe_id = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id, "ingredients": ["water"]}
+    ).json()["id"]
+
+    response = user_client.post(f"/recipes/{recipe_id}/favorite")
+
+    assert response.status_code == 404
+
+
+def test_favorite_requires_login(unauthenticated_client: TestClient) -> None:
+    response = unauthenticated_client.post("/recipes/1/favorite")
+
+    assert response.status_code == 401

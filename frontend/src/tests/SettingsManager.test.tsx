@@ -18,7 +18,6 @@ const mockedApi = vi.mocked(api);
 const baseSettings: Settings = {
   supported_languages: "ro,en",
   default_language: "ro",
-  admin_password_is_set: true,
   anthropic_api_key_is_set: false,
   calorie_ninjas_api_key_is_set: false,
   default_rate_limit_requests_per_minute: 6,
@@ -26,6 +25,15 @@ const baseSettings: Settings = {
   max_html_chars: 200_000,
   image_max_dimension: 1600,
   image_max_size_kb: 500,
+  smtp_host: "",
+  smtp_port: 587,
+  smtp_username: "",
+  smtp_from_address: "",
+  smtp_password_is_set: true,
+  smtp_use_tls: true,
+  turnstile_site_key: "",
+  turnstile_secret_key_is_set: false,
+  public_site_url: "",
 };
 
 beforeEach(() => {
@@ -49,14 +57,15 @@ describe("SettingsManager", () => {
     expect(screen.getByLabelText("Default language")).toHaveValue("ro");
     expect(screen.getByLabelText("Import rate limit (requests/minute)")).toHaveValue(6);
     expect(screen.getByLabelText("Max image size (KB)")).toHaveValue(500);
+    expect(screen.getByLabelText("SMTP port")).toHaveValue(587);
   });
 
   it("leaves secret fields blank and hints whether one is currently set", async () => {
     renderManager();
     await screen.findByLabelText("Supported languages");
 
-    expect(screen.getByLabelText("Back office password")).toHaveValue("");
-    expect(screen.getByLabelText("Back office password")).toHaveAttribute(
+    expect(screen.getByLabelText("SMTP password")).toHaveValue("");
+    expect(screen.getByLabelText("SMTP password")).toHaveAttribute(
       "placeholder",
       "Leave blank to keep the current value"
     );
@@ -84,22 +93,23 @@ describe("SettingsManager", () => {
       )
     );
     const payload = mockedApi.updateSettings.mock.calls[0][0];
-    expect(payload).not.toHaveProperty("admin_password");
     expect(payload).not.toHaveProperty("anthropic_api_key");
+    expect(payload).not.toHaveProperty("smtp_password");
+    expect(payload).not.toHaveProperty("turnstile_secret_key");
     expect(await screen.findByText("Settings applied.")).toBeInTheDocument();
   });
 
   it("includes a secret in the payload only when the admin types a new value", async () => {
     const user = userEvent.setup();
-    mockedApi.updateSettings.mockResolvedValue({ ...baseSettings, admin_password_is_set: true });
+    mockedApi.updateSettings.mockResolvedValue({ ...baseSettings, smtp_password_is_set: true });
 
     renderManager();
-    await user.type(await screen.findByLabelText("Back office password"), "new-password");
+    await user.type(await screen.findByLabelText("SMTP password"), "new-password");
     await user.click(screen.getByRole("button", { name: "Apply" }));
 
     await waitFor(() =>
       expect(mockedApi.updateSettings).toHaveBeenCalledWith(
-        expect.objectContaining({ admin_password: "new-password" })
+        expect.objectContaining({ smtp_password: "new-password" })
       )
     );
   });

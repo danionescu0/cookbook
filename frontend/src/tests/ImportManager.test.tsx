@@ -28,6 +28,7 @@ const pendingJob: ImportJob = {
   status: "pending",
   error: null,
   created_at: "2026-07-24T00:00:00Z",
+  created_by_username: "admin",
 };
 const queuedJob: ImportJob = { ...pendingJob, id: 2, status: "queued" };
 const failedJob: ImportJob = { ...pendingJob, id: 3, status: "failed", error: "boom" };
@@ -57,6 +58,18 @@ describe("ImportManager", () => {
     renderManager();
 
     expect(await screen.findByText(/Instagram post and reel links/)).toBeInTheDocument();
+  });
+
+  it("explains that imports are private to the importer", async () => {
+    renderManager();
+
+    expect(await screen.findByText(/Imported recipes are private to you/)).toBeInTheDocument();
+  });
+
+  it("shows who imported a job", async () => {
+    renderManager();
+
+    expect(await screen.findByText("imported by admin")).toBeInTheDocument();
   });
 
   it("submits a URL and category, creating a pending job", async () => {

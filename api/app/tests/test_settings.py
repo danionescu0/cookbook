@@ -1,12 +1,24 @@
 from fastapi.testclient import TestClient
 
-from app.config import settings
-
 
 def test_get_settings_requires_admin(unauthenticated_client: TestClient) -> None:
     response = unauthenticated_client.get("/settings")
 
     assert response.status_code == 401
+
+
+def test_get_settings_rejects_a_plain_admin(admin_client: TestClient) -> None:
+    # Settings holds API keys/SMTP/Turnstile secrets — a regular admin isn't enough, only a
+    # super admin (users.is_super_admin) can reach it.
+    response = admin_client.get("/settings")
+
+    assert response.status_code == 403
+
+
+def test_patch_settings_rejects_a_plain_admin(admin_client: TestClient) -> None:
+    response = admin_client.patch("/settings", json={"default_language": "en"})
+
+    assert response.status_code == 403
 
 
 def test_get_settings_returns_defaults_and_masks_secrets(client: TestClient) -> None:
@@ -21,12 +33,16 @@ def test_get_settings_returns_defaults_and_masks_secrets(client: TestClient) -> 
     assert body["max_html_chars"] == 200_000
     assert body["image_max_dimension"] == 1600
     assert body["image_max_size_kb"] == 500
-    assert body["admin_password_is_set"] is True
     assert body["calorie_ninjas_api_key_is_set"] is False
+    assert body["smtp_password_is_set"] is False
+    assert body["turnstile_secret_key_is_set"] is False
+    assert body["smtp_use_tls"] is True
+    assert body["smtp_port"] == 587
     # No raw secret value ever appears in the response body.
-    assert "admin_password" not in body
     assert "anthropic_api_key" not in body
     assert "calorie_ninjas_api_key" not in body
+    assert "smtp_password" not in body
+    assert "turnstile_secret_key" not in body
 
 
 def test_patch_settings_requires_admin(unauthenticated_client: TestClient) -> None:
@@ -93,39 +109,6 @@ def test_patch_settings_rejects_default_language_not_in_supported_list(
     assert response.status_code == 400
 
 
-def test_patch_settings_changes_admin_password_and_login_reflects_it(
-    client: TestClient, unauthenticated_client: TestClient
-) -> None:
-    response = client.patch("/settings", json={"admin_password": "new-secret-password"})
-    assert response.status_code == 200
-    assert response.json()["admin_password_is_set"] is True
-
-    old_login = unauthenticated_client.post(
-        "/auth/login",
-        json={"username": settings.admin_username, "password": settings.admin_password},
-    )
-    assert old_login.status_code == 401
-
-    new_login = unauthenticated_client.post(
-        "/auth/login",
-        json={"username": settings.admin_username, "password": "new-secret-password"},
-    )
-    assert new_login.status_code == 200
-
-
-def test_patch_settings_blank_secret_leaves_current_value_unchanged(
-    client: TestClient, unauthenticated_client: TestClient
-) -> None:
-    response = client.patch("/settings", json={"admin_password": ""})
-    assert response.status_code == 200
-
-    login = unauthenticated_client.post(
-        "/auth/login",
-        json={"username": settings.admin_username, "password": settings.admin_password},
-    )
-    assert login.status_code == 200
-
-
 def test_patch_settings_updates_anthropic_api_key(client: TestClient) -> None:
     before = client.get("/settings").json()
     assert before["anthropic_api_key_is_set"] is False
@@ -147,6 +130,57 @@ def test_patch_settings_updates_calorie_ninjas_api_key(client: TestClient) -> No
     assert response.json()["calorie_ninjas_api_key_is_set"] is True
 
 
+def test_patch_settings_updates_smtp_fields(client: TestClient) -> None:
+    response = client.patch(
+        "/settings",
+        json={
+            "smtp_host": "smtp.example.com",
+            "smtp_port": 465,
+            "smtp_username": "bot@example.com",
+            "smtp_from_address": "no-reply@example.com",
+            "smtp_password": "smtp-secret",
+            "smtp_use_tls": False,
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["smtp_host"] == "smtp.example.com"
+    assert body["smtp_port"] == 465
+    assert body["smtp_username"] == "bot@example.com"
+    assert body["smtp_from_address"] == "no-reply@example.com"
+    assert body["smtp_password_is_set"] is True
+    assert body["smtp_use_tls"] is False
+    assert "smtp_password" not in body
+
+
+def test_patch_settings_updates_turnstile_and_public_site_url(client: TestClient) -> None:
+    response = client.patch(
+        "/settings",
+        json={
+            "turnstile_site_key": "site-key",
+            "turnstile_secret_key": "secret-key",
+            "public_site_url": "https://cookbook.example.com",
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["turnstile_site_key"] == "site-key"
+    assert body["turnstile_secret_key_is_set"] is True
+    assert body["public_site_url"] == "https://cookbook.example.com"
+    assert "turnstile_secret_key" not in body
+
+
+def test_patch_settings_blank_secret_leaves_current_value_unchanged(client: TestClient) -> None:
+    client.patch("/settings", json={"anthropic_api_key": "sk-ant-test-key"})
+
+    response = client.patch("/settings", json={"anthropic_api_key": ""})
+
+    assert response.status_code == 200
+    assert response.json()["anthropic_api_key_is_set"] is True
+
+
 def test_patch_settings_partial_update_leaves_other_fields_untouched(client: TestClient) -> None:
     client.patch("/settings", json={"max_html_chars": 12_345})
 
@@ -156,3 +190,14 @@ def test_patch_settings_partial_update_leaves_other_fields_untouched(client: Tes
     body = response.json()
     assert body["max_html_chars"] == 12_345
     assert body["image_max_dimension"] == 900
+
+
+def test_public_settings_exposes_turnstile_site_key_without_auth(
+    unauthenticated_client: TestClient, client: TestClient
+) -> None:
+    client.patch("/settings", json={"turnstile_site_key": "site-key"})
+
+    response = unauthenticated_client.get("/settings/public")
+
+    assert response.status_code == 200
+    assert response.json() == {"turnstile_site_key": "site-key"}

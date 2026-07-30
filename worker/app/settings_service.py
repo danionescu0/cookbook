@@ -18,6 +18,15 @@ class SettingsSnapshot:
     max_html_chars: int
     image_max_dimension: int
     image_max_size_kb: int
+    # Defaulted (unlike the fields above) so existing test call sites that predate SMTP support
+    # and only care about scraping/nutrition settings don't all need updating.
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from_address: str = ""
+    smtp_use_tls: bool = True
+    public_site_url: str = ""
 
     @property
     def supported_languages_list(self) -> list[str]:
@@ -45,6 +54,13 @@ def get_settings(db: Session) -> SettingsSnapshot:
             max_html_chars=200_000,
             image_max_dimension=1600,
             image_max_size_kb=500,
+            smtp_host="",
+            smtp_port=587,
+            smtp_username="",
+            smtp_password="",
+            smtp_from_address="",
+            smtp_use_tls=True,
+            public_site_url="",
         )
     return SettingsSnapshot(
         supported_languages=row.supported_languages,
@@ -56,4 +72,11 @@ def get_settings(db: Session) -> SettingsSnapshot:
         max_html_chars=row.max_html_chars,
         image_max_dimension=row.image_max_dimension,
         image_max_size_kb=row.image_max_size_kb,
+        smtp_host=row.smtp_host,
+        smtp_port=row.smtp_port,
+        smtp_username=row.smtp_username,
+        smtp_password=row.smtp_password,
+        smtp_from_address=row.smtp_from_address,
+        smtp_use_tls=row.smtp_use_tls,
+        public_site_url=row.public_site_url,
     )

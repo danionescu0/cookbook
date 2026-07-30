@@ -15,6 +15,7 @@ vi.mock("../api/client", () => ({
     uploadImage: vi.fn(),
     deleteRecipe: vi.fn(),
     approveRecipe: vi.fn(),
+    toggleShare: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
 }));
@@ -38,6 +39,8 @@ const cake: Recipe = {
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
+  owner_username: "admin",
+  is_shared: false,
 };
 const pendingSoup: Recipe = {
   id: 2,
@@ -55,6 +58,8 @@ const pendingSoup: Recipe = {
   approved_at: null,
   available_languages: ["en"],
   processing_status: null,
+  owner_username: "admin",
+  is_shared: false,
 };
 
 beforeEach(() => {
@@ -210,6 +215,28 @@ describe("RecipeManager", () => {
         expect.any(String)
       )
     );
+  });
+
+  it("shares and unshares a manually-added recipe via the API", async () => {
+    const user = userEvent.setup();
+    mockedApi.toggleShare.mockResolvedValue({ ...cake, is_shared: true });
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    await user.click(screen.getByRole("button", { name: "Share with community" }));
+
+    await waitFor(() => expect(mockedApi.toggleShare).toHaveBeenCalledWith(1, true));
+  });
+
+  it("does not show a share toggle for an imported recipe", async () => {
+    mockedApi.listRecipes.mockResolvedValue([pendingSoup]);
+
+    renderManager();
+    await screen.findByText(/Soup/);
+
+    expect(screen.queryByRole("button", { name: "Share with community" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Make private" })).not.toBeInTheDocument();
   });
 
   it("shows a processing-status badge and polls until it clears", async () => {

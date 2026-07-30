@@ -79,6 +79,10 @@ def _finish_import(
         status=RecipeStatus.APPROVED,
         approved_at=datetime.now(timezone.utc),
         translations=translations,
+        # Imports are always private to whoever ran them — never shareable, see
+        # routers/recipes.py's visibility rule and README migration 0020.
+        owner_user_id=job.created_by_user_id,
+        is_shared=False,
     )
     db.add(recipe)
     db.flush()  # assigns recipe.id, needed below, without committing yet

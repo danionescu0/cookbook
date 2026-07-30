@@ -5,17 +5,36 @@ import type { Recipe } from "../types";
 
 interface RecipeCardProps {
   recipe: Recipe;
+  isFavorited?: boolean;
+  onToggleFavorite?: (recipeId: number) => void;
 }
 
-export function RecipeCard({ recipe }: RecipeCardProps) {
+export function RecipeCard({ recipe, isFavorited, onToggleFavorite }: RecipeCardProps) {
   const { t } = useLanguage();
   const image = recipe.images[0];
 
   return (
     <Link
       to={`/recipes/${recipe.id}`}
-      className="group block overflow-hidden rounded-lg bg-cream-card shadow-sm ring-1 ring-black/5 transition-shadow hover:shadow-md"
+      className="group relative block overflow-hidden rounded-lg bg-cream-card shadow-sm ring-1 ring-black/5 transition-shadow hover:shadow-md"
     >
+      {onToggleFavorite && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.preventDefault();
+            onToggleFavorite(recipe.id);
+          }}
+          aria-label={isFavorited ? t.browser.removeFavorite : t.browser.addFavorite}
+          aria-pressed={isFavorited}
+          className={
+            "absolute right-2 top-2 z-10 flex h-8 w-8 items-center justify-center rounded-full text-lg shadow-sm transition-colors " +
+            (isFavorited ? "bg-terracotta text-white" : "bg-white/90 text-ink/60 hover:text-terracotta")
+          }
+        >
+          {isFavorited ? "♥" : "♡"}
+        </button>
+      )}
       <div className="aspect-4/3 w-full overflow-hidden bg-olive-light">
         {image ? (
           <img

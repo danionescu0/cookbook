@@ -2,8 +2,10 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.models.import_job import ImportJob
 from app.models.recipe import Recipe
 from app.models.recipe_translation import RecipeTranslation
+from app.models.user import User
 from app.routers import imports as imports_router
 
 
@@ -66,10 +68,12 @@ def test_create_import_job_rejects_unknown_category(client: TestClient) -> None:
 
 
 def test_create_import_job_rejects_url_already_imported_as_a_recipe(
-    client: TestClient, db_session: Session
+    client: TestClient, db_session: Session, admin_user: User
 ) -> None:
     category_id = _create_category(client)
-    recipe = Recipe(category_id=category_id, source_url="https://example.com/recipe")
+    recipe = Recipe(
+        category_id=category_id, source_url="https://example.com/recipe", owner_user_id=admin_user.id
+    )
     recipe.translations.append(RecipeTranslation(language="en", title="Existing"))
     db_session.add(recipe)
     db_session.commit()
@@ -226,3 +230,131 @@ def test_get_import_job_not_found(client: TestClient) -> None:
     response = client.get("/imports/999")
 
     assert response.status_code == 404
+
+
+def test_create_import_job_shows_the_creators_username(client: TestClient) -> None:
+    category_id = _create_category(client)
+
+    response = client.post(
+        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
+    )
+
+    assert response.json()["created_by_username"] == "admin"
+
+
+def test_non_admin_import_queues_and_publishes_immediately(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No public-exposure review is needed for a private import — unlike an admin's own job,
+    # which stays "pending" until explicitly approved.
+    category_id = _create_category(client)
+    published = []
+    monkeypatch.setattr(
+        imports_router,
+        "publish_import_job",
+        lambda job_id, job_type, source: published.append((job_id, job_type, source)),
+    )
+
+    response = user_client.post(
+        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "queued"
+    assert body["created_by_username"] == "regular"
+    assert published == [(body["id"], "single", "https://example.com/recipe")]
+
+
+def test_two_different_users_can_import_the_same_url(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Imports are private per owner now, so this isn't a duplicate — each gets their own copy.
+    category_id = _create_category(client)
+    monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
+
+    first = client.post(
+        "/imports", json={"source": "https://example.com/shared-recipe", "category_id": category_id}
+    )
+    second = user_client.post(
+        "/imports", json={"source": "https://example.com/shared-recipe", "category_id": category_id}
+    )
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+    assert first.json()["id"] != second.json()["id"]
+
+
+def test_non_admin_only_sees_their_own_import_jobs(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    client.post("/imports", json={"source": "https://example.com/admins", "category_id": category_id})
+    mine = user_client.post(
+        "/imports", json={"source": "https://example.com/mine", "category_id": category_id}
+    ).json()
+
+    response = user_client.get("/imports")
+
+    assert [job["id"] for job in response.json()] == [mine["id"]]
+
+
+def test_admin_sees_every_users_import_jobs(client: TestClient, user_client: TestClient) -> None:
+    category_id = _create_category(client)
+    client.post("/imports", json={"source": "https://example.com/admins", "category_id": category_id})
+    user_client.post(
+        "/imports", json={"source": "https://example.com/mine", "category_id": category_id}
+    )
+
+    response = client.get("/imports")
+
+    assert len(response.json()) == 2
+
+
+def test_non_admin_cannot_see_or_modify_someone_elses_import_job(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    admins_job = client.post(
+        "/imports", json={"source": "https://example.com/admins-only", "category_id": category_id}
+    ).json()
+
+    assert user_client.get(f"/imports/{admins_job['id']}").status_code == 404
+    assert user_client.post(f"/imports/{admins_job['id']}/approve").status_code == 404
+    assert user_client.delete(f"/imports/{admins_job['id']}").status_code == 404
+
+
+def test_non_admin_can_retry_their_own_failed_job(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    monkeypatch.setattr(
+        imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    created = user_client.post(
+        "/imports", json={"source": "https://example.com/retry-me", "category_id": category_id}
+    ).json()
+    assert created["status"] == "failed"  # the immediate publish attempt failed
+
+    monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
+    response = user_client.post(f"/imports/{created['id']}/approve")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "queued"
+
+
+def test_admin_can_see_a_non_admins_import_job(
+    client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    # An admin isn't limited by the ownership check that applies to everyone else.
+    category_id = _create_category(client)
+    job = ImportJob(
+        source="https://example.com/x", category_id=category_id, created_by_user_id=regular_user.id
+    )
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+
+    response = client.get(f"/imports/{job.id}")
+
+    assert response.status_code == 200

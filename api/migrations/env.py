@@ -8,14 +8,18 @@ from app.database import Base
 from app.models import (  # noqa: F401  (registers models on Base.metadata)
     AppSettings,
     Category,
+    EmailJob,
+    EmailVerificationToken,
     ImportJob,
     Ingredient,
     IngredientRefreshJob,
     NutritionJob,
     Recipe,
+    RecipeFavorite,
     RecipeIngredientLink,
     RecipeTranslation,
     TranslationSyncJob,
+    User,
 )
 
 config = context.config

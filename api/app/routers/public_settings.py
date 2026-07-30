@@ -1,0 +1,16 @@
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from app.database import get_db
+from app.settings_service import get_settings
+
+# Deliberately a separate router from routers/settings.py (which is admin-only at the router
+# level) — the signup page needs the Turnstile site key before the visitor has any account, let
+# alone a token. The site key itself isn't secret: it's embedded in that page's own HTML.
+router = APIRouter(prefix="/settings", tags=["settings"])
+
+
+@router.get("/public")
+def public_settings(db: Session = Depends(get_db)) -> dict[str, str]:
+    row = get_settings(db)
+    return {"turnstile_site_key": row.turnstile_site_key}

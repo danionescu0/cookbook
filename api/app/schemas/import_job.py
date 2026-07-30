@@ -20,3 +20,4 @@ class ImportJobRead(BaseModel):
     status: ImportJobStatus
     error: str | None
     created_at: datetime
+    created_by_username: str | None = None

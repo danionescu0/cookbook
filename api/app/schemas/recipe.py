@@ -15,6 +15,10 @@ class RecipeCreate(BaseModel):
     ingredients: list[str] = []
     steps: list[str] = []
     tips: list[str] = []
+    # Only meaningful for a manually-added recipe (this endpoint never sets source_url) — see
+    # routers/recipes.py's create_recipe for what each caller (admin vs. regular user) does with
+    # it.
+    is_shared: bool = False
 
 
 class RecipeTranslationUpdate(BaseModel):
@@ -35,6 +39,10 @@ class RecipeUpdate(BaseModel):
     # separate body field pointed at different languages, and the query param's language quietly
     # lost). One source of truth removes that whole failure mode.
     translation: RecipeTranslationUpdate | None = None
+
+
+class RecipeShareUpdate(BaseModel):
+    is_shared: bool
 
 
 class RecipeRead(BaseModel):
@@ -60,3 +68,9 @@ class RecipeRead(BaseModel):
     # being propagated to other languages and/or nutrition is being re-enriched. See
     # routers/recipes.py's _processing_statuses.
     processing_status: str | None = None
+    # Every recipe has an owner now (see migration 0020) — this is always set, not just for user
+    # submissions.
+    owner_username: str
+    # True only for a manually-added recipe (never an import) whose owner opted to make it
+    # visible to everyone once approved — see routers/recipes.py's visibility rule.
+    is_shared: bool

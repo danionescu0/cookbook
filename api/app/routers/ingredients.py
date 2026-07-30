@@ -2,16 +2,16 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.auth import require_admin
+from app.auth import require_super_admin
 from app.database import get_db
 from app.models.ingredient_refresh_job import IngredientRefreshJob, IngredientRefreshJobStatus
 from app.queue import publish_ingredient_refresh_job
 from app.schemas.ingredient_refresh import IngredientRefreshJobRead, IngredientRefreshStatusRead
 
-# Same reasoning as imports.py/settings.py: every route here is back-office-only, so the whole
-# router is protected at once rather than route by route.
+# Lives on the same back office Settings subpage as routers/settings.py, so it's gated to the
+# same super-admin tier for consistency — see users.is_super_admin.
 router = APIRouter(
-    prefix="/ingredients", tags=["ingredients"], dependencies=[Depends(require_admin)]
+    prefix="/ingredients", tags=["ingredients"], dependencies=[Depends(require_super_admin)]
 )
 
 

@@ -10,7 +10,6 @@ const inputClasses =
 interface FormState {
   supportedLanguages: string;
   defaultLanguage: string;
-  adminPassword: string;
   anthropicApiKey: string;
   calorieNinjasApiKey: string;
   rateLimit: string;
@@ -18,13 +17,21 @@ interface FormState {
   maxHtmlChars: string;
   imageMaxDimension: string;
   imageMaxSizeKb: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpUsername: string;
+  smtpFromAddress: string;
+  smtpPassword: string;
+  smtpUseTls: boolean;
+  turnstileSiteKey: string;
+  turnstileSecretKey: string;
+  publicSiteUrl: string;
 }
 
 function toFormState(settings: Settings): FormState {
   return {
     supportedLanguages: settings.supported_languages,
     defaultLanguage: settings.default_language,
-    adminPassword: "",
     anthropicApiKey: "",
     calorieNinjasApiKey: "",
     rateLimit: String(settings.default_rate_limit_requests_per_minute),
@@ -32,6 +39,15 @@ function toFormState(settings: Settings): FormState {
     maxHtmlChars: String(settings.max_html_chars),
     imageMaxDimension: String(settings.image_max_dimension),
     imageMaxSizeKb: String(settings.image_max_size_kb),
+    smtpHost: settings.smtp_host,
+    smtpPort: String(settings.smtp_port),
+    smtpUsername: settings.smtp_username,
+    smtpFromAddress: settings.smtp_from_address,
+    smtpPassword: "",
+    smtpUseTls: settings.smtp_use_tls,
+    turnstileSiteKey: settings.turnstile_site_key,
+    turnstileSecretKey: "",
+    publicSiteUrl: settings.public_site_url,
   };
 }
 
@@ -46,6 +62,12 @@ interface FieldProps {
 }
 
 function Field({ id, label, help, value, onChange, type = "text", placeholder }: FieldProps) {
+  // These are admin config values, never a login credential — but a `type="password"` field is
+  // still a magnet for the browser's saved-password autofill, which will happily overwrite one
+  // with an unrelated saved credential the moment the form is submitted (this is exactly how a
+  // real Anthropic API key got clobbered with a login password during testing). "new-password"
+  // is the value browsers actually respect for "don't suggest an existing saved password here".
+  const autoComplete = type === "password" ? "new-password" : "off";
   return (
     <div className="flex flex-col gap-1">
       <label htmlFor={id} className="text-sm font-medium text-ink/70">
@@ -57,6 +79,7 @@ function Field({ id, label, help, value, onChange, type = "text", placeholder }:
         value={value}
         placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
+        autoComplete={autoComplete}
         className={inputClasses}
       />
       <p className="text-xs text-ink/60">{help}</p>
@@ -96,7 +119,6 @@ export function SettingsManager() {
       const updated = await api.updateSettings({
         supported_languages: form.supportedLanguages.trim(),
         default_language: form.defaultLanguage.trim(),
-        ...(form.adminPassword ? { admin_password: form.adminPassword } : {}),
         ...(form.anthropicApiKey ? { anthropic_api_key: form.anthropicApiKey } : {}),
         ...(form.calorieNinjasApiKey ? { calorie_ninjas_api_key: form.calorieNinjasApiKey } : {}),
         default_rate_limit_requests_per_minute: Number(form.rateLimit),
@@ -104,6 +126,15 @@ export function SettingsManager() {
         max_html_chars: Number(form.maxHtmlChars),
         image_max_dimension: Number(form.imageMaxDimension),
         image_max_size_kb: Number(form.imageMaxSizeKb),
+        smtp_host: form.smtpHost.trim(),
+        smtp_port: Number(form.smtpPort),
+        smtp_username: form.smtpUsername.trim(),
+        smtp_from_address: form.smtpFromAddress.trim(),
+        ...(form.smtpPassword ? { smtp_password: form.smtpPassword } : {}),
+        smtp_use_tls: form.smtpUseTls,
+        turnstile_site_key: form.turnstileSiteKey.trim(),
+        ...(form.turnstileSecretKey ? { turnstile_secret_key: form.turnstileSecretKey } : {}),
+        public_site_url: form.publicSiteUrl.trim(),
       });
       setSettings(updated);
       setForm(toFormState(updated));
@@ -159,15 +190,6 @@ export function SettingsManager() {
           help={t.settingsManager.defaultLanguageHelp}
           value={form.defaultLanguage}
           onChange={(v) => update({ defaultLanguage: v })}
-        />
-        <Field
-          id="settings-admin-password"
-          type="password"
-          label={t.settingsManager.adminPasswordLabel}
-          help={t.settingsManager.adminPasswordHelp}
-          value={form.adminPassword}
-          placeholder={secretPlaceholder(settings.admin_password_is_set)}
-          onChange={(v) => update({ adminPassword: v })}
         />
         <Field
           id="settings-anthropic-api-key"
@@ -226,6 +248,80 @@ export function SettingsManager() {
           help={t.settingsManager.imageMaxSizeKbHelp}
           value={form.imageMaxSizeKb}
           onChange={(v) => update({ imageMaxSizeKb: v })}
+        />
+        <Field
+          id="settings-public-site-url"
+          label={t.settingsManager.publicSiteUrlLabel}
+          help={t.settingsManager.publicSiteUrlHelp}
+          value={form.publicSiteUrl}
+          placeholder="https://cookbook.example.com"
+          onChange={(v) => update({ publicSiteUrl: v })}
+        />
+        <Field
+          id="settings-smtp-host"
+          label={t.settingsManager.smtpHostLabel}
+          help={t.settingsManager.smtpHostHelp}
+          value={form.smtpHost}
+          onChange={(v) => update({ smtpHost: v })}
+        />
+        <Field
+          id="settings-smtp-port"
+          type="number"
+          label={t.settingsManager.smtpPortLabel}
+          help={t.settingsManager.smtpPortHelp}
+          value={form.smtpPort}
+          onChange={(v) => update({ smtpPort: v })}
+        />
+        <Field
+          id="settings-smtp-username"
+          label={t.settingsManager.smtpUsernameLabel}
+          help={t.settingsManager.smtpUsernameHelp}
+          value={form.smtpUsername}
+          onChange={(v) => update({ smtpUsername: v })}
+        />
+        <Field
+          id="settings-smtp-from-address"
+          label={t.settingsManager.smtpFromAddressLabel}
+          help={t.settingsManager.smtpFromAddressHelp}
+          value={form.smtpFromAddress}
+          onChange={(v) => update({ smtpFromAddress: v })}
+        />
+        <Field
+          id="settings-smtp-password"
+          type="password"
+          label={t.settingsManager.smtpPasswordLabel}
+          help={t.settingsManager.smtpPasswordHelp}
+          value={form.smtpPassword}
+          placeholder={secretPlaceholder(settings.smtp_password_is_set)}
+          onChange={(v) => update({ smtpPassword: v })}
+        />
+        <div className="flex flex-col gap-1">
+          <label htmlFor="settings-smtp-use-tls" className="flex items-center gap-2 text-sm font-medium text-ink/70">
+            <input
+              id="settings-smtp-use-tls"
+              type="checkbox"
+              checked={form.smtpUseTls}
+              onChange={(e) => update({ smtpUseTls: e.target.checked })}
+            />
+            {t.settingsManager.smtpUseTlsLabel}
+          </label>
+          <p className="text-xs text-ink/60">{t.settingsManager.smtpUseTlsHelp}</p>
+        </div>
+        <Field
+          id="settings-turnstile-site-key"
+          label={t.settingsManager.turnstileSiteKeyLabel}
+          help={t.settingsManager.turnstileSiteKeyHelp}
+          value={form.turnstileSiteKey}
+          onChange={(v) => update({ turnstileSiteKey: v })}
+        />
+        <Field
+          id="settings-turnstile-secret-key"
+          type="password"
+          label={t.settingsManager.turnstileSecretKeyLabel}
+          help={t.settingsManager.turnstileSecretKeyHelp}
+          value={form.turnstileSecretKey}
+          placeholder={secretPlaceholder(settings.turnstile_secret_key_is_set)}
+          onChange={(v) => update({ turnstileSecretKey: v })}
         />
 
         <div className="sm:col-span-2">

@@ -1,11 +1,13 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, setAuthToken, setUnauthorizedHandler } from "../api/client";
+import type { User } from "../types";
 
 export const AUTH_STORAGE_KEY = "cookbook-auth-token";
 
 interface AuthContextValue {
   isAuthenticated: boolean;
+  user: User | null;
   login: (username: string, password: string) => Promise<void>;
   logout: () => void;
 }
@@ -13,16 +15,16 @@ interface AuthContextValue {
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [token, setToken] = useState<string | null>(() => {
-    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
-    setAuthToken(stored);
-    return stored;
-  });
+  const [user, setUser] = useState<User | null>(null);
+  // Distinct from `user === null` so a stored token isn't treated as "logged out" for the one
+  // render before its rehydration GET /users/me call resolves (avoids a login-form flash on
+  // every page load/refresh).
+  const [isRehydrating, setIsRehydrating] = useState(true);
 
   const logout = () => {
     setAuthToken(null);
     window.localStorage.removeItem(AUTH_STORAGE_KEY);
-    setToken(null);
+    setUser(null);
   };
 
   // Registered once: an expired/invalid token now clears itself instead of every protected
@@ -32,16 +34,40 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
+  // A stored token only proves *a* session existed — it doesn't carry username/is_admin on its
+  // own (decoding the JWT client-side isn't worth it when the API can just answer), so every
+  // fresh page load re-fetches the profile before treating the visitor as logged in.
+  useEffect(() => {
+    const stored = window.localStorage.getItem(AUTH_STORAGE_KEY);
+    if (!stored) {
+      setIsRehydrating(false);
+      return;
+    }
+    setAuthToken(stored);
+    api
+      .me()
+      .then((profile) =>
+        setUser({
+          id: profile.id,
+          username: profile.username,
+          is_admin: profile.is_admin,
+          is_super_admin: profile.is_super_admin,
+        })
+      )
+      .catch(logout)
+      .finally(() => setIsRehydrating(false));
+  }, []);
+
   const login = async (username: string, password: string) => {
     const response = await api.login(username, password);
     setAuthToken(response.access_token);
     window.localStorage.setItem(AUTH_STORAGE_KEY, response.access_token);
-    setToken(response.access_token);
+    setUser(response.user);
   };
 
   return (
-    <AuthContext.Provider value={{ isAuthenticated: token !== null, login, logout }}>
-      {children}
+    <AuthContext.Provider value={{ isAuthenticated: user !== null, user, login, logout }}>
+      {!isRehydrating && children}
     </AuthContext.Provider>
   );
 }

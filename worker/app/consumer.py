@@ -8,9 +8,12 @@ from pika.spec import Basic, BasicProperties
 
 from app.config import settings
 from app.database import SessionLocal
+from app.email_handlers import handle_email_job
 from app.handlers import handle_import_job
 from app.ingredient_refresh_handlers import handle_ingredient_refresh_job
 from app.models import (
+    EmailJob,
+    EmailJobStatus,
     ImportJob,
     ImportJobStatus,
     IngredientRefreshJob,
@@ -29,6 +32,7 @@ IMPORT_JOBS_QUEUE = "import_jobs"
 NUTRITION_JOBS_QUEUE = "nutrition_jobs"
 INGREDIENT_REFRESH_JOBS_QUEUE = "ingredient_refresh_jobs"
 TRANSLATION_SYNC_JOBS_QUEUE = "translation_sync_jobs"
+EMAIL_JOBS_QUEUE = "email_jobs"
 
 
 def _on_message(
@@ -145,6 +149,33 @@ def _on_translation_sync_message(
     channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
+def _on_email_message(
+    channel: BlockingChannel,
+    method: Basic.Deliver,
+    properties: BasicProperties,
+    body: bytes,
+) -> None:
+    db = SessionLocal()
+    try:
+        handle_email_job(body, db)
+    except Exception as exc:
+        # Same reasoning as the other callbacks above.
+        logger.exception("unhandled error processing email job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            job = db.get(EmailJob, payload.get("job_id"))
+            if job is not None:
+                job.status = EmailJobStatus.FAILED
+                job.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record email job failure after crash")
+    finally:
+        db.close()
+    channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
 def connect_with_retry(
     max_attempts: int = 10, delay_seconds: float = 3.0
 ) -> pika.BlockingConnection:
@@ -168,6 +199,7 @@ def run() -> None:
     channel.queue_declare(queue=NUTRITION_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=INGREDIENT_REFRESH_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=TRANSLATION_SYNC_JOBS_QUEUE, durable=True)
+    channel.queue_declare(queue=EMAIL_JOBS_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=IMPORT_JOBS_QUEUE, on_message_callback=_on_message)
     channel.basic_consume(queue=NUTRITION_JOBS_QUEUE, on_message_callback=_on_nutrition_message)
@@ -177,15 +209,17 @@ def run() -> None:
     channel.basic_consume(
         queue=TRANSLATION_SYNC_JOBS_QUEUE, on_message_callback=_on_translation_sync_message
     )
+    channel.basic_consume(queue=EMAIL_JOBS_QUEUE, on_message_callback=_on_email_message)
 
-    # One worker process/container consumes all four queues on the same connection — see README
+    # One worker process/container consumes all five queues on the same connection — see README
     # Design Decisions ("Ingredient nutrition") for why this wasn't split into a separate service.
     logger.info(
-        "worker started, waiting for jobs on %s, %s, %s, and %s",
+        "worker started, waiting for jobs on %s, %s, %s, %s, and %s",
         IMPORT_JOBS_QUEUE,
         NUTRITION_JOBS_QUEUE,
         INGREDIENT_REFRESH_JOBS_QUEUE,
         TRANSLATION_SYNC_JOBS_QUEUE,
+        EMAIL_JOBS_QUEUE,
     )
     try:
         channel.start_consuming()

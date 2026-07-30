@@ -7,9 +7,9 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.auth import create_access_token
-from app.config import settings
 from app.database import Base, get_db
 from app.main import app
+from app.models.user import User
 
 
 @pytest.fixture()
@@ -46,10 +46,85 @@ def unauthenticated_client(db_session: Session) -> Generator[TestClient, None, N
 
 
 @pytest.fixture()
-def client(unauthenticated_client: TestClient) -> TestClient:
+def admin_user(db_session: Session) -> User:
+    # Super admin, not just admin — `client` (built from this fixture) is used broadly across
+    # existing tests for every admin-gated router, including Settings, which now needs the
+    # stricter tier. `plain_admin_user`/`admin_client` below cover the "admin but not super admin"
+    # case specifically for testing that distinction.
+    user = User(
+        username="admin",
+        email="admin@example.com",
+        password_hash="x",
+        is_admin=True,
+        is_super_admin=True,
+        is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture()
+def plain_admin_user(db_session: Session) -> User:
+    user = User(
+        username="plainadmin",
+        email="plainadmin@example.com",
+        password_hash="x",
+        is_admin=True,
+        is_super_admin=False,
+        is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture()
+def regular_user(db_session: Session) -> User:
+    user = User(
+        username="regular", email="regular@example.com", password_hash="x", is_admin=False, is_verified=True
+    )
+    db_session.add(user)
+    db_session.commit()
+    db_session.refresh(user)
+    return user
+
+
+@pytest.fixture()
+def client(unauthenticated_client: TestClient, admin_user: User) -> Generator[TestClient, None, None]:
     # A real token from the real token-creation path (not a dependency-override bypass), so
     # every existing test exercises actual auth instead of skipping it. Tests that specifically
     # need to exercise "no token"/"bad token" use `unauthenticated_client` directly.
-    token = create_access_token(settings.admin_username)
-    unauthenticated_client.headers["Authorization"] = f"Bearer {token}"
-    return unauthenticated_client
+    #
+    # A separate TestClient(app) instance (not unauthenticated_client itself, just header-mutated)
+    # — both still hit the same overridden get_db/db_session (the override lives on `app`, set up
+    # by the unauthenticated_client fixture this depends on), but a test needing two identities at
+    # once (e.g. an admin call and a regular user's call) needs their headers to stay independent.
+    token = create_access_token(admin_user)
+    with TestClient(app) as authed_client:
+        authed_client.headers["Authorization"] = f"Bearer {token}"
+        yield authed_client
+
+
+@pytest.fixture()
+def user_client(unauthenticated_client: TestClient, regular_user: User) -> Generator[TestClient, None, None]:
+    # Same idea as `client`, but for a verified non-admin user — routes that any logged-in
+    # visitor can reach (favorites, submissions, account) but that must reject admin-only ones.
+    token = create_access_token(regular_user)
+    with TestClient(app) as authed_client:
+        authed_client.headers["Authorization"] = f"Bearer {token}"
+        yield authed_client
+
+
+@pytest.fixture()
+def admin_client(
+    unauthenticated_client: TestClient, plain_admin_user: User
+) -> Generator[TestClient, None, None]:
+    # Admin, but not super admin — for asserting that Settings/ingredient-refresh reject a
+    # regular admin and require the stricter tier.
+    token = create_access_token(plain_admin_user)
+    with TestClient(app) as authed_client:
+        authed_client.headers["Authorization"] = f"Bearer {token}"
+        yield authed_client

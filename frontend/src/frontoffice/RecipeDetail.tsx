@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import { api, BASE_URL } from "../api/client";
+import { useFavoriteIds } from "../auth/useFavoriteIds";
 import { useLanguage } from "../i18n/LanguageContext";
 import { NutritionPanel } from "./NutritionPanel";
 import type { Nutrition, Recipe } from "../types";
@@ -11,6 +12,7 @@ export function RecipeDetail() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [nutrition, setNutrition] = useState<Nutrition | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const { isAuthenticated, favoriteIds, toggleFavorite } = useFavoriteIds();
 
   useEffect(() => {
     if (!id) return;
@@ -66,9 +68,27 @@ export function RecipeDetail() {
         {t.detail.back}
       </Link>
 
-      <h1 className="mt-2 font-serif text-3xl font-semibold text-ink sm:text-4xl">
-        {recipe.title}
-      </h1>
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <h1 className="font-serif text-3xl font-semibold text-ink sm:text-4xl">{recipe.title}</h1>
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={() => toggleFavorite(recipe.id)}
+            aria-pressed={favoriteIds.has(recipe.id)}
+            className={
+              "flex h-9 w-9 items-center justify-center rounded-full text-xl ring-1 ring-black/5 transition-colors " +
+              (favoriteIds.has(recipe.id)
+                ? "bg-terracotta text-white"
+                : "bg-cream-card text-ink/60 hover:text-terracotta")
+            }
+          >
+            <span aria-hidden="true">{favoriteIds.has(recipe.id) ? "♥" : "♡"}</span>
+            <span className="sr-only">
+              {favoriteIds.has(recipe.id) ? t.detail.removeFavorite : t.detail.addFavorite}
+            </span>
+          </button>
+        )}
+      </div>
 
       {image && (
         <div className="mt-4 aspect-video w-full overflow-hidden rounded-lg bg-olive-light">

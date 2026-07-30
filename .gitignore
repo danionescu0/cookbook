@@ -21,3 +21,4 @@ dist/
 
 # editors/os
 .DS_Store
+.idea/

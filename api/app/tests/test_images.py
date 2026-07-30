@@ -51,3 +51,12 @@ def test_upload_image_requires_auth(unauthenticated_client: TestClient) -> None:
     )
 
     assert response.status_code == 401
+
+
+def test_upload_image_allows_a_non_admin_logged_in_user(user_client: TestClient) -> None:
+    # A submitter needs to attach a photo to their own recipe, same as the admin's forms.
+    response = user_client.post(
+        "/images", files={"file": ("photo.png", _png_bytes(), "image/png")}
+    )
+
+    assert response.status_code == 201

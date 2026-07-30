@@ -9,7 +9,14 @@ from sqlalchemy.pool import StaticPool
 
 from app import consumer
 from app.database import Base
-from app.models import ImportJob, ImportJobStatus, TranslationSyncJob, TranslationSyncJobStatus
+from app.models import (
+    EmailJob,
+    EmailJobStatus,
+    ImportJob,
+    ImportJobStatus,
+    TranslationSyncJob,
+    TranslationSyncJobStatus,
+)
 
 
 @pytest.fixture()
@@ -157,3 +164,53 @@ def test_on_translation_sync_message_marks_job_failed_when_handler_raises_unexpe
     assert reloaded.status == TranslationSyncJobStatus.FAILED
     assert reloaded.error == "worker crashed while processing: boom"
     channel.basic_ack.assert_called_once_with(delivery_tag=10)
+
+
+def test_on_email_message_delegates_and_acks(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = EmailJob(user_id=1, kind="verification", status=EmailJobStatus.QUEUED)
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+    monkeypatch.setattr(consumer, "SessionLocal", lambda: db_session)
+    calls = []
+    monkeypatch.setattr(consumer, "handle_email_job", lambda body, db: calls.append((body, db)))
+
+    channel = MagicMock()
+    method = MagicMock(delivery_tag=11)
+    body = json.dumps({"job_id": job.id, "user_id": 1}).encode()
+
+    consumer._on_email_message(channel, method, None, body)
+
+    assert calls == [(body, db_session)]
+    channel.basic_ack.assert_called_once_with(delivery_tag=11)
+
+
+def test_on_email_message_marks_job_failed_when_handler_raises_unexpectedly(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = EmailJob(user_id=1, kind="verification", status=EmailJobStatus.QUEUED)
+    db_session.add(job)
+    db_session.commit()
+    db_session.refresh(job)
+    job_id = job.id
+    monkeypatch.setattr(consumer, "SessionLocal", lambda: db_session)
+
+    def _raise(body: bytes, db: Session) -> None:
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(consumer, "handle_email_job", _raise)
+
+    channel = MagicMock()
+    method = MagicMock(delivery_tag=12)
+
+    consumer._on_email_message(
+        channel, method, None, json.dumps({"job_id": job_id, "user_id": 1}).encode()
+    )
+
+    reloaded = db_session.get(EmailJob, job_id)
+    assert reloaded is not None
+    assert reloaded.status == EmailJobStatus.FAILED
+    assert reloaded.error == "worker crashed while processing: boom"
+    channel.basic_ack.assert_called_once_with(delivery_tag=12)
