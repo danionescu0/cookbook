@@ -22,6 +22,14 @@ go live.
 
 ## Screenshots
 
+**Accounts** — self-service signup behind a Cloudflare Turnstile CAPTCHA:
+
+<img src="docs/screenshots/signup-turnstile.jpg" alt="Signup form with username/email/password fields and a solved Cloudflare Turnstile CAPTCHA" width="800">
+
+The same login form serves regular users and admins — there's no separate back-office login:
+
+<img src="docs/screenshots/backoffice-login.jpg" alt="Login form with a link to sign up and a note that admin access uses the same login" width="800">
+
 **Front office** — public recipe browsing, filterable by category, with recipes that were
 scraped and cleaned up by the import pipeline:
 
@@ -38,29 +46,50 @@ on the recipe (see [Design Decisions](#design-decisions), "Ingredient nutrition"
 
 <img src="docs/screenshots/frontoffice-nutrition-panel.jpg" alt="Nutrition panel showing calories, protein, carbs, sugars, and fat per serving with icons" width="800">
 
+A logged-in user's own recipe page ends with a smaller "From the community" section — every
+manually-added recipe here was explicitly shared by its owner and approved, from three different
+users' accounts:
+
+<img src="docs/screenshots/frontoffice-community.jpg" alt="From the community section showing manually-added recipes shared by different users" width="800">
+
+**Account page** — every signed-in user's private space: importing from a URL (including
+Instagram links) is now open to everyone, not just admins, and each import stays visible only to
+whoever created it:
+
+<img src="docs/screenshots/account-imports.jpg" alt="Account page's Import from URL section, explaining that imports are private, with a per-job imported-by badge" width="800">
+
+Further down, "My recipes" lists everything this account owns — imports and manually-added
+recipes together — with a share/unshare toggle on anything that isn't an import:
+
+<img src="docs/screenshots/account-my-recipes.jpg" alt="Account page's My recipes section with a Make private toggle on a shared recipe" width="800">
+
 **Back office** — JWT-gated admin area, split into two pages (**Recipes** / **Setări**) behind a
 small sub-nav — see [Design Decisions](#design-decisions):
 
-<img src="docs/screenshots/backoffice-login.jpg" alt="Back office login form" width="800">
-
-Recipes page: category management and the URL import queue, which tracks each scrape job through
-pending → queued → fetching → processing → done:
-
 <img src="docs/screenshots/backoffice-categories-import.jpg" alt="Back office Recipes page: category manager, import-from-URL queue, and the Recipes/Settings sub-nav" width="800">
 
-Further down the same page, the recipe manager — imported recipes are previewed and approved
-before they go live; nutrition enrichment now happens automatically right after import, with no
-button to click:
+Further down the same page, the recipe manager — every row now shows who owns the recipe and
+whether it's shared with the community, alongside the existing preview/approve/delete actions:
 
-<img src="docs/screenshots/backoffice-recipes.jpg" alt="Back office recipe manager with preview/approve/delete actions" width="800">
+<img src="docs/screenshots/backoffice-recipes-owner-badges.jpg" alt="Back office recipe list showing owner and shared badges across recipes from different users" width="800">
 
-Settings page: the admin-editable subset of config (languages, credentials including the
-CalorieNinjas API key, and the import pipeline's rate limit/timeout/image tuning) can be
-changed and applied live, and a "Reparsează toate ingredientele" ("Reparse all ingredients")
-button re-fetches CalorieNinjas data for every ingredient already in the database — see
+Clicking "Editează" opens full per-language editing — title, description, ingredients, steps,
+tips, and image upload — for correcting anything an automated import gets wrong, not just
+manually-authored recipes; saving a changed translation re-syncs every other language and
+nutrition automatically (see [Core Workflows](#core-workflows), workflow #5):
+
+<img src="docs/screenshots/backoffice-recipe-edit.jpg" alt="Full recipe editing form with title, category, description, ingredients, steps, tips, and image upload fields" width="800">
+
+Settings page (super-admin only): the admin-editable subset of config — languages, credentials
+including the CalorieNinjas/Anthropic/Turnstile keys and SMTP settings for verification emails,
+and the import pipeline's rate limit/timeout/image tuning — can be changed and applied live. Shown
+below is the newer SMTP/Turnstile section further down the same page (the SMTP username/from-address
+fields are blurred here since this is a real deployment's mailbox, not placeholder data); the
+CalorieNinjas/Anthropic keys, language config, and the "Reparsează toate ingredientele" ("Reparse
+all ingredients") button live in the same form, above this section — see
 [Design Decisions](#design-decisions):
 
-<img src="docs/screenshots/backoffice-settings.jpg" alt="Back office Settings page including the CalorieNinjas API key field and the Reparse all ingredients panel" width="800">
+<img src="docs/screenshots/backoffice-settings.jpg" alt="Back office Settings page's SMTP and Turnstile fields, with the SMTP username and from-address fields blurred" width="800">
 
 ## Status
 
@@ -102,18 +131,54 @@ state:
       English content from one Claude call, and switching languages in the browser updated both
       the UI and the recipe content instantly with no reload; migration `0004`'s data copy was also
       verified against the real (non-empty) dev database
-- [x] Back office authentication: JWT login (`POST /auth/login`) against a single hard-coded
-      admin account in config (`ADMIN_USERNAME`/`ADMIN_PASSWORD`/`JWT_SECRET`/`JWT_EXPIRES_MINUTES`
-      env vars — no users table, no self-registration). Every mutating route (categories/recipes
-      create/update/delete/approve, the entire `/imports` router) requires a valid
-      `Authorization: Bearer <token>` header; all GET routes stay public since the front office
-      depends on them unauthenticated. The React side gates `/backoffice` behind a `LoginForm`,
-      persists the token in `localStorage`, and auto-logs-out on any 401 from a protected call.
-- [x] Admin-editable settings (`SettingsManager`): languages, back office password, Anthropic API
-      key, and the import pipeline's rate limit/timeout/HTML-size/image-size tuning live in a
-      single-row `app_settings` Postgres table instead of `.env`, editable from the back office and
-      applied live — no container restart, no Docker socket access from the app. `.env` only seeds
-      that row's initial value via migration `0006`. See [Design Decisions](#design-decisions).
+- [x] Per-user accounts: self-service signup (`POST /auth/signup`, username/email/password behind
+      a Cloudflare Turnstile CAPTCHA) gated on email verification — a signed-up account can't log
+      in until it clicks the link from a verification email, sent by the worker over SMTP. A
+      `POST /auth/resend-verification` endpoint (also CAPTCHA-gated) covers a lost/expired email or
+      a signup blocked by broken SMTP settings, and re-signing up with an already-registered-but-
+      unverified email transparently resends instead of erroring. Login (`POST /auth/login`) is now
+      JWT against the `users` table (bcrypt-hashed passwords, `PyJWT` signing) — the same login form
+      serves regular users and admins, there's no separate back-office login. `JWT_SECRET`/
+      `JWT_EXPIRES_MINUTES` stay `.env`-only (see [Design Decisions](#design-decisions)).
+- [x] Two admin tiers: `users.is_admin` (back office access — categories/recipes/imports
+      moderation) and a stricter `users.is_super_admin` (the Settings subpage only, since it holds
+      API keys and SMTP/Turnstile secrets). A super admin is expected to also be a regular admin,
+      but they're independent flags, not a role enum.
+- [x] Recipe privacy & opt-in community sharing: every recipe has an `owner_user_id` and is private
+      to its owner by default — a fresh user no longer sees another user's imports (the bug that
+      prompted this). A manually-added recipe can be explicitly shared with the community
+      (`PATCH /recipes/{id}/share`), at which point — once approved — it shows up on the logged-out
+      landing page and in a smaller "From the community" section on every logged-in user's own
+      recipe page. Imported recipes can never be shared. A non-admin's shared recipe still goes
+      through the existing admin-approval step before it's actually public; an admin's own goes live
+      immediately. See [Design Decisions](#design-decisions).
+- [x] Importing from a URL is open to every signed-in user, not just admins — each import is
+      private to whoever created it, with per-user duplicate-URL checks so two different users can
+      independently import the same public page. A non-admin's import is queued immediately (no
+      approval step, since nothing becomes public without the separate share action); an admin's
+      import still goes through the existing pending→approve step.
+- [x] Instagram post/reel links, pasted into the same "Import from URL" field, are auto-detected
+      by host and routed to a headless-browser fetch (Playwright, `worker/app/instagram_client.py`)
+      instead of a plain HTML GET, since Instagram serves mostly client-side-rendered content to
+      normal requests. The caption/comments and a preview image are read from there, then handed to
+      the same Claude extraction and image pipeline as any other import.
+- [x] Full recipe editing in the back office (`RecipeManager`): title/description/ingredients/
+      steps/tips per language, plus image upload/replace/delete via `POST /images`
+      (`api/app/routers/images.py`) — for correcting anything an automated import gets wrong, not
+      just for manually-authored recipes.
+- [x] Editing a recipe's translation keeps every language in sync and re-runs nutrition: `PUT
+      /recipes/{id}` enqueues a `translation_sync_jobs` job whenever a translation field changes;
+      the worker translates that edit into every other supported language via Claude (the same tool
+      used on import), then re-triggers nutrition enrichment once everything matches again. A
+      recipe's `processing_status` (`translating` \| `recalculating_nutrition` \| `null`) shows this
+      as a badge in the back office recipe list, polling until it clears.
+- [x] Admin-editable settings (`SettingsManager`, super-admin only): languages, the Anthropic and
+      CalorieNinjas API keys, SMTP host/port/credentials for verification emails, the Turnstile
+      site/secret key pair, the public site URL (used to build verification-email links), and the
+      import pipeline's rate limit/timeout/HTML-size/image-size tuning live in a single-row
+      `app_settings` Postgres table instead of `.env`, editable from the back office and applied
+      live — no container restart, no Docker socket access from the app. `.env` only seeds that
+      row's initial values via migrations `0006`/`0017`. See [Design Decisions](#design-decisions).
 - [x] Ingredient nutrition: automatic, not a button — a successful import queues a nutrition job
       (own `nutrition_jobs` queue, consumed by the same worker container, right after the import
       job that created the recipe) that asks Claude to parse each ingredient line into a canonical
@@ -146,12 +211,21 @@ state:
   recipe page modeled after sites like
   [AllRecipes](https://www.allrecipes.com/shredded-zucchini-casserole-recipe-11747790): hero image,
   description, ingredients, steps, tips.
-- **Back office** — username/password-protected admin area (JWT login, single admin account in
-  config) with full CRUD for categories and recipes, split into a **Recipes** page and a
-  **Settings** page behind a small sub-nav.
-- **Single-URL scraping, reviewed before scraping happens** — submit a URL + category in the back
-  office; it sits as a pending request until an admin clicks Approve, which is what actually
-  triggers the fetch/Claude/image pipeline.
+- **User accounts** — self-service signup behind a CAPTCHA, gated on email verification, plus a
+  resend flow for a lost link or a signup blocked by broken mail settings. Every account gets a
+  private recipe collection: favorites, their own imports, and anything they've added by hand.
+- **Recipe privacy, with opt-in community sharing** — recipes are private to whoever owns them by
+  default. A manually-added (not imported) recipe can be shared with the community, at which point
+  it appears on the public landing page and everyone's own recipe page, after admin approval for a
+  non-admin's recipe.
+- **Back office** — username/password-protected admin area with full CRUD for categories and
+  recipes, full per-language recipe editing, moderation of shared submissions, and a stricter
+  super-admin tier for the Settings page, split into a **Recipes** page and a **Settings** page
+  behind a small sub-nav.
+- **URL and Instagram scraping, open to every user, reviewed before scraping happens** — submit a
+  URL (including an Instagram post/reel link) + category from your own account; a non-admin's
+  import queues immediately for their own private use, an admin's still sits as a pending request
+  until they click Approve, which is what actually triggers the fetch/Claude/image pipeline.
 - **Bulk scraping** — submit a list of URLs, or upload an HTML bookmarks export; the system finds
   the recipe links inside it and imports them all.
 - **AI-assisted cleanup** — Claude parses bookmark HTML, strips ads/boilerplate, and keeps only
@@ -166,9 +240,10 @@ state:
   unpublished/republished via the API today.
 - **Portable deployment** — everything runs in Docker Compose, locally on a Fedora laptop and later
   on a Raspberry Pi.
-- **Live-editable settings** — languages, the back office password, the Anthropic API key, and the
-  import pipeline's rate limit/timeout/image tuning can all be changed from a back office Settings
-  page, with each change taking effect immediately (no restart).
+- **Live-editable settings** — languages, the Anthropic/CalorieNinjas API keys, SMTP credentials,
+  the Turnstile key pair, and the import pipeline's rate limit/timeout/image tuning can all be
+  changed from a super-admin-only back office Settings page, with each change taking effect
+  immediately (no restart).
 - **Estimated nutrition per recipe** — automatically resolved right after import (no admin action
   needed) against the CalorieNinjas API (nutrients + a real per-line gram estimate, with an
   LLM-parsed gram guess as fallback), and the front office shows calories/protein/carbs/sugars/fat
@@ -231,12 +306,14 @@ scrape from ever blocking a user-facing API request.
 |-------------------------|----------------------------------------------------------|-------|
 | Frontend                | React + TypeScript (Vite), React Router, Tailwind CSS v4  | Single SPA serving both front office and back office; `/backoffice` is route-gated by a JWT `AuthContext`, front office stays public |
 | UI language              | Hand-rolled i18n (`src/i18n/`), no library                | Small static dictionary per language (`ro`, `en`); one site-wide switcher drives both UI text and which recipe translation is fetched |
-| API backend             | Python + FastAPI                                         | REST API; JWT (`PyJWT`) username/password auth for the back office, single hard-coded admin account in config |
-| Scraper workers         | Python + Pika (RabbitMQ client), httpx (fetch), stdlib `urllib.robotparser`, Pillow (image resize/compress) | Consume import jobs, respect robots.txt + rate limits, fetch pages, download + process images |
-| AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call; a second tool-use call parses ingredient lines into structured food/quantity/unit for nutrition lookup |
+| API backend             | Python + FastAPI                                         | REST API; per-user JWT (`PyJWT`) auth against the `users` table, passwords hashed with `bcrypt`; `is_admin`/`is_super_admin` gate the back office and Settings respectively |
+| Scraper workers         | Python + Pika (RabbitMQ client), httpx (fetch), Playwright (headless-browser fetch for Instagram), stdlib `urllib.robotparser`, Pillow (image resize/compress) | Consume import jobs, respect robots.txt + rate limits, fetch pages, download + process images |
+| AI parsing/translation  | Claude API (Anthropic), `anthropic` Python SDK, model `claude-sonnet-5` | Bookmark HTML → candidate recipe links (not built yet); raw page → cleaned recipe JSON, one translation per `SUPPORTED_LANGUAGES` entry, in a single tool-use call; a second tool-use call parses ingredient lines into structured food/quantity/unit for nutrition lookup; a third tool-use call re-translates a hand-edited recipe into every other language after a back-office edit |
 | Nutrition data           | CalorieNinjas API                                         | Free tier, single natural-language query per lookup; provides both per-100g nutrient panels and a real per-line gram estimate for common ingredients — see Design Decisions ("Ingredient nutrition") |
-| Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import/nutrition jobs; three queues (`import_jobs`, `nutrition_jobs`, `ingredient_refresh_jobs`) are all consumed by the same worker container |
-| Database                | PostgreSQL                                                | Recipes, categories, import status, a single-row `app_settings` table for admin-editable config, `ingredients`/`recipe_ingredient_links` for nutrition — no users table (see Design Decisions) |
+| Account security         | `bcrypt` (password hashing), Cloudflare Turnstile (CAPTCHA on signup/resend), `email-validator` | Signup/resend are CAPTCHA-gated; login is gated on email verification |
+| Outbound email           | SMTP (stdlib `smtplib`), admin-configured host/port/credentials | Worker sends account-verification emails (`worker/app/email_handlers.py`), consumed off its own `email_jobs` queue |
+| Message queue           | RabbitMQ                                                  | Decouples API from long-running scrape/import/nutrition/translation-sync/email jobs; queues (`import_jobs`, `nutrition_jobs`, `ingredient_refresh_jobs`, `translation_sync_jobs`, `email_jobs`) are all consumed by the same worker container |
+| Database                | PostgreSQL                                                | Recipes (owned per-user, opt-in shared), categories, import status, `users`/email-verification/favorites, a single-row `app_settings` table for admin-editable config, `ingredients`/`recipe_ingredient_links` for nutrition (see Data Model) |
 | Image storage           | Docker named volume (`images_data`), mounted into both `api` and `worker`, served by the API via `StaticFiles` at `/images` | Worker downloads + writes JPEGs there; API serves them read-only; not hotlinked from source sites |
 | Reverse proxy           | Caddy (or Nginx)                                          | TLS termination, routes `/` to SPA and `/api` to backend |
 | Orchestration            | Docker Compose                                            | One compose stack for local dev (Fedora) and prod (Raspberry Pi, arm64 images) |
@@ -251,13 +328,24 @@ cookbook/
 ├── .env.example
 ├── frontend/                       # React + TypeScript SPA (front office + back office)
 │   ├── src/
-│   │   ├── frontoffice/             # RecipeBrowser (home), RecipeDetail (/recipes/:id) + NutritionPanel
-│   │   │                            #   (calories/protein/carbs/sugars/fat per serving, icon tiles),
-│   │   │                            #   CategoryNav, RecipeCard — approved recipes only
-│   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL, approve-to-trigger,
-│   │   │                            #   polls while active), RecipeManager (CRUD + preview/approve —
-│   │   │                            #   nutrition enrichment is automatic on import, no button here),
-│   │   │                            #   SettingsManager (view/edit app_settings, Apply = live PATCH),
+│   │   ├── frontoffice/             # LandingPage (logged-out home + "From the community" section),
+│   │   │                            #   RecipeBrowser (logged-in home: My recipes / From the
+│   │   │                            #   community split), RecipeDetail (/recipes/:id) +
+│   │   │                            #   NutritionPanel (calories/protein/carbs/sugars/fat per
+│   │   │                            #   serving, icon tiles), CategoryNav, RecipeCard
+│   │   ├── account/                 # AccountPage (profile, change password, favorites, "My
+│   │   │                            #   recipes" with a share/unshare toggle — renders ImportManager
+│   │   │                            #   from backoffice/ too, since /imports is scoped per-caller),
+│   │   │                            #   RecipeSubmitForm ("Add a recipe", with a share-with-
+│   │   │                            #   community checkbox)
+│   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL/Instagram link,
+│   │   │                            #   approve-to-trigger, polls while active — reused inside
+│   │   │                            #   AccountPage for non-admins), RecipeManager (CRUD + full
+│   │   │                            #   per-language editing incl. image upload/replace, preview/
+│   │   │                            #   approve, owner + shared badges, processing-status badge —
+│   │   │                            #   nutrition/translation sync is automatic, no button here),
+│   │   │                            #   SettingsManager (view/edit app_settings incl. SMTP/
+│   │   │                            #   Turnstile, Apply = live PATCH, super-admin only),
 │   │   │                            #   IngredientRefreshPanel ("Reparse all ingredients" button,
 │   │   │                            #   polls while queued/processing), LoginForm — all gated
 │   │   │                            #   behind AuthContext. App.tsx's BackofficeLayout renders
@@ -265,8 +353,11 @@ cookbook/
 │   │   │                            #   sub-nav + <Outlet /> across nested /backoffice routes
 │   │   ├── ui/                      # buttonStyles.ts, nutritionIcons.tsx (hand-rolled inline SVGs:
 │   │   │                            #   flame/drumstick/wheat/sugar-cubes/droplet/servings)
-│   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout,
-│   │   │                            #   token in localStorage)
+│   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout, token
+│   │   │                            #   + role flags in localStorage), SignupForm (username/email/
+│   │   │                            #   password + Turnstile), VerifyEmailPage (/verify-email?token=),
+│   │   │                            #   TurnstileWidget (loads the Cloudflare script, wraps
+│   │   │                            #   site-key/callback plumbing), useFavoriteIds
 │   │   ├── i18n/                    # config.ts (SUPPORTED_LANGUAGES, default "ro"), translations/
 │   │   │                            #   {ro,en}.ts, LanguageContext.tsx (useLanguage/useT, localStorage)
 │   │   ├── api/                     # fetch-based API client (attaches Authorization: Bearer <token>)
@@ -276,53 +367,81 @@ cookbook/
 │   └── Dockerfile                  # multi-stage: dev (vite) / production (nginx)
 ├── api/                            # FastAPI backend
 │   ├── app/
-│   │   ├── routers/                # auth.py (POST /auth/login), categories.py, recipes.py
-│   │   │                           #   (CRUD + /approve), imports.py (CRUD + /approve, deferred
-│   │   │                           #   publish, router-level require_admin), languages.py,
-│   │   │                           #   settings.py (GET/PATCH /settings, router-level require_admin),
+│   │   ├── routers/                # auth.py (POST /auth/signup, /resend-verification,
+│   │   │                           #   /verify-email, /login), users.py (GET /users/me, PATCH
+│   │   │                           #   /users/me/password), categories.py, recipes.py (CRUD +
+│   │   │                           #   /approve + /share, owner/visibility-scoped, plus
+│   │   │                           #   /users/me/favorites + /users/me/submissions on a second
+│   │   │                           #   router in the same module), imports.py (CRUD + /approve,
+│   │   │                           #   deferred publish for admins, immediate for everyone else,
+│   │   │                           #   scoped to the caller unless admin), images.py (POST /images,
+│   │   │                           #   any logged-in user), languages.py, settings.py (GET/PATCH
+│   │   │                           #   /settings, router-level require_super_admin),
+│   │   │                           #   public_settings.py (GET /settings/public — just the
+│   │   │                           #   Turnstile site key, for the pre-login signup page),
 │   │   │                           #   nutrition.py (GET /recipes/{id}/nutrition, public + live-
 │   │   │                           #   computed — no POST here, the worker queues its own
 │   │   │                           #   nutrition job right after a successful import),
 │   │   │                           #   ingredients.py (GET/POST /ingredients/refresh, both admin —
 │   │   │                           #   global "reparse all ingredients" job, not per-recipe)
-│   │   ├── models/                 # SQLAlchemy models (Category, Recipe [+estimated_servings],
-│   │   │                           #   RecipeTranslation, ImportJob, AppSettings — single-row
-│   │   │                           #   admin-editable settings table, Ingredient — canonical
-│   │   │                           #   per-100g nutrition reference, RecipeIngredientLink — the
-│   │   │                           #   stored ingredient-line-to-Ingredient+grams mapping,
-│   │   │                           #   NutritionJob, IngredientRefreshJob)
+│   │   ├── models/                 # SQLAlchemy models (User [+is_admin/is_super_admin/is_verified],
+│   │   │                           #   EmailVerificationToken, EmailJob, Category, Recipe
+│   │   │                           #   [+owner_user_id, is_shared, estimated_servings],
+│   │   │                           #   RecipeTranslation, RecipeFavorite, ImportJob
+│   │   │                           #   [+created_by_user_id, INSTAGRAM type], TranslationSyncJob,
+│   │   │                           #   AppSettings — single-row admin-editable settings table incl.
+│   │   │                           #   SMTP/Turnstile, Ingredient — canonical per-100g nutrition
+│   │   │                           #   reference, RecipeIngredientLink — the stored
+│   │   │                           #   ingredient-line-to-Ingredient+grams mapping, NutritionJob,
+│   │   │                           #   IngredientRefreshJob)
+│   │   ├── auth.py                 # create_access_token, get_current_user/get_optional_current_user,
+│   │   │                           #   require_admin, require_super_admin (FastAPI dependencies)
+│   │   ├── captcha.py              # verify_turnstile — server-side check against Cloudflare's
+│   │   │                           #   siteverify API
 │   │   ├── schemas/                # Pydantic request/response schemas, incl. nutrition.py,
 │   │   │                           #   ingredient_refresh.py
 │   │   ├── tests/                  # pytest, FastAPI TestClient
 │   │   ├── queue.py                # RabbitMQ publisher (pika) — publish_import_job,
-│   │   │                           #   publish_nutrition_job, publish_ingredient_refresh_job
-│   │   ├── auth.py                 # create_access_token, require_admin (FastAPI dependency)
+│   │   │                           #   publish_nutrition_job, publish_ingredient_refresh_job,
+│   │   │                           #   publish_translation_sync_job, publish_email_job
 │   │   ├── settings_service.py     # get_settings (get-or-create), update_settings (validates +
 │   │   │                           #   masks secrets) — see Design Decisions
 │   │   ├── main.py                 # also mounts StaticFiles at /images -> settings.images_dir
 │   │   ├── database.py
-│   │   └── config.py                # env-only config: database_url, rabbitmq_url, admin_username,
-│   │                                 #   jwt_secret, jwt_expires_minutes — everything admin-editable
-│   │                                 #   lives in app_settings/settings_service instead (see below)
-│   ├── migrations/                 # Alembic (categories/recipes 0001, import_jobs 0002, category_id
-│   │                                #   0003, recipe_translations split 0004, pending status 0005,
-│   │                                #   app_settings table seeded from .env 0006, ingredient
-│   │                                #   nutrition tables + estimated_servings + usda_api_key 0007,
-│   │                                #   ingredient_refresh_jobs 0008, rename usda_api_key ->
-│   │                                #   calorie_ninjas_api_key + drop usda_fdc_id 0009)
+│   │   └── config.py                # env-only config: database_url, rabbitmq_url, jwt_secret,
+│   │                                 #   jwt_expires_minutes — everything admin-editable, including
+│   │                                 #   per-user credentials, lives in the DB instead (see below)
+│   ├── migrations/                 # Alembic — 0001-0009 as before (categories/recipes, import_jobs,
+│   │                                #   recipe_translations split, app_settings, ingredient nutrition,
+│   │                                #   CalorieNinjas rename), plus: instagram import type 0010,
+│   │                                #   translation_sync_jobs 0011, users 0012, email_verification_
+│   │                                #   tokens 0013, recipe_favorites 0014, email_jobs 0015, rename
+│   │                                #   recipes.submitted_by 0016, app_settings SMTP/Turnstile
+│   │                                #   fields 0017, seed the migration-era admin as a real users
+│   │                                #   row 0018, users.is_super_admin 0019, recipe ownership +
+│   │                                #   is_shared (rename submitted_by -> owner, backfill) 0020
 │   ├── requirements.txt
 │   ├── requirements-dev.txt
 │   └── Dockerfile
 └── worker/                         # RabbitMQ consumer: fetch -> Claude -> download images -> insert
     ├── app/
-    │   ├── consumer.py             # connects (with retry), consumes `import_jobs`,
-    │   │                           #   `nutrition_jobs`, AND `ingredient_refresh_jobs` on one
-    │   │                           #   connection/channel — same container, see Design Decisions
-    │   │                           #   ("Ingredient nutrition")
+    │   ├── consumer.py             # connects (with retry), consumes `import_jobs`, `nutrition_jobs`,
+    │   │                           #   `ingredient_refresh_jobs`, `translation_sync_jobs`, AND
+    │   │                           #   `email_jobs` on one connection/channel — same container, see
+    │   │                           #   Design Decisions ("Ingredient nutrition")
     │   ├── handlers.py             # handle_import_job — orchestrates fetch -> extract -> process
-    │   │                           #   images -> insert recipe + one translation row per language;
-    │   │                           #   on success, also creates + publishes a NutritionJob for the
-    │   │                           #   new recipe (auto-enrichment, no manual button — see below)
+    │   │                           #   images -> insert recipe (owner_user_id from the job's
+    │   │                           #   creator, is_shared always False) + one translation row per
+    │   │                           #   language; on success, also creates + publishes a
+    │   │                           #   NutritionJob for the new recipe
+    │   ├── instagram_client.py     # fetch_instagram_post — Playwright headless-browser fetch of a
+    │   │                           #   post/reel's caption, comments, and preview image, since
+    │   │                           #   Instagram blocks a plain httpx GET
+    │   ├── translation_sync_handlers.py  # handle_translation_sync_job — Claude re-translates an
+    │   │                           #   edited recipe's content into every other configured
+    │   │                           #   language, then re-enqueues nutrition enrichment
+    │   ├── email_handlers.py       # handle_email_job — sends a verification email over SMTP using
+    │   │                           #   the admin-configured host/port/credentials
     │   ├── queue.py                # publish_nutrition_job — used by handlers.py to auto-enqueue
     │   │                           #   enrichment right after a successful import
     │   ├── nutrition_handlers.py   # handle_nutrition_job — Claude-parses ingredient lines ->
@@ -342,16 +461,17 @@ cookbook/
     │   │                           #   translation per `SUPPORTED_LANGUAGES` entry, in the same
     │   │                           #   call; parse_ingredients_for_nutrition — second tool-use call,
     │   │                           #   ingredient lines -> structured food/quantity/unit/grams +
-    │   │                           #   estimated_servings
+    │   │                           #   estimated_servings; translate_recipe — third tool-use call,
+    │   │                           #   re-translates an edited recipe into every other language
     │   ├── images.py               # process_images — download, downscale, compress to JPEG,
     │   │                           #   save under images_dir; skips (not fails) bad images
-    │   ├── models.py               # ImportJob, Recipe [+estimated_servings], RecipeTranslation,
-    │   │                           #   AppSettings, Ingredient, RecipeIngredientLink, NutritionJob,
-    │   │                           #   IngredientRefreshJob (mirror the API's models; see Design
-    │   │                           #   Decisions)
+    │   ├── models.py               # User, ImportJob, Recipe, RecipeTranslation, AppSettings,
+    │   │                           #   Ingredient, RecipeIngredientLink, NutritionJob,
+    │   │                           #   IngredientRefreshJob, TranslationSyncJob (mirror the API's
+    │   │                           #   models; see Design Decisions)
     │   ├── settings_service.py     # get_settings — reads app_settings fresh once per job (no
     │   │                           #   cache), read-only from the worker's side
-    │   ├── tests/                  # pytest, in-memory SQLite, httpx/Claude client mocked
+    │   ├── tests/                  # pytest, in-memory SQLite, httpx/Claude/Playwright/smtplib mocked
     │   ├── main.py
     │   ├── database.py
     │   └── config.py
@@ -378,19 +498,30 @@ docker compose up --build
 - Worker has no HTTP surface; it logs to `docker compose logs -f worker`. Editing `worker/app/`
   requires `docker compose restart worker` (no reload loop for the consumer, unlike the API/frontend)
 
-Try the import pipeline end to end (needs a category to import into, and a real `ANTHROPIC_API_KEY`
-in `.env` for the job to actually reach `done` — without one it still fetches the page respecting
-robots.txt/rate limits, then fails cleanly at the Claude call):
+Every mutating route now needs a real per-user account: sign up at http://localhost:5173/signup
+(this needs SMTP configured — see Backoffice → Settings, super-admin only — for the verification
+email to actually send; for pure local dev, flipping that account's `users.is_verified` to `true`
+directly in Postgres skips needing real SMTP). Then try the import pipeline end to end from the
+UI's "Import from URL" form, or from curl (needs a real `ANTHROPIC_API_KEY` set in Settings for the
+job to actually reach `done` — without one it still fetches the page respecting robots.txt/rate
+limits, then fails cleanly at the Claude call):
 
 ```bash
-CATEGORY_ID=$(curl -s -X POST http://localhost:8000/categories -d '{"name": "Desserts"}' \
-  -H "Content-Type: application/json" | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" \
+  -d '{"username": "<your username>", "password": "<your password>"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
-curl -X POST http://localhost:8000/imports -H "Content-Type: application/json" \
+CATEGORY_ID=$(curl -s -X POST http://localhost:8000/categories -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" -d '{"name": "Desserts"}' \
+  | python3 -c "import sys,json;print(json.load(sys.stdin)['id'])")
+
+curl -X POST http://localhost:8000/imports -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
   -d "{\"source\": \"https://example.com/some-recipe\", \"category_id\": $CATEGORY_ID}"
-# {"id":1,"category_id":1,...,"status":"queued",...}
+# non-admin account: {"id":1,"category_id":1,...,"status":"queued",...}   (queues immediately)
+# admin account:      {"id":1,"category_id":1,...,"status":"pending",...} (needs a separate approve)
 
-curl http://localhost:8000/imports/1
+curl http://localhost:8000/imports/1 -H "Authorization: Bearer $TOKEN"
 # with a real ANTHROPIC_API_KEY:    {"id":1,...,"status":"done","error":null,...}
 # without one:                      {"id":1,...,"status":"failed","error":"unexpected error: ...auth...",...}
 ```
@@ -419,48 +550,77 @@ npm run build   # type-checks (tsc -b) and produces a production bundle
 
 ## Core Workflows
 
-### 1. Manual authoring
-Admin logs into the back office and creates/edits/deletes categories and recipes directly (full
-CRUD, no AI involved).
+### 0. Signup and email verification
+1. A visitor signs up (username/email/password) and solves a Cloudflare Turnstile CAPTCHA
+   (`POST /auth/signup`). The site key is fetched from `GET /settings/public` before the visitor
+   has any account, let alone a token — it isn't secret, it's the same value embedded in the
+   signup page's own HTML.
+2. The account is created with `is_verified=False`, and an `email_jobs` row is queued for the
+   worker, which sends a verification email over the admin-configured SMTP settings, linking back
+   to `public_site_url + /verify-email?token=...`.
+3. `POST /auth/login` rejects an unverified account with a specific error, so the login form can
+   point at the resend flow instead of just showing "invalid credentials."
+4. `POST /auth/resend-verification` (also CAPTCHA-gated) issues a fresh token and re-sends the
+   email — for a lost/expired link, or a first signup that silently failed to send because SMTP
+   wasn't configured yet. Signing up again with the same, still-unverified email transparently
+   resends instead of erroring on a duplicate.
+5. `POST /auth/verify-email` marks the account verified; `POST /auth/login` then succeeds and
+   returns a JWT carrying `is_admin`/`is_super_admin`.
 
-### 2. Single or bulk URL import
-1. Admin submits one URL, or a list of URLs, plus a category, in the back office. Each becomes an
-   `import_jobs` row with `status=pending` — **not** yet sent to RabbitMQ.
-2. Admin reviews the pending request and clicks **Approve**, which is what actually publishes it to
-   RabbitMQ. The back office shows a per-URL status (`pending → queued → fetching → processing →
-   done/failed`), polling while any job is mid-flight.
-3. A scraper worker picks up each job, checks the source domain's `robots.txt`: if scraping is
-   disallowed there, the worker respects it and skips/fails the job; otherwise it falls back to a
-   default politeness rate limit (requests-per-domain-per-minute), configurable in the admin
-   settings.
-4. The worker fetches the page and sends the raw HTML to Claude in a single call that extracts,
-   cleans (drops ads/boilerplate, keeps images, description, ingredients, tips), and produces one
-   translation per configured site language (`SUPPORTED_LANGUAGES`) in the same pass.
+### 1. Manual authoring
+Any signed-in user creates/edits/deletes their own recipes from their account page (full CRUD, no
+AI involved); an admin can additionally edit/delete anyone's from the back office. A newly-created
+recipe is private to its owner unless they check "share with the community," in which case a
+non-admin's goes to `unapproved` for the existing moderation step (workflow #4) and an admin's goes
+live immediately.
+
+### 2. Single, Instagram, or bulk URL import
+1. Any signed-in user submits one URL — including an Instagram post/reel link — plus a category,
+   from the back office (admin) or their own account page (everyone else). Each becomes an
+   `import_jobs` row owned by that user (`created_by_user_id`).
+   - **Admin:** lands `status=pending`, **not** yet sent to RabbitMQ — same review-before-fetch gate
+     as before.
+   - **Everyone else:** since the result can never become public without the separate share step
+     (workflow #1), there's nothing to gate — the job is queued and published immediately.
+2. (Admin only) reviews the pending request and clicks **Approve**, which publishes it to RabbitMQ.
+   The UI shows a per-URL status (`pending → queued → fetching → processing → done/failed`), polling
+   while any job is mid-flight.
+3. If the URL's host is `instagram.com`/`instagr.am`, the worker routes the job through a
+   Playwright headless-browser fetch (`instagram_client.py`) that reads the post's caption, top
+   comments, and preview image — a plain HTTP GET gets blocked, since Instagram serves mostly
+   client-side-rendered content. Any other host goes through the original path: checks
+   `robots.txt` (skips/fails the job if disallowed), otherwise applies a politeness rate limit
+   (requests-per-domain-per-minute, configurable in the admin settings).
+4. The worker sends the fetched content to Claude in a single call that extracts, cleans (drops
+   ads/boilerplate, keeps images, description, ingredients, tips), and produces one translation per
+   configured site language (`SUPPORTED_LANGUAGES`) in the same pass.
 5. Worker downloads referenced images to local storage, compresses them, and resizes them down to
    a default max dimension/size (configurable in the admin settings).
-6. Worker inserts the recipe into PostgreSQL already `status = approved` (the human review already
-   happened at step 2 — see [Design Decisions](#design-decisions)), with one `recipe_translations`
-   row per language, and `added_at`/`approved_at` timestamps. Right after that commit, the worker
-   automatically queues a nutrition job for the new recipe — see workflow #5 below.
+6. Worker inserts the recipe into PostgreSQL already `status = approved`, `owner_user_id` set to
+   whoever created the import job, and `is_shared = False` (imports are never shareable — see
+   [Design Decisions](#design-decisions)), with one `recipe_translations` row per language, and
+   `added_at`/`approved_at` timestamps. Right after that commit, the worker automatically queues a
+   nutrition job for the new recipe — see workflow #6 below.
 
-**Current state:** all six steps are built end to end for single URLs (bulk lists aren't wired).
-`POST /imports` creates a `pending` job and does *not* publish it. `POST /imports/{id}/approve`
-publishes to RabbitMQ and moves it to `queued` (or straight to `failed` with an error if the publish
-itself fails — also usable to retry an already-`failed` job). The worker checks `robots.txt`
-(`urllib.robotparser`, via `httpx`), applies a per-domain rate limit (the domain's own `Crawl-delay`
-if present, otherwise `DEFAULT_RATE_LIMIT_REQUESTS_PER_MINUTE`), fetches the page, and sends the
-HTML to Claude in one `tool_choice`-forced call that returns structured `{images, translations:
+A URL already imported, or already sitting anywhere in the queue **for that same user**, is
+rejected with a `409` shown inline — scoped per owner, not globally, so two different users can
+each import the same public page independently.
+
+**Current state:** all six steps are built end to end for single URLs and Instagram links (bulk
+lists aren't wired). The worker checks `robots.txt` (`urllib.robotparser`, via `httpx`) for
+non-Instagram sources, applies a per-domain rate limit (the domain's own `Crawl-delay` if present,
+otherwise `DEFAULT_RATE_LIMIT_REQUESTS_PER_MINUTE`), fetches the page, and sends the content to
+Claude in one `tool_choice`-forced call that returns structured `{images, translations:
 [{language, title, description, ingredients, steps, tips}, ...]}` — one entry per
-`SUPPORTED_LANGUAGES` code. Step 5 is also built: each extracted image URL is downloaded, downscaled
-to `IMAGE_MAX_DIMENSION`, re-encoded as JPEG under `IMAGE_MAX_SIZE_KB` (quality stepped down until it
+`SUPPORTED_LANGUAGES` code. Each extracted image URL is downloaded, downscaled to
+`IMAGE_MAX_DIMENSION`, re-encoded as JPEG under `IMAGE_MAX_SIZE_KB` (quality stepped down until it
 fits or hits a floor), and saved to the shared `images_data` volume under a random filename, served
 back at `/images/<file>` by the API; a single broken image URL is skipped, not fatal to the job. On
-success the worker inserts one `Recipe` (`status=approved`, `approved_at` set, `images` those
-`/images/...` paths) plus one `RecipeTranslation` per language from Claude's response — visible on
-the front office immediately, no further action needed; on any failure (`robots.txt` disallow, fetch
-error, malformed Claude response, missing/invalid `ANTHROPIC_API_KEY`) it sets
+success the worker inserts one `Recipe` plus one `RecipeTranslation` per language from Claude's
+response — visible to its owner immediately, no further action needed; on any failure (`robots.txt`
+disallow, fetch error, malformed Claude response, missing/invalid `ANTHROPIC_API_KEY`) it sets
 `import_jobs.status=failed` with a specific `error` message and inserts nothing, leaving the request
-visible in the back office to retry or delete.
+visible to retry or delete.
 Still missing: bulk URL lists / bookmark-file upload in the same form, and the `settings` table
 (rate limit/image size/user-agent/etc. are `.env` vars for now, see
 [Design Decisions](#design-decisions)).
@@ -479,24 +639,48 @@ Still missing: bulk URL lists / bookmark-file upload in the same form, and the `
 Not built yet.
 
 ### 4. Moderation
-1. Every import goes through an approval gate before it's ever fetched — see step 2 of workflow #2
-   above. A successful import publishes the resulting recipe immediately; there's no second,
-   after-the-fact review of Claude's output.
-2. `RecipeManager` still has a **Preview** toggle (image, description, ingredients, steps, tips —
-   pulled from `GET /recipes/{id}`, which never filters by status) and an **Approve** button
-   (`POST /recipes/{id}/approve`, sets `status=approved` and `approved_at`) shown for any recipe
-   currently `unapproved`. That only happens today if an admin manually reverts one via
-   `PUT /recipes/{id}` — there's no UI for that reversal yet — so this is now an
-   unpublish/republish tool for an individual recipe, not the import path's moderation step.
+1. An **admin's own** import still goes through an approval gate before it's ever fetched — see
+   step 2 of workflow #2 above — and a successful import then publishes immediately; there's no
+   second, after-the-fact review of Claude's output for that path.
+2. A **non-admin's** content only ever needs review at the moment it could become visible to
+   someone other than its owner — i.e. when they explicitly share a manually-added recipe
+   (`PATCH /recipes/{id}/share`, workflow #1) or create one already checked "share." That request
+   sets `status=unapproved`; it stays invisible to everyone but the owner and admins until an
+   admin approves it. Their private recipes and their imports never touch this gate at all, since
+   nobody else will ever see them.
+3. `RecipeManager` has a **Preview** toggle (image, description, ingredients, steps, tips — pulled
+   from `GET /recipes/{id}`, which shows full detail to an admin regardless of status) and an
+   **Approve** button (`POST /recipes/{id}/approve`, sets `status=approved` and `approved_at`)
+   shown for any recipe currently `unapproved` — this is the same control whether that recipe got
+   there via an admin's own import-approval workflow, a non-admin's share request, or a manual
+   revert via `PUT /recipes/{id}`.
 
 **Design note:** the [original spec](#original-spec) assumed every import lands `unapproved` and
 gets a second human review of Claude's cleaned-up output before publishing. That's been
 superseded — see [Design Decisions](#design-decisions) for why the review moved earlier, to
-approving the import *request*, instead. Still no reject action, but `/backoffice` and every
-mutating API route are now gated behind the JWT admin login — see [Design
-Decisions](#design-decisions).
+approving the import *request* (for an admin) or the *share request* (for everyone else), instead.
+Still no reject action, but `/backoffice` and every mutating API route are now gated behind
+per-user JWT auth — see [Design Decisions](#design-decisions).
 
-### 5. Ingredient nutrition
+### 5. Editing a recipe
+1. Any signed-in owner (or an admin, for anyone's recipe) edits a recipe's title/description/
+   ingredients/steps/tips/images from the back office (`RecipeManager`) or their account page
+   (`RecipeSubmitForm`'s edit path). `PUT /recipes/{id}` applies the change to whichever language
+   was being edited.
+2. If any translation field changed, the API enqueues a `translation_sync_jobs` row for that
+   recipe, sourced from the language just edited. The recipe's `processing_status` immediately
+   reports `translating`.
+3. The worker asks Claude (a third tool-use call, alongside extraction and ingredient parsing) to
+   translate the edited content into every other `SUPPORTED_LANGUAGES` entry — creating a missing
+   language's translation row if the recipe didn't have one yet, same as a fresh import would.
+4. Once every language is back in sync, the worker re-enqueues nutrition enrichment for the recipe
+   (reusing the same job type from workflow #6) — an ingredient-line edit needs its numbers
+   recalculated, and this runs unconditionally rather than trying to detect which edits actually
+   touched ingredients. `processing_status` reports `recalculating_nutrition` during this phase,
+   then clears. The back office recipe list polls while either phase is active, so a saved edit's
+   background follow-up work is visible instead of silently stale.
+
+### 6. Ingredient nutrition
 1. Set a CalorieNinjas API key in Backoffice → Settings first (free signup:
    [calorieninjas.com/api](https://calorieninjas.com/api)) — without one, enrichment still runs and
    produces gram estimates, but every nutrient figure comes back 0.
@@ -504,7 +688,8 @@ Decisions](#design-decisions).
    worker automatically queues a nutrition job for the new recipe (own `nutrition_jobs` queue, same
    worker container, right after the import job that created the recipe) — see
    [Design Decisions](#design-decisions) for why this replaced the original per-recipe
-   **"Enrich nutrition"** button.
+   **"Enrich nutrition"** button. Editing a recipe's translation (workflow #5) re-triggers the same
+   job once the translation sync finishes, so a corrected ingredient line's numbers stay current too.
 3. The worker asks Claude to parse each ingredient line into a canonical food name/quantity/unit,
    resolves each against the CalorieNinjas API (reusing a cached `Ingredient` row if that food's
    already been resolved for another recipe), and writes one `recipe_ingredient_links` row per
@@ -525,31 +710,53 @@ Decisions](#design-decisions).
 
 ## Data Model (sketch)
 
-- *(no users table)* — back office auth is a single hard-coded admin account: username from config
-  (`ADMIN_USERNAME`), password from **app_settings** below (not a users table row); see
-  [Design Decisions](#design-decisions)
+- **users** — id, username (unique), email (unique, nullable — nullable only for the
+  migration-seeded original admin, which predates self-service signup; every real signup sets it),
+  password_hash (bcrypt), is_admin, is_super_admin (independent flags, not a role enum — see
+  [Design Decisions](#design-decisions)), is_verified, created_at
+- **email_verification_tokens** — id, user_id (FK → users.id), token (unique, random), expires_at,
+  used_at (nullable), created_at. A fresh row per signup/resend; old ones are simply left to expire
+  rather than explicitly invalidated
+- **email_jobs** — id, user_id (FK → users.id), kind (currently only `"verification"`), status
+  (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Queued by `POST /auth/signup`
+  / `/resend-verification`, sent by the worker over the admin-configured SMTP settings
+- **recipe_favorites** — id, user_id (FK → users.id), recipe_id (FK → recipes.id), created_at;
+  unique on (user_id, recipe_id)
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
   yet, see [Design Decisions](#design-decisions))
-- **recipes** — id, category_id, images, source_url (nullable, set when imported), status
+- **recipes** — id, category_id, images, source_url (nullable, set when imported), owner_user_id
+  (FK → users.id, not nullable — every recipe belongs to exactly one user), is_shared (bool,
+  default false — only ever meaningful when source_url is null; imports never set it), status
   (`unapproved` \| `approved`), added_at, approved_at, estimated_servings (nullable — set by the
   nutrition-enrichment job, not the original import) — language-independent fields only; text
-  content lives in **recipe_translations**
+  content lives in **recipe_translations**. Visibility (see
+  [Design Decisions](#design-decisions)): an admin sees everything; the owner always sees their own
+  (any status); anyone else sees it only if `status=approved AND is_shared=true`
 - **recipe_translations** — id, recipe_id (FK → recipes.id), language (e.g. `ro`, `en` — a plain
   string validated against `SUPPORTED_LANGUAGES`, not a DB enum, so a new language never needs a
   migration), title, description, ingredients, steps, tips; unique on (recipe_id, language). A
   recipe can have anywhere from one translation (e.g. hand-authored, or Claude failed on one
   language) up to `len(SUPPORTED_LANGUAGES)`
-- **import_jobs** — id, category_id (recipe lands here on success), type
-  (`single` \| `bulk` \| `bookmark`), source, status
+- **import_jobs** — id, category_id (recipe lands here on success), created_by_user_id (FK →
+  users.id — who created the request; the recipe it produces inherits this as `owner_user_id`),
+  type (`single` \| `instagram` \| `bulk` \| `bookmark`), source, status
   (`pending` \| `queued` \| `fetching` \| `processing` \| `done` \| `failed`), error, created_at.
-  `pending` means created but not yet approved/published to RabbitMQ; approving is what moves it to
-  `queued`
+  For an admin, `pending` means created but not yet approved/published to RabbitMQ; for everyone
+  else it's queued immediately (see [Core Workflows](#core-workflows), workflow #2)
+- **translation_sync_jobs** — id, recipe_id (FK → recipes.id), source_language (which language was
+  hand-edited — translated *from* this into every other supported language), status
+  (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Created by `PUT
+  /recipes/{id}` whenever a translation field changes; on completion the worker re-enqueues a
+  `nutrition_jobs` row for the same recipe
 - **app_settings** — a single row (id=1), not a real multi-row table: supported_languages,
-  default_language, admin_password, anthropic_api_key, calorie_ninjas_api_key,
+  default_language, anthropic_api_key, calorie_ninjas_api_key,
   default_rate_limit_requests_per_minute, scrape_timeout_seconds, max_html_chars,
-  image_max_dimension, image_max_size_kb. Seeded once from `.env` by migration `0006`/`0007`;
-  editable live from the back office Settings page from then on — see
-  [Design Decisions](#design-decisions)
+  image_max_dimension, image_max_size_kb, smtp_host, smtp_port, smtp_username, smtp_password,
+  smtp_from_address, smtp_use_tls, turnstile_site_key, turnstile_secret_key, public_site_url.
+  Seeded once from `.env` by migration `0006`/`0007`/`0017`; editable live from the back office
+  Settings page (super-admin only) from then on — see [Design Decisions](#design-decisions). Secrets
+  are stored in plaintext, matching this project's single-operator security posture — per-user
+  login credentials live in `users.password_hash` (hashed) instead
 - **ingredients** — id, name (Claude's canonical English food name, e.g. "onion") — the only key
   used to match/reuse a row, since CalorieNinjas has no stable per-food id — and
   calories/protein/carbs/sugars/fat_per_100g (zeroed placeholders when nothing matched, rather than
@@ -561,9 +768,9 @@ Decisions](#design-decisions).
   [Design Decisions](#design-decisions), "Ingredient nutrition"
 - **nutrition_jobs** — id, recipe_id (FK → recipes.id), status
   (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Created and queued by the
-  worker itself (`handlers._enqueue_nutrition_job`), automatically, right after a successful
-  import — not by an API route; mirrors `import_jobs`' shape but simpler (no `pending` gate — it's
-  queued immediately)
+  worker itself, automatically, right after a successful import or a completed translation sync —
+  not by an API route; mirrors `import_jobs`' shape but simpler (no `pending` gate — it's queued
+  immediately)
 - **ingredient_refresh_jobs** — id, status (`queued` \| `processing` \| `done` \| `failed`), error,
   ingredients_updated (nullable — how many `ingredients` rows the job actually changed), created_at.
   Global, not per-recipe — created by `POST /ingredients/refresh`; `GET /ingredients/refresh`
@@ -577,15 +784,18 @@ Decisions](#design-decisions).
   directly for debugging.
 - **Production (Raspberry Pi):** images are built/pulled as `arm64`; only the reverse proxy port is
   exposed externally.
-- Secrets (DB credentials, JWT secret, Claude API key) are supplied via `.env`, never committed.
+- Infra-level secrets (DB credentials, RabbitMQ credentials, JWT signing secret) are supplied via
+  `.env`, never committed. Everything else editable at runtime (Anthropic/CalorieNinjas API keys,
+  SMTP credentials, Turnstile keys) lives in the admin-editable `app_settings` table instead — see
+  [Data Model](#data-model-sketch) and [Design Decisions](#design-decisions).
 
 ## Testing
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 69 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". Import jobs: create stays `pending` and doesn't publish, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), approve 404, delete, duplicate-URL rejection (409, against both an existing recipe and an existing job) and resubmission after delete. Auth: login success/wrong-username/wrong-password, protected routes reject missing/malformed/wrong-secret tokens and accept a real one, public GETs stay open without a token, the entire `/imports` router is protected. Settings: `GET`/`PATCH /settings` require admin, secrets (including `calorie_ninjas_api_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), a changed `admin_password` is reflected immediately by `/auth/login`, an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes |
-| Worker              | `pytest`                           | 65 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client) and `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams + servings parsing), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `handlers.handle_import_job` (success inserts an already-`approved` recipe with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; an unexpected error inside the enqueue helper itself is swallowed the same way; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if `handle_import_job` raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache). `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` and sets `estimated_servings` on success, prefers a CalorieNinjas gram figure over Claude's own estimate when one matches, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id) |
-| Frontend            | Vitest + React Testing Library     | 45 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure. `SettingsManager`: loads and displays current settings, secret fields (including the CalorieNinjas key) stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active |
+| API backend        | `pytest` + FastAPI `TestClient`    | 144 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". `test_recipe_visibility.py`: an anonymous/other user only sees a recipe if `approved` + `is_shared`, the owner always sees their own regardless of status, an admin sees everything, `GET /recipes/{id}` 404s (not 403s) on an invisible recipe, `PATCH /recipes/{id}/share` succeeds for the owner or an admin, 403s for anyone else, 400s on an imported recipe, and re-sets `status=unapproved` when a non-admin turns sharing on. Import jobs (`test_imports.py`): create stays `pending` for an admin and doesn't publish, queues and publishes immediately for a non-admin, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), duplicate-URL rejection is scoped per creator (409, two different users can import the same URL independently), a non-admin only sees/modifies their own jobs while an admin sees everyone's, `created_by_username` is populated. `test_auth.py`/`test_users.py`: signup requires a valid Turnstile token, rejects a taken username/verified email, resends instead of erroring on a duplicate unverified email, login rejects an unverified account with a specific message, `/verify-email` accepts a valid token once and rejects an expired/reused/unknown one, `/resend-verification` re-sends and is itself CAPTCHA-gated, `GET /users/me` and `PATCH /users/me/password` require a valid current password. Settings: `GET`/`PATCH /settings` require **super**-admin (a plain admin is rejected), secrets (including `calorie_ninjas_api_key`, `smtp_password`, `turnstile_secret_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields; `GET /settings/public` returns only the Turnstile site key, unauthenticated. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Recipe editing: `PUT /recipes/{id}` enqueues a `translation_sync_jobs` row only when a translation field actually changed, `processing_status` reflects whichever of nutrition/translation-sync is currently active for a recipe. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes |
+| Worker              | `pytest`                           | 101 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client), `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams + servings parsing), and `claude_client.translate_recipe` (re-translates edited content into every other configured language, creating a missing language's translation the same way a fresh import would), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `test_instagram_client.py` (Playwright drives a headless page load and extracts caption/comments/preview image; a failed/blocked load is handled without crashing the job), `handlers.handle_import_job` (success inserts an already-`approved` recipe owned by the import job's creator with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe), `translation_sync_handlers.handle_translation_sync_job` (translates the edited language into every other one, re-enqueues a `NutritionJob` on success, fails cleanly on an unknown recipe/job or an unexpected exception, still succeeds even if the nutrition re-enqueue itself raises), `email_handlers.handle_email_job` (sends a real SMTP message using the admin-configured host/port/credentials/TLS setting, builds the verification link from `public_site_url`, fails cleanly with no SMTP host configured), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if a handler raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache). `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` and sets `estimated_servings` on success, prefers a CalorieNinjas gram figure over Claude's own estimate when one matches, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id) |
+| Frontend            | Vitest + React Testing Library     | 62 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle, full per-language edit form incl. image upload. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, shows who created a job (`imported by {username}`), explains that imports are private to the importer, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token (and role flags) on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure, including the "not verified yet" case with a resend option. `SettingsManager`: loads and displays current settings including SMTP/Turnstile fields, secret fields stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -729,55 +939,120 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   need revisiting once bulk/bookmark import exists: a bookmark file's worth of AI-*discovered* URLs
   is a different trust level than one URL a human typed in by hand, and an unreviewed batch landing
   on the public site unattended is a real risk that today's one-URL-at-a-time flow doesn't carry.
-- **Duplicate URL prevention** — `POST /imports` rejects (`409`) a `source` that already matches
-  either an existing `Recipe.source_url` (already imported) or an existing `ImportJob.source` in any
-  status (already pending/queued/processing/done/failed for that URL), shown inline in the
-  `ImportManager` form the moment submission is attempted. This is exact string matching only — no
+- **Duplicate URL prevention, scoped per owner** — `POST /imports` rejects (`409`) a `source` that
+  already matches either an existing `Recipe.source_url` or an existing `ImportJob.source` in any
+  status, **owned by the same user making the request** — shown inline in the `ImportManager` form
+  the moment submission is attempted. Scoping by owner (not globally) was a deliberate consequence
+  of making imports private-per-user (see "Per-user accounts and recipe privacy" below): a global
+  check would mean the second user to ever import a popular public recipe gets a confusing "already
+  imported" error for a recipe they can't even see. This is still exact string matching only — no
   normalization of trailing slashes, `www.` prefixes, or tracking query params — so
   `https://x.com/r/` and `https://x.com/r` (or the same page with a different `?utm_source=...`)
-  would still count as different URLs and both go through. Good enough for the actual problem this
-  solved (the same link pasted twice); revisit if that gap turns out to matter in practice. Deleting
-  a job frees its URL up for resubmission, same as if it never existed.
-- **Back office authentication** — JWT (`PyJWT`, HS256), not sessions/cookies, so the API stays
-  fully stateless and the same `Authorization: Bearer <token>` pattern works identically whether the
-  frontend is served from the same origin or not. Credentials are a single hard-coded admin account
-  — username from config (`ADMIN_USERNAME`), password from the `app_settings` row (editable from the
-  Settings page, see below) — no users table, no self-registration, no password hashing — a
-  deliberate choice for a self-hosted, single-operator tool where the "users table" would otherwise
-  be a table with exactly one row forever. `require_admin` is a FastAPI dependency applied per-route
-  (categories/recipes: only the mutating verbs) or once at the router level (`imports`, `settings`,
-  since every route on those is back-office-only); all GET routes on recipes/categories/languages
-  stay open since the front office calls them unauthenticated. The token carries no role/permissions
-  (there's only one account to have permissions), just `sub`/`exp`, so `require_admin` is only ever
-  checking "is this a validly-signed, unexpired token," not doing any authorization logic. React
-  stores the token in `localStorage` (same pattern as the language preference) and a single
-  `onUnauthorized` callback registered on `api/client.ts` logs the user out automatically the moment
-  any protected call comes back `401` (expired token, or `JWT_SECRET` rotated) instead of every form
-  independently showing a stale error forever.
-- **Admin-editable settings** — `SUPPORTED_LANGUAGES`, `DEFAULT_LANGUAGE`, `ADMIN_PASSWORD`,
-  `ANTHROPIC_API_KEY`, `CALORIE_NINJAS_API_KEY`, and the import pipeline's rate limit/timeout/HTML-size/
-  image-size knobs live in a single-row `app_settings` Postgres table (`id=1`), not `.env`, and are
-  editable from a back office **Settings** page (`SettingsManager` → `GET`/`PATCH /settings`). Two
-  other approaches were
-  considered and rejected: rewriting `.env` and restarting the affected containers would need the
-  API container to hold the Docker socket to restart itself/`worker` — giving a back-office web form
-  host-level control over the Docker daemon, a real privilege escalation for what's meant to be a
-  small self-hosted tool; rewriting `.env` without a restart wouldn't actually apply anything, since
-  `pydantic-settings` reads the file once at process startup. Storing the editable subset in Postgres
-  instead sidesteps both: `api` reads it fresh per request (it already opens a DB session per
-  request via `Depends(get_db)`, so this is free), and `worker` reads it once per import job (not
-  per HTTP call within a job) via `worker/app/settings_service.py` — no cache, no Docker socket, no
-  restart, and a change reaches the very next request or job. `.env` still seeds the row's *initial*
-  value, applied once by migration `0006`, so upgrading an existing deployment changes nothing until
-  an admin actually edits something. Secrets (`admin_password`, `anthropic_api_key`) are
-  write-only over the API — `GET /settings` returns `*_is_set: bool`, never the value — and the
-  `SettingsManager` form leaves those fields blank with a "leave blank to keep the current value"
-  placeholder rather than ever trying to redisplay them. `ADMIN_USERNAME`, `JWT_SECRET`,
-  `JWT_EXPIRES_MINUTES`, `DATABASE_URL`, `RABBITMQ_URL`, and `VITE_API_BASE_URL` stay `.env`-only —
-  either infra-level (DB/queue connection strings), security-sensitive in a way that shouldn't be
-  editable from the same login it protects (`JWT_SECRET`), or, for `VITE_API_BASE_URL`, physically
-  impossible to hot-apply since Vite bakes it into the frontend's JS bundle at build time, not
-  something a runtime settings row could ever change.
+  would still count as different URLs and both go through, for the same user. Good enough for the
+  actual problem this solved (the same link pasted twice); revisit if that gap turns out to matter
+  in practice. Deleting a job frees its URL up for resubmission for that user, same as if it never
+  existed.
+- **Per-user accounts and recipe privacy** — the app was originally built around a single
+  hard-coded admin account (see the old design below); real growth broke that immediately, since
+  every recipe was one shared public catalog with no owner. A second real user logging in saw
+  every recipe the first user had ever imported, with no way to keep any of it private. The fix:
+  every `recipes` row now has an `owner_user_id`, and the default visibility rule is private —
+  an admin sees everything (needed for moderation), the owner always sees their own regardless of
+  status, and anyone else only sees it if `status=approved AND is_shared=true`
+  (`routers/recipes.py`'s `_is_visible`/`_visibility_clause`). A manually-added recipe can opt into
+  `is_shared`; an imported one (`source_url` set) never can — `PATCH /recipes/{id}/share` 400s if
+  it's an import, and no UI offers the toggle for one either. Turning sharing on as a non-admin
+  re-sets `status=unapproved`, reusing the exact moderation gate imports already had, so a
+  non-admin's content never reaches the public landing page or another user's "from the community"
+  section without a look first; an admin's own sharing (like their own imports) is immediate. This
+  is enforced at the query level everywhere a recipe list is returned (`GET /recipes`, favorites,
+  the landing page), not just at the single-recipe read, and `GET /recipes/{id}` 404s (not 403s) a
+  recipe that's invisible to the caller, so a guessed ID can't even confirm a private recipe exists.
+- **Back office authentication is per-user, not a single shared account** — JWT (`PyJWT`, HS256),
+  not sessions/cookies, so the API stays fully stateless and the same
+  `Authorization: Bearer <token>` pattern works identically whether the frontend is served from the
+  same origin or not — that part is unchanged from the original design. What changed: credentials
+  are now real per-user rows in a `users` table (bcrypt-hashed passwords) instead of one hard-coded
+  admin account, since recipe ownership/privacy above needed a real identity to attach to, not just
+  a yes/no "is this the admin." The token now carries `user_id`/`is_admin`/`is_super_admin` (still
+  no fine-grained permissions, just these three checks) so `require_admin`/`require_super_admin`
+  can authorize without a DB round-trip on every request. `get_optional_current_user` swallows an
+  invalid/missing token instead of raising, for the routes (recipe browsing) that must stay
+  reachable by anonymous visitors but still need to know who's asking, if anyone, to apply the
+  right visibility rule. React stores the token (plus the role flags, for gating UI) in
+  `localStorage` (same pattern as the language preference) and a single `onUnauthorized` callback
+  registered on `api/client.ts` logs the user out automatically the moment any protected call comes
+  back `401` (expired token, or `JWT_SECRET` rotated) instead of every form independently showing a
+  stale error forever.
+- **A stricter super-admin tier, separate from is_admin** — the back office Settings page holds
+  live API keys (Anthropic, CalorieNinjas), SMTP credentials, and the Turnstile secret — a
+  materially bigger blast radius than approving a recipe or moderating an import queue. Rather than
+  a single `is_admin` flag covering both, `users.is_super_admin` gates just that page
+  (`routers/settings.py`'s router-level `require_super_admin`), so an operator can grant recipe-
+  moderation trust without also handing out every credential the app holds. The two flags are
+  independent columns, not an enum/hierarchy, so granting or revoking either doesn't require
+  migrating the other — though in practice every super admin is also a regular admin.
+- **Email verification, gated by CAPTCHA** — self-service signup meant the app was suddenly
+  reachable by anyone, not just an operator typing a psql command, so it needed both spam
+  resistance and proof the signer-upper controls the email they gave. Cloudflare Turnstile
+  (`captcha.py`'s `verify_turnstile`) gates `POST /auth/signup` and `/resend-verification`; a
+  freshly created account starts `is_verified=False` and can't log in until it follows the link
+  from a real email, sent by the worker over admin-configured SMTP. The resend flow exists because
+  the two things most likely to go wrong (a lost email, or SMTP not configured yet at signup time)
+  both leave a real person stuck with an account they can't get into and no obvious next step —
+  confirmed by an actual signup during development that hit exactly this. Re-signing up with an
+  already-registered-but-unverified email resends rather than erroring, for the same reason;
+  proving you can solve a CAPTCHA a second time isn't proof you own the mailbox, so the original
+  password is left untouched, only a fresh verification email goes out.
+- **Instagram import via a headless browser, not `httpx`** — every other import source is a plain
+  HTML `GET`, but Instagram serves mostly client-side-rendered content and blocks non-browser
+  requests outright, so that path doesn't work for it. `_detect_job_type` in `routers/imports.py`
+  recognizes an `instagram.com`/`instagr.am` host by string match (no separate form field — the
+  same "Import from URL" input routes automatically) and tags the job `ImportJobType.INSTAGRAM`;
+  the worker's `instagram_client.py` drives Playwright to load the real page and read the post's
+  caption, top comments, and preview image, then feeds that into the same Claude extraction and
+  image pipeline every other import already uses. Feasibility (a real public post rendering and
+  being readable this way) was verified live before any of this was built, given how brittle
+  scraping a platform that actively tries to block it can be.
+- **Editing keeps translations and nutrition in sync, always** — found via a live bug report
+  (a recipe's calories not changing after an ingredient-quantity edit): `PUT /recipes/{id}`
+  originally touched only the language being edited, silently leaving every other language's
+  translation stale, and never recomputed nutrition at all. Rather than trying to detect exactly
+  which edits matter (a title fix doesn't need retranslation of ingredients, but where's the line?),
+  any translation-field change triggers the full pipeline: a `translation_sync_jobs` row propagates
+  the edited language into every other `SUPPORTED_LANGUAGES` entry via a new Claude tool call
+  (mirroring how a fresh import already produces all languages from one call), and completion
+  re-enqueues the existing nutrition job — reusing that pipeline rather than building a second one.
+  A recipe's `processing_status` (`translating` \| `recalculating_nutrition` \| `null`) is computed
+  from whichever job is currently active, not stored, so the back office can show a badge and poll
+  until it clears without a separate "last edited, not yet reprocessed" flag to keep in sync itself.
+- **Admin-editable settings** — `SUPPORTED_LANGUAGES`, `DEFAULT_LANGUAGE`, `ANTHROPIC_API_KEY`,
+  `CALORIE_NINJAS_API_KEY`, SMTP host/port/credentials, the Turnstile site/secret key pair, the
+  public site URL, and the import pipeline's rate limit/timeout/HTML-size/image-size knobs live in
+  a single-row `app_settings` Postgres table (`id=1`), not `.env`, and are editable from a back
+  office **Settings** page gated to `is_super_admin` (`SettingsManager` → `GET`/`PATCH /settings`).
+  `admin_password` — the one field that used to live here — was removed once auth became per-user;
+  a login password is now `users.password_hash`, changed via `PATCH /users/me/password`, not a
+  site-wide setting. Two other approaches to live-editable config were considered and rejected:
+  rewriting `.env` and restarting the affected containers would need the API container to hold the
+  Docker socket to restart itself/`worker` — giving a back-office web form host-level control over
+  the Docker daemon, a real privilege escalation for what's meant to be a small self-hosted tool;
+  rewriting `.env` without a restart wouldn't actually apply anything, since `pydantic-settings`
+  reads the file once at process startup. Storing the editable subset in Postgres instead sidesteps
+  both: `api` reads it fresh per request (it already opens a DB session per request via
+  `Depends(get_db)`, so this is free), and `worker` reads it once per job (not per HTTP call within
+  a job) via `worker/app/settings_service.py` — no cache, no Docker socket, no restart, and a change
+  reaches the very next request or job. `.env` still seeds the row's *initial* values, applied once
+  by migrations `0006`/`0007`/`0017`, so upgrading an existing deployment changes nothing until an
+  admin actually edits something. Secrets (`anthropic_api_key`, `smtp_password`,
+  `turnstile_secret_key`, ...) are write-only over the API — `GET /settings` returns `*_is_set:
+  bool`, never the value — and the `SettingsManager` form leaves those fields blank with a "leave
+  blank to keep the current value" placeholder rather than ever trying to redisplay them.
+  `JWT_SECRET`, `JWT_EXPIRES_MINUTES`, `DATABASE_URL`, `RABBITMQ_URL`, and `VITE_API_BASE_URL` stay
+  `.env`-only — either infra-level (DB/queue connection strings), security-sensitive in a way that
+  shouldn't be editable from the same login it protects (`JWT_SECRET`), or, for
+  `VITE_API_BASE_URL`, physically impossible to hot-apply since Vite bakes it into the frontend's
+  JS bundle at build time, not something a runtime settings row could ever change.
 - **Ingredient nutrition** — recipes rarely give exact weights ("1 onion," "a pinch of salt"), and
   there's no scrapeable public source for "how many grams is 1 onion." The original choice was USDA
   FoodData Central (free, official, both a nutrient panel and portion-weight data in one place), but
@@ -836,7 +1111,10 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   and the button were removed rather than kept around as an unused manual-retry path — if
   enrichment fails for one recipe (e.g. a transient CalorieNinjas error), there's currently no way
   to retry just that recipe short of re-importing it; this was a deliberate simplicity trade-off,
-  revisit if that turns out to matter in practice. A one-time backfill (the same
+  revisit if that turns out to matter in practice — though a hand-edit that changes ingredients now
+  gets a second, indirect trigger: a completed `translation_sync_jobs` run re-enqueues nutrition
+  automatically, so correcting a bad ingredient line is possible without a full re-import (see
+  "Editing keeps translations and nutrition in sync, always," above). A one-time backfill (the same
   `_enqueue_nutrition_job` helper, run manually once for every pre-existing recipe with no
   `recipe_ingredient_links` yet) caught every recipe that predated this change.
 - **Ingredient data refresh is global, not per-recipe** — the natural first instinct for "the
