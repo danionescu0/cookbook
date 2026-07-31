@@ -1,0 +1,27 @@
+# Production overlay — adds TLS termination via Caddy in front of the stack. Load explicitly
+# alongside the base file (never together with docker-compose.override.yml, which is dev-only):
+#
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Passing explicit -f flags disables Compose's automatic docker-compose.override.yml lookup, so
+# there's no need to remove or rename that file on the server.
+services:
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    environment:
+      DOMAIN: ${DOMAIN}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - frontend
+      - api
+
+volumes:
+  caddy_data:
+  caddy_config:

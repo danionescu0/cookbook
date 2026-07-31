@@ -778,16 +778,25 @@ per-user JWT auth — see [Design Decisions](#design-decisions).
 
 ## Deployment
 
-- All services (frontend, api, worker, RabbitMQ, PostgreSQL, reverse proxy) are defined in a single
-  `docker-compose.yml`.
-- **Local dev (Fedora laptop):** `docker-compose.override.yml` adds hot reload and exposes ports
-  directly for debugging.
-- **Production (Raspberry Pi):** images are built/pulled as `arm64`; only the reverse proxy port is
-  exposed externally.
-- Infra-level secrets (DB credentials, RabbitMQ credentials, JWT signing secret) are supplied via
-  `.env`, never committed. Everything else editable at runtime (Anthropic/CalorieNinjas API keys,
-  SMTP credentials, Turnstile keys) lives in the admin-editable `app_settings` table instead — see
-  [Data Model](#data-model-sketch) and [Design Decisions](#design-decisions).
+- Core services (db, rabbitmq, api, worker, frontend) are defined in `docker-compose.yml`. Two
+  overlays layer on top of it depending on environment — never both at once:
+  - **Local dev:** `docker-compose.override.yml` is loaded automatically by plain `docker compose
+    up` — hot reload (frontend on Vite, API on `uvicorn --reload`) and host ports exposed directly
+    for debugging (`5173`, `8000`, `5432`, `5672`, `15672`).
+  - **Production:** `docker-compose.prod.yml`, loaded explicitly via
+    `docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build` (explicit `-f`
+    flags stop Compose from also auto-loading `docker-compose.override.yml`). Adds a `caddy`
+    service that terminates TLS (automatic Let's Encrypt via the `DOMAIN` env var, see
+    `Caddyfile`) and reverse-proxies `/api/*` to the `api` container and everything else to
+    `frontend` — it's the only service publishing ports (80/443) to the host; none of db,
+    rabbitmq, api, worker, or frontend publish anything directly in production, so there's nothing
+    for a firewall misconfiguration (or Docker's well-known habit of bypassing `ufw` for published
+    ports) to accidentally expose.
+- Infra-level secrets (DB credentials, RabbitMQ credentials, JWT signing secret, the domain Caddy
+  requests a cert for) are supplied via `.env`, never committed. Everything else editable at
+  runtime (Anthropic/CalorieNinjas API keys, SMTP credentials, Turnstile keys) lives in the
+  admin-editable `app_settings` table instead — see [Data Model](#data-model-sketch) and
+  [Design Decisions](#design-decisions).
 
 ## Testing
 
