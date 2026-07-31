@@ -36,6 +36,10 @@ const en = {
     captchaRequiredError: "Please complete the CAPTCHA.",
     loginPrompt: "Already have an account?",
     loginLink: "Log in",
+    termsPrompt: "By signing up, you agree to the",
+    termsLink: "Terms and Conditions",
+    termsAccepted: "Terms and Conditions accepted.",
+    termsReviewLink: "Review again",
   },
   verifyEmail: {
     verifying: "Verifying your email…",
@@ -258,6 +262,69 @@ const en = {
     perServing: "Per serving",
     wholeRecipe: "Whole recipe",
     estimateNote: "estimated from ingredient quantities",
+  },
+  terms: {
+    // Bumped alongside api/app/routers/auth.py's TERMS_VERSION whenever this text changes
+    // materially — stored per-user as an audit trail of what they agreed to at signup.
+    version: "2026-07-31",
+    title: "Terms and Conditions",
+    lastUpdated: "Last updated: July 31, 2026",
+    navLink: "Terms and Conditions",
+    scrollHint: "Scroll to the bottom to continue.",
+    agreeButton: "I have read and agree",
+    closeButton: "Close",
+    sections: [
+      {
+        heading: "1. What this is",
+        body: [
+          "Cookbook is a self-hosted, personal recipe collection. By creating an account or using this site, you agree to these terms. If you don't agree, please don't use the site.",
+        ],
+      },
+      {
+        heading: "2. Your account",
+        body: [
+          "You're responsible for keeping your password confidential and for anything that happens under your account. Tell us if you think someone else has access to it.",
+          "You must be old enough, under the laws that apply to you, to agree to these terms on your own behalf.",
+        ],
+      },
+      {
+        heading: "3. Your recipes stay yours",
+        body: [
+          "Recipes you add are private to you by default — nobody else can see them. You can choose to share a recipe you've written by hand with the community; recipes imported from another site stay private to you permanently and can't be shared, out of respect for the original source.",
+          "You keep ownership of what you write. By sharing a recipe with the community, you're giving other users of this site permission to view and cook it — you're not giving up any rights to it.",
+          "Don't submit content that isn't yours to share, that infringes someone else's copyright, or that's abusive, illegal, or harmful.",
+        ],
+      },
+      {
+        heading: "4. Review and removal",
+        body: [
+          "Recipes shared by non-admin users are reviewed before they become visible to anyone else. We may decline to publish, or later remove, any shared content that breaks these terms — including removing an account entirely for repeated or serious violations.",
+        ],
+      },
+      {
+        heading: "5. No warranty",
+        body: [
+          "This site is provided \"as is,\" without warranty of any kind. Nutrition figures are estimates calculated from ingredient data and may be inaccurate — don't rely on them for medical or dietary decisions without checking with a professional.",
+          "We don't guarantee the site will always be available, error-free, or uninterrupted.",
+        ],
+      },
+      {
+        heading: "6. Limitation of liability",
+        body: [
+          "To the fullest extent permitted by law, we aren't liable for any indirect, incidental, or consequential damages arising from your use of this site.",
+        ],
+      },
+      {
+        heading: "7. Changes to these terms",
+        body: [
+          "We may update these terms as the site changes. If we make a material change, the version date above will change and, where practical, we'll ask existing users to review it again.",
+        ],
+      },
+      {
+        heading: "8. Contact",
+        body: ["Questions about these terms can be sent to the site administrator."],
+      },
+    ],
   },
   ingredientRefresh: {
     heading: "Ingredient nutrition data",

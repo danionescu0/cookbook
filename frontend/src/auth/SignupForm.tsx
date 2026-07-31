@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
+import { TermsOverlay } from "../legal/TermsOverlay";
 import { primaryButton } from "../ui/buttonStyles";
 import { TurnstileWidget } from "./TurnstileWidget";
 
@@ -16,6 +17,8 @@ export function SignupForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [termsAccepted, setTermsAccepted] = useState(false);
+  const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   // The server's own message, not a fixed string — it differs when this email already has an
@@ -34,6 +37,10 @@ export function SignupForm() {
     event.preventDefault();
     setError(null);
 
+    if (!termsAccepted) {
+      setShowTerms(true);
+      return;
+    }
     if (password !== confirmPassword) {
       setError(t.signup.passwordMismatchError);
       return;
@@ -45,7 +52,13 @@ export function SignupForm() {
 
     setSubmitting(true);
     try {
-      const response = await api.signup({ username, email, password, turnstile_token: turnstileToken });
+      const response = await api.signup({
+        username,
+        email,
+        password,
+        turnstile_token: turnstileToken,
+        terms_accepted: termsAccepted,
+      });
       setSuccessMessage(response.detail);
     } catch (e) {
       setError(String(e));
@@ -130,6 +143,31 @@ export function SignupForm() {
 
         {siteKey && <TurnstileWidget siteKey={siteKey} onToken={setTurnstileToken} />}
 
+        {termsAccepted ? (
+          <p className="text-sm text-olive">
+            ✓ {t.signup.termsAccepted}{" "}
+            <button
+              type="button"
+              onClick={() => setShowTerms(true)}
+              className="text-terracotta hover:underline"
+            >
+              {t.signup.termsReviewLink}
+            </button>
+          </p>
+        ) : (
+          <p className="text-sm text-ink/70">
+            {t.signup.termsPrompt}{" "}
+            <button
+              type="button"
+              onClick={() => setShowTerms(true)}
+              className="text-terracotta hover:underline"
+            >
+              {t.signup.termsLink}
+            </button>
+            .
+          </p>
+        )}
+
         {error && (
           <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
@@ -147,6 +185,16 @@ export function SignupForm() {
           {t.signup.loginLink}
         </Link>
       </p>
+
+      {showTerms && (
+        <TermsOverlay
+          onAgree={() => {
+            setTermsAccepted(true);
+            setShowTerms(false);
+          }}
+          onClose={() => setShowTerms(false)}
+        />
+      )}
     </section>
   );
 }

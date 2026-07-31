@@ -15,6 +15,7 @@ import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
 import { RecipeDetail } from "./frontoffice/RecipeDetail";
 import { SUPPORTED_LANGUAGES } from "./i18n/config";
 import { useLanguage } from "./i18n/LanguageContext";
+import { TermsPage } from "./legal/TermsPage";
 import { secondaryButton } from "./ui/buttonStyles";
 
 function navLinkClasses({ isActive }: { isActive: boolean }): string {
@@ -126,7 +127,7 @@ export function App() {
   const { isAuthenticated, user, logout } = useAuth();
 
   return (
-    <div className="min-h-screen bg-cream text-ink">
+    <div className="flex min-h-screen flex-col bg-cream text-ink">
       <header className="border-b border-olive-light bg-cream-card">
         <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
           <Link to="/" className="font-serif text-2xl font-semibold text-ink">
@@ -167,7 +168,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl px-4 py-6 sm:px-6">
+      <main className="mx-auto max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <Routes>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/recipes" element={<RecipeBrowser />} />
@@ -175,6 +176,7 @@ export function App() {
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          <Route path="/terms" element={<TermsPage />} />
           <Route
             path="/account"
             element={
@@ -204,6 +206,12 @@ export function App() {
           </Route>
         </Routes>
       </main>
+
+      <footer className="border-t border-olive-light bg-cream-card py-4 text-center text-xs text-ink/50">
+        <Link to="/terms" className="hover:text-ink hover:underline">
+          {t.terms.navLink}
+        </Link>
+      </footer>
     </div>
   );
 }

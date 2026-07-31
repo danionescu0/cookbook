@@ -12,6 +12,7 @@ _SIGNUP_PAYLOAD = {
     "email": "newuser@example.com",
     "password": "supersecret1",
     "turnstile_token": "test-token",
+    "terms_accepted": True,
 }
 
 
@@ -30,6 +31,21 @@ def test_signup_creates_unverified_user(
     user = db_session.query(User).filter_by(username="newuser").one()
     assert user.is_verified is False
     assert user.is_admin is False
+
+
+def test_signup_records_terms_acceptance(unauthenticated_client: TestClient, monkeypatch, db_session: Session) -> None:
+    response = _signup(unauthenticated_client, monkeypatch)
+
+    assert response.status_code == 201
+    user = db_session.query(User).filter_by(username="newuser").one()
+    assert user.terms_accepted_at is not None
+    assert user.terms_version == auth_router.TERMS_VERSION
+
+
+def test_signup_rejects_terms_not_accepted(unauthenticated_client: TestClient, monkeypatch) -> None:
+    response = _signup(unauthenticated_client, monkeypatch, terms_accepted=False)
+
+    assert response.status_code == 400
 
 
 def test_signup_rejects_failed_captcha(unauthenticated_client: TestClient, monkeypatch) -> None:

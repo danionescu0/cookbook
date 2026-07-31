@@ -20,12 +20,18 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 _VERIFICATION_TOKEN_LIFETIME = timedelta(hours=24)
 
+# Bumped whenever the Terms and Conditions text changes materially. Kept in sync by hand with the
+# frontend's copy of the same string (frontend/src/i18n/translations/{en,ro}.ts, terms.version) —
+# stored per-user at signup as an audit trail of what they actually agreed to, not to gate access.
+TERMS_VERSION = "2026-07-31"
+
 
 class SignupRequest(BaseModel):
     username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(min_length=8)
     turnstile_token: str
+    terms_accepted: bool
 
 
 class UserRead(BaseModel):
@@ -85,6 +91,9 @@ def _resend_verification_email(db: Session, user: User) -> None:
 
 @router.post("/signup", status_code=201)
 def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, str]:
+    if not payload.terms_accepted:
+        raise HTTPException(status_code=400, detail="You must accept the Terms and Conditions to sign up")
+
     app_settings = get_settings(db)
     if not verify_turnstile(payload.turnstile_token, app_settings.turnstile_secret_key):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
@@ -110,7 +119,12 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
 
     password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode("ascii")
     user = User(
-        username=payload.username, email=payload.email, password_hash=password_hash, is_verified=False
+        username=payload.username,
+        email=payload.email,
+        password_hash=password_hash,
+        is_verified=False,
+        terms_accepted_at=datetime.now(timezone.utc),
+        terms_version=TERMS_VERSION,
     )
     db.add(user)
     db.commit()

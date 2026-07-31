@@ -40,6 +40,10 @@ const ro: Translation = {
     captchaRequiredError: "Te rugăm să completezi CAPTCHA.",
     loginPrompt: "Ai deja un cont?",
     loginLink: "Conectare",
+    termsPrompt: "Prin înregistrare, ești de acord cu",
+    termsLink: "Termenii și condițiile",
+    termsAccepted: "Termenii și condițiile au fost acceptați.",
+    termsReviewLink: "Recitește",
   },
   verifyEmail: {
     verifying: "Se verifică emailul…",
@@ -263,6 +267,67 @@ const ro: Translation = {
     perServing: "Per porție",
     wholeRecipe: "Rețeta întreagă",
     estimateNote: "estimat din cantitățile de ingrediente",
+  },
+  terms: {
+    version: "2026-07-31",
+    title: "Termeni și condiții",
+    lastUpdated: "Ultima actualizare: 31 iulie 2026",
+    navLink: "Termeni și condiții",
+    scrollHint: "Derulează până la final pentru a continua.",
+    agreeButton: "Am citit și sunt de acord",
+    closeButton: "Închide",
+    sections: [
+      {
+        heading: "1. Ce este acest site",
+        body: [
+          "Cookbook este o colecție personală de rețete, găzduită independent. Creând un cont sau folosind acest site, ești de acord cu acești termeni. Dacă nu ești de acord, te rugăm să nu folosești site-ul.",
+        ],
+      },
+      {
+        heading: "2. Contul tău",
+        body: [
+          "Ești responsabil pentru păstrarea confidențială a parolei și pentru tot ce se întâmplă din contul tău. Anunță-ne dacă crezi că altcineva are acces la el.",
+          "Trebuie să ai vârsta necesară, conform legilor care ți se aplică, pentru a fi de acord cu acești termeni în nume propriu.",
+        ],
+      },
+      {
+        heading: "3. Rețetele tale rămân ale tale",
+        body: [
+          "Rețetele pe care le adaugi sunt private, vizibile doar ție, în mod implicit. Poți alege să distribui o rețetă scrisă de mână cu comunitatea; rețetele importate de pe alt site rămân permanent private și nu pot fi distribuite, din respect pentru sursa originală.",
+          "Rămâi proprietarul a ceea ce scrii. Distribuind o rețetă cu comunitatea, le oferi celorlalți utilizatori ai site-ului permisiunea de a o vedea și găti — nu cedezi niciun drept asupra ei.",
+          "Nu trimite conținut care nu îți aparține, care încalcă drepturile de autor ale altcuiva sau care este abuziv, ilegal ori dăunător.",
+        ],
+      },
+      {
+        heading: "4. Verificare și eliminare",
+        body: [
+          "Rețetele distribuite de utilizatori care nu sunt admin sunt verificate înainte de a deveni vizibile altcuiva. Putem refuza publicarea, sau elimina ulterior, orice conținut distribuit care încalcă acești termeni — inclusiv eliminarea completă a unui cont în cazul unor încălcări repetate sau grave.",
+        ],
+      },
+      {
+        heading: "5. Fără garanții",
+        body: [
+          "Acest site este oferit \"ca atare\", fără niciun fel de garanție. Valorile nutriționale sunt estimări calculate din datele ingredientelor și pot fi inexacte — nu te baza pe ele pentru decizii medicale sau alimentare fără a consulta un specialist.",
+          "Nu garantăm că site-ul va fi mereu disponibil, fără erori sau întreruperi.",
+        ],
+      },
+      {
+        heading: "6. Limitarea răspunderii",
+        body: [
+          "În limita maximă permisă de lege, nu suntem răspunzători pentru daune indirecte, incidentale sau pe cale de consecință care rezultă din folosirea acestui site.",
+        ],
+      },
+      {
+        heading: "7. Modificări ale acestor termeni",
+        body: [
+          "Putem actualiza acești termeni pe măsură ce site-ul evoluează. Dacă facem o modificare importantă, data versiunii de mai sus se va schimba și, acolo unde este posibil, îi vom ruga pe utilizatorii existenți să îi recitească.",
+        ],
+      },
+      {
+        heading: "8. Contact",
+        body: ["Întrebările legate de acești termeni pot fi trimise administratorului site-ului."],
+      },
+    ],
   },
   ingredientRefresh: {
     heading: "Date nutriționale ingrediente",

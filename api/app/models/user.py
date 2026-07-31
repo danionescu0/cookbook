@@ -23,4 +23,10 @@ class User(Base):
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # When/which version of the Terms and Conditions this account agreed to at signup. Null for
+    # accounts that predate this policy (the migration-seeded admin, and anyone who signed up
+    # before it existed) — nothing truthful to backfill for those.
+    terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
