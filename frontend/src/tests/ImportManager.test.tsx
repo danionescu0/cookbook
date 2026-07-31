@@ -88,13 +88,24 @@ describe("ImportManager", () => {
     );
   });
 
-  it("shows an approve button only for pending/failed jobs", async () => {
+  it("shows a run-import button for a pending job and a retry button for a failed one", async () => {
     mockedApi.listImportJobs.mockResolvedValue([pendingJob, queuedJob, failedJob, doneJob]);
 
     renderManager();
     await screen.findAllByText("https://example.com/recipe");
 
-    expect(screen.getAllByRole("button", { name: "Approve" })).toHaveLength(2); // pending + failed
+    expect(screen.getAllByRole("button", { name: "Run import" })).toHaveLength(1);
+    expect(screen.getAllByRole("button", { name: "Retry" })).toHaveLength(1);
+  });
+
+  it("does not list a done job — its data now lives on the resulting recipe", async () => {
+    mockedApi.listImportJobs.mockResolvedValue([doneJob]);
+
+    renderManager();
+    await screen.findByText("Recipe URL"); // form has rendered
+
+    expect(screen.queryByText("https://example.com/recipe")).not.toBeInTheDocument();
+    expect(screen.queryByText("In progress")).not.toBeInTheDocument();
   });
 
   it("approving a pending job calls the API", async () => {
@@ -104,7 +115,7 @@ describe("ImportManager", () => {
     renderManager();
     await screen.findByText("https://example.com/recipe");
 
-    await user.click(screen.getByRole("button", { name: "Approve" }));
+    await user.click(screen.getByRole("button", { name: "Run import" }));
 
     await waitFor(() => expect(mockedApi.approveImportJob).toHaveBeenCalledWith(1));
   });

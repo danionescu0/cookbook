@@ -48,11 +48,20 @@ function LanguageSwitcher() {
 }
 
 function RecipesPage() {
+  const { t } = useLanguage();
   return (
     <div className="space-y-10">
       <CategoryManager />
-      <ImportManager />
-      <RecipeManager />
+      <section
+        aria-labelledby="recipes-heading"
+        className="rounded-lg bg-cream-card p-5 ring-1 ring-black/5"
+      >
+        <h2 id="recipes-heading" className="font-serif text-2xl font-semibold text-ink">
+          {t.recipeManager.heading}
+        </h2>
+        <ImportManager />
+        <RecipeManager />
+      </section>
     </div>
   );
 }

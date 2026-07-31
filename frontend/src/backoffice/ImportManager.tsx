@@ -4,7 +4,6 @@ import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton } from "../ui/buttonStyles";
 import type { Category, ImportJob, ImportJobStatus } from "../types";
 
-const APPROVABLE: ImportJobStatus[] = ["pending", "failed"];
 const ACTIVE: ImportJobStatus[] = ["queued", "fetching", "processing"];
 
 export function ImportManager() {
@@ -63,14 +62,14 @@ export function ImportManager() {
     }
   };
 
+  // A "done" job's data now lives entirely on the Recipe it produced (source_url, etc, see
+  // RecipeManager) — it drops out of this list the moment it finishes rather than appearing
+  // twice. `jobs` itself (unfiltered) still drives the polling effect above.
+  const inProgressJobs = jobs.filter((job) => job.status !== "done");
+
   return (
-    <section
-      aria-labelledby="imports-heading"
-      className="rounded-lg bg-cream-card p-5 ring-1 ring-black/5"
-    >
-      <h2 id="imports-heading" className="font-serif text-2xl font-semibold text-ink">
-        {t.importManager.heading}
-      </h2>
+    <div className="mt-4">
+      <h3 className="font-serif text-lg font-semibold text-ink">{t.importManager.heading}</h3>
       <p className="mt-1 text-sm text-ink/60">{t.importManager.instagramHint}</p>
       <p className="mt-1 text-sm text-ink/60">{t.importManager.privateHint}</p>
 
@@ -118,38 +117,54 @@ export function ImportManager() {
         </p>
       )}
 
-      <ul className="mt-5 divide-y divide-olive-light">
-        {jobs.map((job) => (
-          <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
-            <div>
-              <p className="break-all text-ink">{job.source}</p>
-              <p className="text-sm text-ink/50">
-                {t.importManager.statuses[job.status]}
-                {job.created_by_username && (
-                  <span className="ml-2">
-                    {t.importManager.importedBy.replace("{username}", job.created_by_username)}
-                  </span>
-                )}
-              </p>
-              {job.error && <p className="text-sm text-red-700">{job.error}</p>}
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              {APPROVABLE.includes(job.status) && (
-                <button
-                  type="button"
-                  onClick={() => handleApprove(job.id)}
-                  className={primaryButton}
-                >
-                  {t.importManager.approve}
-                </button>
-              )}
-              <button type="button" onClick={() => handleDelete(job.id)} className={dangerButton}>
-                {t.importManager.delete}
-              </button>
-            </div>
-          </li>
-        ))}
-      </ul>
-    </section>
+      {inProgressJobs.length > 0 && (
+        <>
+          <h3 className="mt-6 font-serif text-lg font-semibold text-ink">
+            {t.importManager.inProgressHeading}
+          </h3>
+          <ul className="mt-2 divide-y divide-olive-light">
+            {inProgressJobs.map((job) => (
+              <li key={job.id} className="flex flex-wrap items-center justify-between gap-2 py-3">
+                <div>
+                  <p className="break-all text-ink">{job.source}</p>
+                  <p className="text-sm text-ink/50">
+                    {t.importManager.statuses[job.status]}
+                    {job.created_by_username && (
+                      <span className="ml-2">
+                        {t.importManager.importedBy.replace("{username}", job.created_by_username)}
+                      </span>
+                    )}
+                  </p>
+                  {job.error && <p className="text-sm text-red-700">{job.error}</p>}
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2">
+                  {job.status === "pending" && (
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(job.id)}
+                      className={primaryButton}
+                    >
+                      {t.importManager.runImport}
+                    </button>
+                  )}
+                  {job.status === "failed" && (
+                    <button
+                      type="button"
+                      onClick={() => handleApprove(job.id)}
+                      className={primaryButton}
+                    >
+                      {t.importManager.retry}
+                    </button>
+                  )}
+                  <button type="button" onClick={() => handleDelete(job.id)} className={dangerButton}>
+                    {t.importManager.delete}
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </div>
   );
 }

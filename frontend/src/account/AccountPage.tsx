@@ -39,6 +39,9 @@ function RecipeList({ recipes, showStatus, onToggleShare }: RecipeListProps) {
               {recipe.title}
               {showStatus && <em className="ml-1 text-xs text-ink/50 not-italic">({recipe.status})</em>}
             </p>
+            {recipe.source_url && (
+              <p className="text-xs text-ink/50">{t.account.importedBadge}</p>
+            )}
           </Link>
           {/* Imports (source_url set) never get a sharing control — always private. */}
           {onToggleShare && !recipe.source_url && (
@@ -166,8 +169,6 @@ export function AccountPage() {
         )}
       </section>
 
-      <ImportManager />
-
       <section className="rounded-lg bg-cream-card p-5 ring-1 ring-black/5">
         <h3 className="font-serif text-xl font-semibold text-ink">{t.account.favoritesHeading}</h3>
         {favorites.length === 0 ? (
@@ -186,6 +187,7 @@ export function AccountPage() {
             {t.account.addRecipeLink}
           </Link>
         </div>
+        <ImportManager />
         {submissions.length === 0 ? (
           <p className="mt-2 text-sm text-ink/60">{t.account.noRecipes}</p>
         ) : (

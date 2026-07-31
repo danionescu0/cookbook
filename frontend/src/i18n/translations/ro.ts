@@ -68,6 +68,7 @@ const ro: Translation = {
     addRecipeLink: "Adaugă o rețetă",
     shareAction: "Distribuie comunității",
     unshareAction: "Fă privată",
+    importedBadge: "Importată",
   },
   recipeSubmit: {
     heading: "Adaugă o rețetă",
@@ -174,6 +175,7 @@ const ro: Translation = {
     removeImage: "Șterge imaginea",
     pasteImageHint: "Lipește o imagine, sau alege un fișier — poți adăuga mai multe.",
     submittedBy: "deținut de {username}",
+    importedFrom: "importat de la {domain}",
     sharedBadge: "distribuit",
     processingStatus: {
       translating: "Se traduce…",
@@ -182,11 +184,13 @@ const ro: Translation = {
   },
   importManager: {
     heading: "Importă din URL",
+    inProgressHeading: "În desfășurare",
     urlLabel: "URL rețetă",
     categoryLabel: "Categorie",
     categoryPlaceholder: "Alege o categorie",
     add: "Adaugă",
-    approve: "Aprobă",
+    runImport: "Rulează importul",
+    retry: "Reîncearcă",
     delete: "Șterge",
     instagramHint:
       "Funcționează și linkurile către postări sau reels de Instagram — rețeta este citită din descriere și comentarii, iar o fotografie reprezentativă este preluată automat. Nimic diferit de făcut: lipește linkul și adaugă-l ca pe orice alt URL.",

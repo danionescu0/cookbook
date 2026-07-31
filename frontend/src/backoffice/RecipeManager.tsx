@@ -21,6 +21,14 @@ interface EditForm {
   images: string[];
 }
 
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 function toEditForm(recipe: Recipe): EditForm {
   return {
     title: recipe.title,
@@ -177,13 +185,8 @@ export function RecipeManager() {
   };
 
   return (
-    <section
-      aria-labelledby="recipes-heading"
-      className="rounded-lg bg-cream-card p-5 ring-1 ring-black/5"
-    >
-      <h2 id="recipes-heading" className="font-serif text-2xl font-semibold text-ink">
-        {t.recipeManager.heading}
-      </h2>
+    <div>
+      <h3 className="mt-6 font-serif text-lg font-semibold text-ink">{t.recipeManager.add}</h3>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
@@ -246,12 +249,22 @@ export function RecipeManager() {
         </p>
       )}
 
-      <ul className="mt-5 divide-y divide-olive-light">
+      <ul className="mt-8 divide-y divide-olive-light">
         {recipes.map((recipe) => (
           <li key={recipe.id} className="py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-ink">
                 {recipe.title} <em className="text-sm text-ink/50 not-italic">({recipe.status})</em>
+                {recipe.source_url ? (
+                  <a
+                    href={recipe.source_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="ml-2 text-sm text-terracotta hover:underline"
+                  >
+                    {t.recipeManager.importedFrom.replace("{domain}", hostnameOf(recipe.source_url))}
+                  </a>
+                ) : null}
                 <span className="ml-2 text-sm text-ink/50">
                   {t.recipeManager.submittedBy.replace("{username}", recipe.owner_username)}
                 </span>
@@ -494,6 +507,6 @@ export function RecipeManager() {
           </li>
         ))}
       </ul>
-    </section>
+    </div>
   );
 }

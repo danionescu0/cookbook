@@ -239,6 +239,16 @@ describe("RecipeManager", () => {
     expect(screen.queryByRole("button", { name: "Make private" })).not.toBeInTheDocument();
   });
 
+  it("shows the source URL as a link for an imported recipe, and nothing for a manual one", async () => {
+    mockedApi.listRecipes.mockResolvedValue([cake, pendingSoup]);
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    const sourceLink = screen.getByRole("link", { name: "imported from example.com" });
+    expect(sourceLink).toHaveAttribute("href", "https://example.com/soup");
+  });
+
   it("shows a processing-status badge and polls until it clears", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mockedApi.listRecipes

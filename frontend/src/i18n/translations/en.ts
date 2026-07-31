@@ -64,6 +64,7 @@ const en = {
     addRecipeLink: "Add a recipe",
     shareAction: "Share with community",
     unshareAction: "Make private",
+    importedBadge: "Imported",
   },
   recipeSubmit: {
     heading: "Add a recipe",
@@ -170,6 +171,7 @@ const en = {
     removeImage: "Remove image",
     pasteImageHint: "Paste an image, or choose a file — you can add more than one.",
     submittedBy: "owned by {username}",
+    importedFrom: "imported from {domain}",
     sharedBadge: "shared",
     processingStatus: {
       translating: "Translating…",
@@ -178,11 +180,13 @@ const en = {
   },
   importManager: {
     heading: "Import from URL",
+    inProgressHeading: "In progress",
     urlLabel: "Recipe URL",
     categoryLabel: "Category",
     categoryPlaceholder: "Select a category",
     add: "Add",
-    approve: "Approve",
+    runImport: "Run import",
+    retry: "Retry",
     delete: "Delete",
     instagramHint:
       "Instagram post and reel links work too — the recipe is read from the caption and comments, and a preview photo is grabbed automatically. Nothing to do differently: paste the link and add it like any other URL.",
