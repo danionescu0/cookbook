@@ -62,6 +62,8 @@ services:
   frontend:
     build:
       context: ./frontend
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL}
     restart: unless-stopped
     environment:
       VITE_API_BASE_URL: ${VITE_API_BASE_URL}
