@@ -9,6 +9,7 @@ __pycache__/
 .venv/
 .pytest_cache/
 *.db
+*.dump
 
 # locally downloaded/processed recipe images (local IMAGES_DIR default, not the Docker volume)
 api/data/
