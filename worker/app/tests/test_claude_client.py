@@ -181,3 +181,65 @@ def test_translate_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.Monk
 
     with pytest.raises(claude_client.RecipeExtractionError):
         claude_client.translate_recipe({"title": "Soup"}, ["ro"], "test-key")
+
+
+class RecordingFakeMessages:
+    def __init__(self, response: SimpleNamespace) -> None:
+        self._response = response
+        self.received_kwargs: dict[str, object] | None = None
+
+    def create(self, **kwargs: object) -> SimpleNamespace:
+        self.received_kwargs = kwargs
+        return self._response
+
+
+class RecordingFakeClient:
+    def __init__(self, response: SimpleNamespace) -> None:
+        self.messages = RecordingFakeMessages(response)
+
+
+# Extraction/parsing calls (large-HTML input, mechanical tool-forced output) run on the cheaper
+# Haiku model; translate_recipe (small input, quality-sensitive) stays on Sonnet — see the model
+# constants' docstring in claude_client.py.
+def test_extract_recipe_uses_extraction_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key")
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
+
+
+def test_parse_ingredients_for_nutrition_uses_extraction_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "parsed_ingredients", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
+
+
+def test_parse_recipe_from_text_uses_extraction_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.parse_recipe_from_text("caption text", ["ro"], "test-key")
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
+
+
+def test_translate_recipe_uses_sonnet_model(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.translate_recipe({"title": "Soup"}, ["en"], "test-key")
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.MODEL

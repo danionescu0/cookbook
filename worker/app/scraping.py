@@ -1,8 +1,10 @@
 import logging
+import re
 from urllib.parse import urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
+from bs4 import BeautifulSoup, Comment
 
 from app.config import settings
 from app.rate_limiter import DomainRateLimiter
@@ -14,9 +16,49 @@ logger = logging.getLogger(__name__)
 # fetch_page passes the current DB-backed rate explicitly, so this never actually applies.
 _rate_limiter = DomainRateLimiter(6)
 
+# Tags that never carry recipe content, just page chrome/boilerplate — stripping them
+# (scripts and styles especially) is what keeps a raw page dump from burning most of the
+# max_html_chars budget, and therefore most of the Claude input-token cost, on noise.
+_NOISE_TAGS = (
+    "script",
+    "style",
+    "noscript",
+    "svg",
+    "iframe",
+    "link",
+    "meta",
+    "form",
+    "button",
+    "template",
+    "nav",
+    "footer",
+    "header",
+    "aside",
+)
+_NOISE_ATTRS = frozenset({"class", "style", "role"})
+_NOISE_ATTR_PREFIXES = ("data-", "on", "aria-")
+
 
 class ScrapeDisallowedError(Exception):
     pass
+
+
+def _clean_html(html: str) -> str:
+    soup = BeautifulSoup(html, "html.parser")
+
+    for tag in soup.find_all(_NOISE_TAGS):
+        tag.decompose()
+
+    for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
+        comment.extract()
+
+    for tag in soup.find_all(True):
+        for attr in list(tag.attrs):
+            if attr in _NOISE_ATTRS or attr.startswith(_NOISE_ATTR_PREFIXES):
+                del tag.attrs[attr]
+
+    root = soup.body or soup
+    return re.sub(r"\n{2,}", "\n", str(root)).strip()
 
 
 def _fetch_robots_txt(url: str, timeout_seconds: float) -> RobotFileParser:
@@ -65,4 +107,4 @@ def fetch_page(url: str, app_settings: SettingsSnapshot) -> str:
         follow_redirects=True,
     )
     response.raise_for_status()
-    return response.text[: app_settings.max_html_chars]
+    return _clean_html(response.text)[: app_settings.max_html_chars]

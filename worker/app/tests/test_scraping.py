@@ -119,6 +119,55 @@ def test_fetch_page_passes_current_rate_limit_to_rate_limiter(
     assert calls == [(("example.com", None, 42), {})]
 
 
+def test_fetch_page_strips_boilerplate_before_returning(monkeypatch: pytest.MonkeyPatch) -> None:
+    page_html = (
+        "<html><head><script>track();</script><style>.a{color:red}</style></head>"
+        "<body><nav>Menu</nav>"
+        "<h1>Grandma's Soup</h1>"
+        "<img src='/soup.jpg' class='hero' data-lazy='1' onclick='zoom()'>"
+        "<!-- an ad slot goes here -->"
+        "<footer>Copyright 2026</footer></body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "track()" not in result
+    assert "color:red" not in result
+    assert "<nav>" not in result
+    assert "<footer>" not in result
+    assert "ad slot" not in result
+    assert "Grandma's Soup" in result
+    # the image src (needed for recipe photo extraction) survives; noisy attributes don't
+    assert "/soup.jpg" in result
+    assert "class=" not in result
+    assert "data-lazy" not in result
+    assert "onclick" not in result
+
+
+def test_fetch_page_truncates_after_cleaning_not_before(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A big <script> block shouldn't eat into the max_html_chars budget that's meant for
+    # actual recipe content — cleaning must happen before truncation, not after.
+    page_html = "<script>" + ("x" * 500) + "</script><p>short recipe text</p>"
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=100))
+
+    assert "short recipe text" in result
+
+
 def test_fetch_page_raises_on_http_error_status(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_get(url: str, **kwargs: object) -> FakeResponse:
         if url.endswith("/robots.txt"):

@@ -1,6 +1,25 @@
 import anthropic
 
+from app.recipe_sections import SECTION_HEADER_PREFIX
+
+# Structured extraction/parsing from raw scraped content (extract_recipe, parse_recipe_from_text,
+# parse_ingredients_for_nutrition) is a mechanical forced-tool-call task, not open-ended reasoning,
+# and dominates per-recipe Claude cost via extract_recipe's large HTML input — Haiku is the far
+# cheaper fit. translate_recipe stays on Sonnet: its input is already-clean structured content
+# (small, so cost isn't the driver there) and translation quality matters more.
+EXTRACTION_MODEL = "claude-haiku-4-5"
 MODEL = "claude-sonnet-5"
+
+# Shared across every prompt that produces or preserves ingredients/steps — see
+# app.recipe_sections for why this is a plain string-list marker rather than a schema change.
+_SECTION_HEADER_INSTRUCTION = (
+    "Some recipes split their ingredients and/or steps into labeled sub-groups (e.g. 'For the "
+    "cake:', 'For the frosting:'). When that happens, include each group's label as its own "
+    f"entry in the ingredients/steps array, prefixed with {SECTION_HEADER_PREFIX!r} (e.g. "
+    f"{SECTION_HEADER_PREFIX + 'For the cake'!r}), placed immediately before that group's lines. "
+    "Do not fold the label into the wording of another line — it must be its own array entry. "
+    "If the recipe has no sub-groups, don't add any."
+)
 
 _EXTRACT_RECIPE_TOOL = {
     "name": "extracted_recipe",
@@ -28,8 +47,22 @@ _EXTRACT_RECIPE_TOOL = {
                         "language": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
-                        "ingredients": {"type": "array", "items": {"type": "string"}},
-                        "steps": {"type": "array", "items": {"type": "string"}},
+                        "ingredients": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
                         "tips": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
@@ -67,7 +100,12 @@ _PARSE_INGREDIENTS_TOOL = {
             },
             "items": {
                 "type": "array",
-                "description": "One entry per input ingredient line, same order as given.",
+                "description": (
+                    "One entry per input ingredient line, same order as given — except lines "
+                    f"that start with {SECTION_HEADER_PREFIX!r} (a sub-group label like 'For the "
+                    "cake', not an ingredient): skip those entirely, do not include an item for "
+                    "them."
+                ),
                 "items": {
                     "type": "object",
                     "properties": {
@@ -137,8 +175,22 @@ _PARSE_RECIPE_TEXT_TOOL = {
                         "language": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
-                        "ingredients": {"type": "array", "items": {"type": "string"}},
-                        "steps": {"type": "array", "items": {"type": "string"}},
+                        "ingredients": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
                         "tips": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
@@ -178,8 +230,22 @@ _TRANSLATE_RECIPE_TOOL = {
                         "language": {"type": "string"},
                         "title": {"type": "string"},
                         "description": {"type": "string"},
-                        "ingredients": {"type": "array", "items": {"type": "string"}},
-                        "steps": {"type": "array", "items": {"type": "string"}},
+                        "ingredients": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
                         "tips": {"type": "array", "items": {"type": "string"}},
                     },
                     "required": [
@@ -213,7 +279,7 @@ def _client(api_key: str) -> anthropic.Anthropic:
 def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
-        model=MODEL,
+        model=EXTRACTION_MODEL,
         max_tokens=4096,
         tools=[_EXTRACT_RECIPE_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe"},
@@ -223,9 +289,9 @@ def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
                 "content": (
                     "You are extracting a cooking recipe from the raw HTML of a recipe web page. "
                     "Strip ads, navigation, comments, and any other boilerplate. Keep only the "
-                    "recipe's own images, description, ingredients, steps, and tips. Produce one "
-                    f"translation for each of these language codes: {languages_str}. Here is the "
-                    f"page HTML:\n\n{html}"
+                    "recipe's own images, description, ingredients, steps, and tips. "
+                    f"{_SECTION_HEADER_INSTRUCTION} Produce one translation for each of these "
+                    f"language codes: {languages_str}. Here is the page HTML:\n\n{html}"
                 ),
             }
         ],
@@ -241,7 +307,7 @@ def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
 def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -> dict:
     numbered = "\n".join(f"{i}: {line}" for i, line in enumerate(ingredient_lines))
     response = _client(api_key).messages.create(
-        model=MODEL,
+        model=EXTRACTION_MODEL,
         max_tokens=2048,
         tools=[_PARSE_INGREDIENTS_TOOL],
         tool_choice={"type": "tool", "name": "parsed_ingredients"},
@@ -252,7 +318,9 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
                     "Parse this recipe's ingredient list for a nutrition-database lookup. For "
                     "each line, give the generic food name, its quantity and unit, and your own "
                     "best-guess total weight in grams. Also estimate how many people the whole "
-                    f"recipe serves.\n\n{numbered}"
+                    f"recipe serves. Lines starting with {SECTION_HEADER_PREFIX!r} are sub-group "
+                    f"labels, not ingredients — skip them, don't return an item for them.\n\n"
+                    f"{numbered}"
                 ),
             }
         ],
@@ -268,7 +336,7 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
 def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dict:
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
-        model=MODEL,
+        model=EXTRACTION_MODEL,
         max_tokens=4096,
         tools=[_PARSE_RECIPE_TEXT_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe_text"},
@@ -280,9 +348,9 @@ def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dic
                     "comments (e.g. an Instagram post or reel). The recipe may be entirely in "
                     "the caption, or split between the caption and a comment. Ignore unrelated "
                     "comments (praise, questions, hashtags, engagement bait, other users' posts). "
-                    "Produce one translation for each of these language codes: "
-                    f"{languages_str}. If no recipe is present anywhere in the text, return an "
-                    f"empty translations array. Here is the post's text:\n\n{text}"
+                    f"{_SECTION_HEADER_INSTRUCTION} Produce one translation for each of these "
+                    f"language codes: {languages_str}. If no recipe is present anywhere in the "
+                    f"text, return an empty translations array. Here is the post's text:\n\n{text}"
                 ),
             }
         ],
@@ -302,7 +370,10 @@ def translate_recipe(source: dict, target_languages: list[str], api_key: str) ->
         f"{languages_str}. Keep the same number of ingredient, step, and tip lines in the same "
         "order, with the same quantities — this is a translation of content that was just "
         "hand-edited, not a fresh recipe extraction, so nothing should be added, removed, or "
-        "reinterpreted.",
+        "reinterpreted. Some lines are sub-group labels rather than ingredients/steps — "
+        f"recognizable by the {SECTION_HEADER_PREFIX!r} prefix (e.g. "
+        f"{SECTION_HEADER_PREFIX + 'For the cake'!r}). Translate only the label text after the "
+        "prefix, and keep the prefix itself exactly as-is, untranslated, on the same line.",
         "",
         f"Title: {source.get('title', '')}",
         f"Description: {source.get('description', '')}",
