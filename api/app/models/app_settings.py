@@ -46,6 +46,11 @@ class AppSettings(Base):
     # "/verify-email?token=...". Not derivable from the request the way an API route can use its
     # own host, since this link is built by the worker, which never sees an HTTP request at all.
     public_site_url: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Page size for the backoffice's classic numbered recipe pagination — see
+    # routers/recipes.py's list_recipes. Not secret, so it's readable via GET /settings/public
+    # (a plain admin, not just a super-admin, needs it, and that's the endpoint already reachable
+    # without the super-admin gate on GET /settings).
+    backoffice_recipes_page_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
 
     @property
     def supported_languages_list(self) -> list[str]:

@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,12 +6,13 @@ import { RecipeBrowser } from "../frontoffice/RecipeBrowser";
 import { AuthProvider, AUTH_STORAGE_KEY } from "../auth/AuthContext";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
-import type { Category, Recipe } from "../types";
+import { triggerIntersection } from "./testUtils/intersectionObserverMock";
+import type { Category, Recipe, RecipesPage } from "../types";
 
 vi.mock("../api/client", () => ({
   api: {
     listCategories: vi.fn(),
-    listRecipes: vi.fn(),
+    listRecipesPage: vi.fn(),
     me: vi.fn(),
     listFavorites: vi.fn(),
     favoriteRecipe: vi.fn(),
@@ -44,9 +45,6 @@ const cake: Recipe = {
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  // The API already scopes the response to what this viewer may see — the frontend just needs
-  // to split it, not re-filter it. Owned by someone else so it lands in "From the community"
-  // for the logged-in "someone" user used below.
   owner_username: "admin",
   is_shared: true,
 };
@@ -60,13 +58,26 @@ const soup: Recipe = {
   is_shared: false,
 };
 
+function page(items: Recipe[]): RecipesPage {
+  return { items, total: items.length };
+}
+
+// Routes the mock by the same params RecipeBrowser actually sends: owner:"me" -> the "mine"
+// feed, onlyPublic -> the community feed, neither -> the logged-out single public feed.
+function mockFeeds(mine: Recipe[], communityOrPublic: Recipe[]) {
+  mockedApi.listRecipesPage.mockImplementation((params) => {
+    if (params.owner === "me") return Promise.resolve(page(params.offset === 0 ? mine : []));
+    return Promise.resolve(page(params.offset === 0 ? communityOrPublic : []));
+  });
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   // Not localStorage.clear() — that would also wipe the language key the global test setup
   // seeds in its own beforeEach (see src/tests/setup.ts), which runs before this one.
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
   mockedApi.listCategories.mockResolvedValue([desserts, mains]);
-  mockedApi.listRecipes.mockResolvedValue([cake, soup]);
+  mockFeeds([], [cake, soup]);
 });
 
 function renderBrowser() {
@@ -102,10 +113,14 @@ describe("RecipeBrowser", () => {
 
     await user.click(screen.getByRole("button", { name: "Mains" }));
 
-    await waitFor(() => expect(mockedApi.listRecipes).toHaveBeenCalledWith(2, "en"));
+    await waitFor(() =>
+      expect(mockedApi.listRecipesPage).toHaveBeenCalledWith(
+        expect.objectContaining({ categoryId: 2, language: "en" })
+      )
+    );
   });
 
-  it("shows a single community section when logged out", async () => {
+  it("shows a single public feed with no My recipes/community split when logged out", async () => {
     renderBrowser();
 
     expect(await screen.findByText("Cake")).toBeInTheDocument();
@@ -115,22 +130,54 @@ describe("RecipeBrowser", () => {
   });
 
   it("splits recipes into my recipes and the community section when logged in", async () => {
+    mockFeeds([soup], [cake, soup]);
     await logInAs("someone");
 
     renderBrowser();
 
     expect(await screen.findByText("My recipes")).toBeInTheDocument();
     expect(screen.getByText("From the community")).toBeInTheDocument();
-    // "Soup" is owned by "someone" (the logged-in user) — the main section.
     const myRecipesHeading = screen.getByRole("heading", { name: "My recipes" });
     expect(myRecipesHeading.closest("section")).toHaveTextContent("Soup");
-    // "Cake" is owned by "admin" — the community section.
+    // "Soup" is owned by "someone" (the logged-in user) — even though the public feed also
+    // returns it (it's shared), the community section must not show it a second time.
     const communityHeading = screen.getByRole("heading", { name: "From the community" });
-    expect(communityHeading.closest("section")).toHaveTextContent("Cake");
+    const communitySection = communityHeading.closest("section")!;
+    expect(communitySection).toHaveTextContent("Cake");
+    expect(communitySection).not.toHaveTextContent("Soup");
+  });
+
+  it("does not show the community section when it has nothing in it", async () => {
+    mockFeeds([soup], []);
+    await logInAs("someone");
+
+    renderBrowser();
+
+    expect(await screen.findByText("My recipes")).toBeInTheDocument();
+    expect(screen.queryByText("From the community")).not.toBeInTheDocument();
+    expect(screen.queryByText("Jump to community ↓")).not.toBeInTheDocument();
+  });
+
+  it("loads the next page of my recipes when the sentinel scrolls into view", async () => {
+    // total larger than one page's worth so hasMore stays true after the first load
+    mockedApi.listRecipesPage.mockImplementation((params) => {
+      if (params.owner !== "me") return Promise.resolve(page([]));
+      if (params.offset === 0) return Promise.resolve({ items: [soup], total: 2 });
+      return Promise.resolve({ items: [{ ...cake, id: 3, title: "Third", slug: "third" }], total: 2 });
+    });
+    await logInAs("someone");
+
+    renderBrowser();
+    await screen.findByText("Soup");
+    expect(screen.queryByText("Third")).not.toBeInTheDocument();
+
+    act(() => triggerIntersection());
+
+    expect(await screen.findByText("Third")).toBeInTheDocument();
   });
 
   it("shows a favorite toggle when logged in and saves via the API", async () => {
-    mockedApi.listRecipes.mockResolvedValue([cake]);
+    mockFeeds([cake], []);
     await logInAs("someone");
     mockedApi.favoriteRecipe.mockResolvedValue(undefined);
     const user = userEvent.setup();
@@ -145,7 +192,7 @@ describe("RecipeBrowser", () => {
   });
 
   it("does not show a favorite toggle when logged out", async () => {
-    mockedApi.listRecipes.mockResolvedValue([cake]);
+    mockFeeds([], [cake]);
     renderBrowser();
     await screen.findByText("Cake");
 

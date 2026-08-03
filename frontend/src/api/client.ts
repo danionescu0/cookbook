@@ -9,6 +9,7 @@ import type {
   PublicSettings,
   Recipe,
   RecipeDraft,
+  RecipesPage,
   RecipeUpdate,
   Settings,
   SettingsUpdate,
@@ -75,6 +76,26 @@ function createRecipeRequest(draft: RecipeDraft): Promise<Recipe> {
   return request<Recipe>("/recipes", { method: "POST", body: JSON.stringify(draft) });
 }
 
+// Separate from `request` (which discards headers) because pagination needs the total match
+// count from X-Total-Count, not just the page's own items — see routers/recipes.py's
+// list_recipes. Exposed to browser JS via the API's CORS expose_headers config.
+async function requestRecipesPage(params: URLSearchParams): Promise<RecipesPage> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+  const response = await fetch(`${BASE_URL}/recipes?${params.toString()}`, { headers });
+
+  if (!response.ok) {
+    if (response.status === 401) onUnauthorized?.();
+    const body = await response.text();
+    throw new Error(extractErrorMessage(body) ?? `Request failed (${response.status})`);
+  }
+
+  const items = (await response.json()) as Recipe[];
+  const totalHeader = response.headers.get("X-Total-Count");
+  return { items, total: totalHeader !== null ? Number(totalHeader) : items.length };
+}
+
 export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>("/auth/login", {
@@ -113,6 +134,23 @@ export const api = {
     if (language) params.set("language", language);
     const query = params.toString();
     return request<Recipe[]>(`/recipes${query ? `?${query}` : ""}`);
+  },
+  listRecipesPage: (params: {
+    categoryId?: number;
+    language?: string;
+    owner?: "me";
+    onlyPublic?: boolean;
+    limit: number;
+    offset: number;
+  }): Promise<RecipesPage> => {
+    const query = new URLSearchParams();
+    if (params.categoryId !== undefined) query.set("category_id", String(params.categoryId));
+    if (params.language) query.set("language", params.language);
+    if (params.owner) query.set("owner", params.owner);
+    if (params.onlyPublic) query.set("only_public", "true");
+    query.set("limit", String(params.limit));
+    query.set("offset", String(params.offset));
+    return requestRecipesPage(query);
   },
   getRecipe: (id: number, language?: string) =>
     request<Recipe>(`/recipes/${id}${language ? `?language=${language}` : ""}`),

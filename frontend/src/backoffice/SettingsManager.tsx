@@ -26,6 +26,7 @@ interface FormState {
   turnstileSiteKey: string;
   turnstileSecretKey: string;
   publicSiteUrl: string;
+  backofficeRecipesPageSize: string;
 }
 
 function toFormState(settings: Settings): FormState {
@@ -48,6 +49,7 @@ function toFormState(settings: Settings): FormState {
     turnstileSiteKey: settings.turnstile_site_key,
     turnstileSecretKey: "",
     publicSiteUrl: settings.public_site_url,
+    backofficeRecipesPageSize: String(settings.backoffice_recipes_page_size),
   };
 }
 
@@ -135,6 +137,7 @@ export function SettingsManager() {
         turnstile_site_key: form.turnstileSiteKey.trim(),
         ...(form.turnstileSecretKey ? { turnstile_secret_key: form.turnstileSecretKey } : {}),
         public_site_url: form.publicSiteUrl.trim(),
+        backoffice_recipes_page_size: Number(form.backofficeRecipesPageSize),
       });
       setSettings(updated);
       setForm(toFormState(updated));
@@ -248,6 +251,14 @@ export function SettingsManager() {
           help={t.settingsManager.imageMaxSizeKbHelp}
           value={form.imageMaxSizeKb}
           onChange={(v) => update({ imageMaxSizeKb: v })}
+        />
+        <Field
+          id="settings-backoffice-recipes-page-size"
+          type="number"
+          label={t.settingsManager.backofficeRecipesPageSizeLabel}
+          help={t.settingsManager.backofficeRecipesPageSizeHelp}
+          value={form.backofficeRecipesPageSize}
+          onChange={(v) => update({ backofficeRecipesPageSize: v })}
         />
         <Field
           id="settings-public-site-url"

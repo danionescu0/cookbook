@@ -34,6 +34,11 @@ export interface Recipe {
   is_shared: boolean;
 }
 
+export interface RecipesPage {
+  items: Recipe[];
+  total: number;
+}
+
 export type RecipeDraft = Pick<
   Recipe,
   | "title"
@@ -101,6 +106,7 @@ export interface Settings {
   turnstile_site_key: string;
   turnstile_secret_key_is_set: boolean;
   public_site_url: string;
+  backoffice_recipes_page_size: number;
 }
 
 export interface SettingsUpdate {
@@ -123,10 +129,12 @@ export interface SettingsUpdate {
   turnstile_site_key?: string;
   turnstile_secret_key?: string;
   public_site_url?: string;
+  backoffice_recipes_page_size?: number;
 }
 
 export interface PublicSettings {
   turnstile_site_key: string;
+  backoffice_recipes_page_size: number;
 }
 
 export interface PublicLanguages {

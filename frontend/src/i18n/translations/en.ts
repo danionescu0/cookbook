@@ -130,6 +130,8 @@ const en = {
     noImage: "No image",
     addFavorite: "Save recipe",
     removeFavorite: "Remove from favorites",
+    jumpToCommunity: "Jump to community ↓",
+    loadingMore: "Loading more…",
   },
   detail: {
     back: "← Back to recipes",
@@ -186,6 +188,9 @@ const en = {
       translating: "Translating…",
       recalculating_nutrition: "Recalculating nutrition…",
     },
+    paginationLabel: "Recipe pages",
+    previousPage: "Previous",
+    nextPage: "Next",
   },
   importManager: {
     heading: "Import from URL",
@@ -244,6 +249,9 @@ const en = {
     publicSiteUrlLabel: "Public site URL",
     publicSiteUrlHelp:
       "The address visitors use to reach this site, e.g. https://cookbook.example.com — used to build the link inside account-verification emails.",
+    backofficeRecipesPageSizeLabel: "Backoffice recipes per page",
+    backofficeRecipesPageSizeHelp:
+      "How many recipes the back office's recipe list shows per page.",
     smtpHostLabel: "SMTP host",
     smtpHostHelp: "The mail server used to send account-verification emails.",
     smtpPortLabel: "SMTP port",

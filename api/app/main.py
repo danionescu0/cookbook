@@ -27,6 +27,10 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Not exposed to frontend JS by default even same-methods/headers-wise — browsers only expose
+    # a small response-header safelist across origins unless explicitly listed here. Read by
+    # api/client.ts's paginated list calls (recipe list pagination — see routers/recipes.py).
+    expose_headers=["X-Total-Count"],
 )
 
 app.include_router(auth.router)

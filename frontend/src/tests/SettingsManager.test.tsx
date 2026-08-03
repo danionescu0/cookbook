@@ -34,6 +34,7 @@ const baseSettings: Settings = {
   turnstile_site_key: "",
   turnstile_secret_key_is_set: false,
   public_site_url: "",
+  backoffice_recipes_page_size: 10,
 };
 
 beforeEach(() => {

@@ -40,6 +40,7 @@ def get_settings(db: Session) -> AppSettings:
         turnstile_site_key="",
         turnstile_secret_key="",
         public_site_url="",
+        backoffice_recipes_page_size=10,
     )
     db.add(row)
     db.commit()
@@ -99,6 +100,7 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         "smtp_use_tls",
         "turnstile_site_key",
         "public_site_url",
+        "backoffice_recipes_page_size",
     ):
         if field in updates:
             setattr(row, field, updates[field])

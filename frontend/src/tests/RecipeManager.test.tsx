@@ -4,12 +4,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecipeManager } from "../backoffice/RecipeManager";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
-import type { Category, Recipe } from "../types";
+import type { Category, Recipe, RecipesPage } from "../types";
 
 vi.mock("../api/client", () => ({
   api: {
     listCategories: vi.fn(),
-    listRecipes: vi.fn(),
+    listRecipesPage: vi.fn(),
+    getPublicSettings: vi.fn(),
     createRecipe: vi.fn(),
     updateRecipe: vi.fn(),
     uploadImage: vi.fn(),
@@ -64,11 +65,23 @@ const pendingSoup: Recipe = {
   is_shared: false,
 };
 
+function page(items: Recipe[]): RecipesPage {
+  return { items, total: items.length };
+}
+
+function mockRecipeList(items: Recipe[]) {
+  mockedApi.listRecipesPage.mockResolvedValue(page(items));
+}
+
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   mockedApi.listCategories.mockResolvedValue([desserts]);
-  mockedApi.listRecipes.mockResolvedValue([cake]);
+  mockedApi.getPublicSettings.mockResolvedValue({
+    turnstile_site_key: "",
+    backoffice_recipes_page_size: 10,
+  });
+  mockRecipeList([cake]);
 });
 
 afterEach(() => {
@@ -146,7 +159,7 @@ describe("RecipeManager", () => {
 
   it("shows an approve button only for unapproved recipes and calls the API", async () => {
     const user = userEvent.setup();
-    mockedApi.listRecipes.mockResolvedValue([cake, pendingSoup]);
+    mockRecipeList([cake, pendingSoup]);
     mockedApi.approveRecipe.mockResolvedValue({ ...pendingSoup, status: "approved" });
 
     renderManager();
@@ -161,7 +174,7 @@ describe("RecipeManager", () => {
 
   it("toggles a preview showing the recipe's full details", async () => {
     const user = userEvent.setup();
-    mockedApi.listRecipes.mockResolvedValue([pendingSoup]);
+    mockRecipeList([pendingSoup]);
 
     renderManager();
     await screen.findByText(/Soup/);
@@ -250,7 +263,7 @@ describe("RecipeManager", () => {
   });
 
   it("does not show a share toggle for an imported recipe", async () => {
-    mockedApi.listRecipes.mockResolvedValue([pendingSoup]);
+    mockRecipeList([pendingSoup]);
 
     renderManager();
     await screen.findByText(/Soup/);
@@ -260,7 +273,7 @@ describe("RecipeManager", () => {
   });
 
   it("shows the source URL as a link for an imported recipe, and nothing for a manual one", async () => {
-    mockedApi.listRecipes.mockResolvedValue([cake, pendingSoup]);
+    mockRecipeList([cake, pendingSoup]);
 
     renderManager();
     await screen.findByText(/Cake/);
@@ -271,10 +284,10 @@ describe("RecipeManager", () => {
 
   it("shows a processing-status badge and polls until it clears", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
-    mockedApi.listRecipes
-      .mockResolvedValueOnce([cake])
-      .mockResolvedValueOnce([{ ...cake, processing_status: "translating" }])
-      .mockResolvedValue([cake]);
+    mockedApi.listRecipesPage
+      .mockResolvedValueOnce(page([cake]))
+      .mockResolvedValueOnce(page([{ ...cake, processing_status: "translating" }]))
+      .mockResolvedValue(page([cake]));
     mockedApi.updateRecipe.mockResolvedValue({ ...cake, processing_status: "translating" });
 
     renderManager();
@@ -284,15 +297,50 @@ describe("RecipeManager", () => {
     await user.click(screen.getByRole("button", { name: "Save" }));
 
     expect(await screen.findByText("Translating…")).toBeInTheDocument();
-    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(2); // initial load + reload after save
+    expect(mockedApi.listRecipesPage).toHaveBeenCalledTimes(2); // initial load + reload after save
 
     // Polling kicks in because the reloaded recipe still has a processing_status.
     await act(() => vi.advanceTimersByTimeAsync(3000));
-    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(3);
+    expect(mockedApi.listRecipesPage).toHaveBeenCalledTimes(3);
     await waitFor(() => expect(screen.queryByText("Translating…")).not.toBeInTheDocument());
 
     // Now settled — no further polling.
     await act(() => vi.advanceTimersByTimeAsync(3000));
-    expect(mockedApi.listRecipes).toHaveBeenCalledTimes(3);
+    expect(mockedApi.listRecipesPage).toHaveBeenCalledTimes(3);
+  });
+
+  it("shows numbered pagination and requests the right offset when a page is clicked", async () => {
+    const user = userEvent.setup();
+    mockedApi.getPublicSettings.mockResolvedValue({
+      turnstile_site_key: "",
+      backoffice_recipes_page_size: 1,
+    });
+    mockedApi.listRecipesPage.mockImplementation((params) =>
+      Promise.resolve({ items: params.offset === 0 ? [cake] : [pendingSoup], total: 2 })
+    );
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    const nav = screen.getByRole("navigation", { name: "Recipe pages" });
+    expect(within(nav).getByRole("button", { name: "1" })).toHaveAttribute("aria-current", "page");
+
+    await user.click(within(nav).getByRole("button", { name: "2" }));
+
+    await waitFor(() =>
+      expect(mockedApi.listRecipesPage).toHaveBeenCalledWith(
+        expect.objectContaining({ limit: 1, offset: 1 })
+      )
+    );
+    expect(await screen.findByText(/Soup/)).toBeInTheDocument();
+  });
+
+  it("does not show pagination controls when everything fits on one page", async () => {
+    mockRecipeList([cake]);
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    expect(screen.queryByRole("navigation", { name: "Recipe pages" })).not.toBeInTheDocument();
   });
 });

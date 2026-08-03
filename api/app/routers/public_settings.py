@@ -11,6 +11,11 @@ router = APIRouter(prefix="/settings", tags=["settings"])
 
 
 @router.get("/public")
-def public_settings(db: Session = Depends(get_db)) -> dict[str, str]:
+def public_settings(db: Session = Depends(get_db)) -> dict[str, object]:
     row = get_settings(db)
-    return {"turnstile_site_key": row.turnstile_site_key}
+    return {
+        "turnstile_site_key": row.turnstile_site_key,
+        # Not secret — a plain admin (not just a super-admin) needs this to size the backoffice's
+        # recipe pagination, and GET /settings itself is gated to super-admin (it holds secrets).
+        "backoffice_recipes_page_size": row.backoffice_recipes_page_size,
+    }

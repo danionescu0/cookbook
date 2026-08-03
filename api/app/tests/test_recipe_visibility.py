@@ -185,3 +185,92 @@ class TestShareEndpoint:
         response = client.patch(f"/recipes/{recipe.id}/share", json={"is_shared": True})
 
         assert response.status_code == 400
+
+
+class TestListPagination:
+    def test_limit_and_offset_page_through_results_newest_first(
+        self, client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        first = _create_recipe(client, category_id, title="First", is_shared=True)
+        second = _create_recipe(client, category_id, title="Second", is_shared=True)
+        third = _create_recipe(client, category_id, title="Third", is_shared=True)
+
+        page1 = client.get("/recipes", params={"category_id": category_id, "limit": 2, "offset": 0})
+        page2 = client.get("/recipes", params={"category_id": category_id, "limit": 2, "offset": 2})
+
+        assert [r["id"] for r in page1.json()] == [third["id"], second["id"]]
+        assert [r["id"] for r in page2.json()] == [first["id"]]
+
+    def test_x_total_count_reflects_the_full_match_not_just_the_page(
+        self, client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        for i in range(5):
+            _create_recipe(client, category_id, title=f"Recipe {i}", is_shared=True)
+
+        response = client.get("/recipes", params={"category_id": category_id, "limit": 2})
+
+        assert response.headers["x-total-count"] == "5"
+        assert len(response.json()) == 2
+
+    def test_omitting_limit_returns_everything_matching_unpaginated(
+        self, client: TestClient, unauthenticated_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        _create_recipe(client, category_id, title="Shared one", is_shared=True)
+        _create_recipe(client, category_id, title="Shared two", is_shared=True)
+
+        response = unauthenticated_client.get("/recipes", params={"category_id": category_id})
+
+        assert response.status_code == 200
+        assert len(response.json()) == 2
+        assert response.headers["x-total-count"] == "2"
+
+    def test_owner_me_returns_only_the_callers_own_recipes_any_status(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        mine_private = _create_recipe(user_client, category_id, title="My private recipe")
+        mine_shared = _create_recipe(
+            user_client, category_id, title="My shared recipe", is_shared=True
+        )
+        _create_recipe(client, category_id, title="Someone else's recipe", is_shared=True)
+
+        response = user_client.get("/recipes", params={"owner": "me"})
+
+        assert response.status_code == 200
+        ids = {r["id"] for r in response.json()}
+        assert ids == {mine_private["id"], mine_shared["id"]}
+
+    def test_owner_me_requires_authentication(self, unauthenticated_client: TestClient) -> None:
+        response = unauthenticated_client.get("/recipes", params={"owner": "me"})
+
+        assert response.status_code == 401
+
+    def test_only_public_excludes_the_admins_own_private_recipes(
+        self, client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        _create_recipe(client, category_id, title="Admin private recipe")
+        shared = _create_recipe(client, category_id, title="Admin shared recipe", is_shared=True)
+
+        response = client.get("/recipes", params={"only_public": True})
+
+        ids = {r["id"] for r in response.json()}
+        assert ids == {shared["id"]}
+
+    def test_only_public_still_excludes_a_regular_users_own_private_recipe(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        _create_recipe(user_client, category_id, title="My private recipe")
+        # A non-admin's shared recipe needs approval before it's actually public — see
+        # create_recipe's moderation rule. Approve it so it's genuinely part of the public pool.
+        shared = _create_recipe(user_client, category_id, title="My shared recipe", is_shared=True)
+        client.post(f"/recipes/{shared['id']}/approve")
+
+        response = user_client.get("/recipes", params={"only_public": True})
+
+        titles = [r["title"] for r in response.json()]
+        assert titles == [shared["title"]]

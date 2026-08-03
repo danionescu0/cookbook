@@ -192,6 +192,19 @@ def test_patch_settings_partial_update_leaves_other_fields_untouched(client: Tes
     assert body["image_max_dimension"] == 900
 
 
+def test_patch_settings_updates_backoffice_recipes_page_size(client: TestClient) -> None:
+    response = client.patch("/settings", json={"backoffice_recipes_page_size": 25})
+
+    assert response.status_code == 200
+    assert response.json()["backoffice_recipes_page_size"] == 25
+
+
+def test_patch_settings_rejects_non_positive_backoffice_recipes_page_size(client: TestClient) -> None:
+    response = client.patch("/settings", json={"backoffice_recipes_page_size": 0})
+
+    assert response.status_code == 422
+
+
 def test_public_settings_exposes_turnstile_site_key_without_auth(
     unauthenticated_client: TestClient, client: TestClient
 ) -> None:
@@ -200,4 +213,4 @@ def test_public_settings_exposes_turnstile_site_key_without_auth(
     response = unauthenticated_client.get("/settings/public")
 
     assert response.status_code == 200
-    assert response.json() == {"turnstile_site_key": "site-key"}
+    assert response.json() == {"turnstile_site_key": "site-key", "backoffice_recipes_page_size": 10}

@@ -134,6 +134,8 @@ const ro: Translation = {
     noImage: "Fără imagine",
     addFavorite: "Salvează rețeta",
     removeFavorite: "Elimină din favorite",
+    jumpToCommunity: "Sari la comunitate ↓",
+    loadingMore: "Se încarcă mai multe…",
   },
   detail: {
     back: "← Înapoi la rețete",
@@ -190,6 +192,9 @@ const ro: Translation = {
       translating: "Se traduce…",
       recalculating_nutrition: "Se recalculează valorile nutriționale…",
     },
+    paginationLabel: "Pagini de rețete",
+    previousPage: "Anterioara",
+    nextPage: "Următoarea",
   },
   importManager: {
     heading: "Importă din URL",
@@ -249,6 +254,9 @@ const ro: Translation = {
     publicSiteUrlLabel: "URL public al site-ului",
     publicSiteUrlHelp:
       "Adresa folosită de vizitatori pentru a ajunge pe acest site, ex. https://cookbook.example.com — folosită pentru linkul din emailurile de verificare a contului.",
+    backofficeRecipesPageSizeLabel: "Rețete pe pagină (panou admin)",
+    backofficeRecipesPageSizeHelp:
+      "Câte rețete afișează pe pagină lista de rețete din panoul de administrare.",
     smtpHostLabel: "Server SMTP",
     smtpHostHelp: "Serverul de mail folosit pentru trimiterea emailurilor de verificare a contului.",
     smtpPortLabel: "Port SMTP",

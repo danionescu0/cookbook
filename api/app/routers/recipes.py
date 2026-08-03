@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import and_, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
@@ -45,8 +45,12 @@ def _is_visible(recipe: Recipe, viewer: AuthUser | None) -> bool:
     return _is_public(recipe)
 
 
+def _is_public_clause():
+    return and_(Recipe.status == RecipeStatus.APPROVED, Recipe.is_shared.is_(True))
+
+
 def _visibility_clause(viewer: AuthUser | None):
-    public = and_(Recipe.status == RecipeStatus.APPROVED, Recipe.is_shared.is_(True))
+    public = _is_public_clause()
     if viewer is None:
         return public
     return or_(Recipe.owner_user_id == viewer.id, public)
@@ -172,21 +176,53 @@ def _serialize(
 
 @router.get("", response_model=list[RecipeRead])
 def list_recipes(
+    response: Response,
     category_id: int | None = None,
     language: str | None = Query(default=None),
+    # "me": only the caller's own recipes, any status — powers the frontend's "My recipes"
+    # infinite scroll (requires auth; 401 for an anonymous caller). Mutually exclusive with
+    # only_public in practice, though nothing stops both being set — owner wins if so.
+    owner: str | None = Query(default=None),
+    # Forces the public-only visibility clause regardless of who's asking, admin included —
+    # powers the "From the community" infinite scroll, so an authenticated user can fetch just
+    # the shared+approved pool instead of the mixed "mine + public" result the default gives them.
+    only_public: bool = Query(default=False),
+    limit: int | None = Query(default=None, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
     current_user: AuthUser | None = Depends(get_optional_current_user),
 ) -> list[RecipeRead]:
     default_language = get_settings(db).default_language
-    stmt = (
-        select(Recipe)
-        .options(selectinload(Recipe.translations), selectinload(Recipe.owner))
-        .order_by(Recipe.added_at.desc())
-    )
+    stmt = select(Recipe).options(selectinload(Recipe.translations), selectinload(Recipe.owner))
+    count_stmt = select(func.count()).select_from(Recipe)
+
     if category_id is not None:
         stmt = stmt.where(Recipe.category_id == category_id)
-    if current_user is None or not current_user.is_admin:
+        count_stmt = count_stmt.where(Recipe.category_id == category_id)
+
+    if owner == "me":
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        clause = Recipe.owner_user_id == current_user.id
+        stmt = stmt.where(clause)
+        count_stmt = count_stmt.where(clause)
+    elif only_public:
+        clause = _is_public_clause()
+        stmt = stmt.where(clause)
+        count_stmt = count_stmt.where(clause)
+    elif current_user is None or not current_user.is_admin:
         stmt = stmt.where(_visibility_clause(current_user))
+        count_stmt = count_stmt.where(_visibility_clause(current_user))
+
+    response.headers["X-Total-Count"] = str(db.scalar(count_stmt) or 0)
+
+    # id as a tie-breaker: added_at alone isn't unique enough to guarantee a stable order across
+    # pages (same-second inserts are common, e.g. a bulk import) — without it, a tied row can be
+    # skipped or repeated across two consecutive paginated requests.
+    stmt = stmt.order_by(Recipe.added_at.desc(), Recipe.id.desc()).offset(offset)
+    if limit is not None:
+        stmt = stmt.limit(limit)
+
     recipes = list(db.scalars(stmt))
     statuses = _processing_statuses(db, [recipe.id for recipe in recipes])
     return [

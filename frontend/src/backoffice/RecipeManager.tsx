@@ -42,6 +42,24 @@ function toEditForm(recipe: Recipe): EditForm {
   };
 }
 
+// Classic numbered pagination, windowed around the current page (first, last, current ± 1) with
+// an ellipsis for any gap — full range once there's little enough to show it without crowding.
+function pageNumbersToShow(current: number, total: number): (number | "ellipsis")[] {
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1);
+  const candidates = [1, total, current - 1, current, current + 1].filter(
+    (p) => p >= 1 && p <= total
+  );
+  const sorted = [...new Set(candidates)].sort((a, b) => a - b);
+  const result: (number | "ellipsis")[] = [];
+  let previous = 0;
+  for (const page of sorted) {
+    if (previous && page - previous > 1) result.push("ellipsis");
+    result.push(page);
+    previous = page;
+  }
+  return result;
+}
+
 export function RecipeManager() {
   const { language, t } = useLanguage();
   const { confirm, confirmDialog } = useConfirm();
@@ -56,14 +74,38 @@ export function RecipeManager() {
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
   const [uploadingImage, setUploadingImage] = useState(false);
+  const [pageSize, setPageSize] = useState(10);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const reload = () =>
-    api.listRecipes(undefined, language).then(setRecipes).catch((e) => setError(String(e)));
+    api
+      .listRecipesPage({ language, limit: pageSize, offset: (currentPage - 1) * pageSize })
+      .then(({ items, total: newTotal }) => {
+        setRecipes(items);
+        setTotal(newTotal);
+      })
+      .catch((e) => setError(String(e)));
 
   useEffect(() => {
     api.listCategories().then(setCategories).catch((e) => setError(String(e)));
+    // Not secret, and GET /settings itself is gated to super-admin — a plain admin still needs
+    // this to size their own pagination, so it's read from the public endpoint instead.
+    api
+      .getPublicSettings()
+      .then((settings) => setPageSize(settings.backoffice_recipes_page_size))
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     reload();
-  }, [language]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [language, currentPage, pageSize]);
+
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  useEffect(() => {
+    if (currentPage > totalPages) setCurrentPage(totalPages);
+  }, [currentPage, totalPages]);
 
   // Poll while any recipe is mid-edit-pipeline (translating, or nutrition re-enriching
   // afterward) — same pattern as ImportManager's job-status polling, since those transitions
@@ -93,7 +135,13 @@ export function RecipeManager() {
       setTitle("");
       setIngredients("");
       setIsShared(false);
-      await reload();
+      // A fresh recipe sorts first (newest-first order) — jump to page 1 so it's actually
+      // visible, rather than reloading whatever page the admin happened to be on.
+      if (currentPage === 1) {
+        await reload();
+      } else {
+        setCurrentPage(1);
+      }
     } catch (e) {
       setError(String(e));
     }
@@ -510,6 +558,53 @@ export function RecipeManager() {
           </li>
         ))}
       </ul>
+
+      {totalPages > 1 && (
+        <nav
+          aria-label={t.recipeManager.paginationLabel}
+          className="mt-6 flex flex-wrap items-center justify-center gap-1"
+        >
+          <button
+            type="button"
+            onClick={() => setCurrentPage((page) => Math.max(1, page - 1))}
+            disabled={currentPage === 1}
+            className={secondaryButton}
+          >
+            {t.recipeManager.previousPage}
+          </button>
+          {pageNumbersToShow(currentPage, totalPages).map((entry, index) =>
+            entry === "ellipsis" ? (
+              <span key={`ellipsis-${index}`} className="px-2 text-ink/40" aria-hidden="true">
+                …
+              </span>
+            ) : (
+              <button
+                key={entry}
+                type="button"
+                onClick={() => setCurrentPage(entry)}
+                aria-current={entry === currentPage ? "page" : undefined}
+                className={
+                  "flex h-9 w-9 items-center justify-center rounded-md text-sm font-medium transition-colors " +
+                  (entry === currentPage
+                    ? "bg-terracotta text-white"
+                    : "text-ink/70 hover:bg-olive-light")
+                }
+              >
+                {entry}
+              </button>
+            )
+          )}
+          <button
+            type="button"
+            onClick={() => setCurrentPage((page) => Math.min(totalPages, page + 1))}
+            disabled={currentPage === totalPages}
+            className={secondaryButton}
+          >
+            {t.recipeManager.nextPage}
+          </button>
+        </nav>
+      )}
+
       {confirmDialog}
     </div>
   );

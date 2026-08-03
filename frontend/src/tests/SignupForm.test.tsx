@@ -45,7 +45,10 @@ async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
 
 beforeEach(() => {
   vi.resetAllMocks();
-  mockedApi.getPublicSettings.mockResolvedValue({ turnstile_site_key: "site-key" });
+  mockedApi.getPublicSettings.mockResolvedValue({
+    turnstile_site_key: "site-key",
+    backoffice_recipes_page_size: 10,
+  });
 });
 
 describe("SignupForm", () => {
