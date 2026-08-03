@@ -1360,9 +1360,17 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
 - **Frontoffice visual design** — Tailwind v4's CSS-first `@theme` (in `src/index.css`) defines a
   small warm/rustic palette (cream background, terracotta/olive accents, serif headings) rather
   than a component library — keeps the bundle small and every color/spacing choice explicit.
-  Mobile-first throughout: single-column recipe grid up to `sm:`, horizontally scrollable category
-  pills instead of a dropdown (easier to tap one-handed while cooking), and a fixed `aspect-*` on
-  every recipe image so the layout doesn't jump while images load. `RecipeDetail` intentionally
+  Mobile-first throughout: single-column recipe grid up to `sm:`, wrapping (not horizontally
+  scrolling) category pills instead of a dropdown — an earlier version made this row
+  `overflow-x-auto` so pills scrolled within their own strip, but that turned out to be a real
+  mobile usability bug in practice: on a narrow phone (verified on Chrome/Android, Galaxy S23
+  Ultra) the un-scrolled pills' full-row min-content width leaked out through a flexbox sizing
+  quirk (`<main>`'s `mx-auto` disables cross-axis stretch, so it fell back to shrink-to-fit and
+  floored at the pill row's unwrapped width) and forced the *entire page* into horizontal scroll,
+  not just the pill strip — see [Design Decisions](#design-decisions), "Category pills wrap
+  instead of scrolling horizontally". `CategoryNav` now just wraps (`flex flex-wrap gap-2`) onto
+  as many lines as needed instead, and a fixed `aspect-*` on every recipe image so the layout
+  doesn't jump while images load. `RecipeDetail` intentionally
   re-checks `status === "approved"` client-side even though nothing links to an unapproved recipe
   from the grid — the API itself doesn't restrict `GET /recipes/{id}` by status (see the Moderation
   workflow, where that's used as the admin preview), so a guessed/typed URL shouldn't leak
@@ -1501,6 +1509,43 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   returns immediately for `is_admin`) — this is meant as a lever on end users, not a constraint on
   the people actually curating the site's content, and the README's future-facing note ("refilling
   this will be a paid upgrade") only makes sense for a cap that applies to customers, not operators.
+- **Fixing a real mobile horizontal-scroll bug, reported live on Chrome/Android (Galaxy S23
+  Ultra)** — the whole site scrolled sideways on a phone; two independent causes, both in the
+  top-level layout (`App.tsx`), so every page was affected:
+  1. The header row (brand + nav links + language switcher) was a single `flex` row with no
+     wrapping — once the logged-in nav (Recipes/Back office/My account/Log out) plus the language
+     switcher didn't fit a phone-width screen, it overflowed past the edge instead of dropping to a
+     second line. Fixed with `flex-wrap` on the header row and its nested nav/switcher group.
+  2. `<main>`'s `mx-auto` turned out to silently defeat its own responsiveness: per the CSS
+     Flexbox spec, auto margins on an item's cross axis opt it *out* of `align-items: stretch`, so
+     `<main>` (a flex item of the page's outer `flex-col` container) fell back to shrink-to-fit
+     sizing instead of filling the viewport — and shrink-to-fit is floored at the widest
+     descendant's min-content width. That descendant was the category-pill nav (see the next
+     bullet), whose full unwrapped-row width silently dragged `<main>`, and the entire page, wider
+     than the screen. Fixed with an explicit `w-full` on `<main>`, which forces a definite width
+     that isn't subject to a descendant's content size. This is a nasty bug precisely because nothing
+     about it shows up at typical desktop-testing widths — the shrink-to-fit floor only bites once a
+     descendant's min-content genuinely exceeds the viewport, which didn't happen until a real phone
+     was used to look at the site.
+  <br><br>
+  Diagnosis note: the actual dev browser window in this environment wouldn't reliably narrow below
+  ~500px (a remote-display constraint, not a app bug), so both issues were confirmed and re-verified
+  by rendering the site inside a same-origin `<iframe>` at 320px/390px widths and measuring
+  `scrollWidth` vs. the iframe's own width — a same-origin iframe's layout is governed purely by its
+  own `width`, independent of the outer browser window, making it a reliable stand-in for real
+  device-width testing when the browser chrome itself can't be resized.
+- **Category pills wrap instead of scrolling horizontally** — reverses an earlier, deliberate
+  choice (see "Frontoffice visual design" above): `CategoryNav` used to be `overflow-x-auto`
+  specifically so the pill row would scroll horizontally within its own strip on a narrow screen,
+  reasoned at the time to be easier to tap one-handed while cooking. In practice, on a real phone
+  this read as a page-layout bug, not a feature — a lone horizontal scrollbar under the page title,
+  easy to miss, and (per the bug above) its own min-content width was what dragged the *entire
+  page* into unwanted horizontal scroll in the first place, not just the pill strip. Since a
+  scrolling row and a page that itself shouldn't scroll horizontally turned out to conflict more
+  than the original design anticipated, `CategoryNav` now simply wraps (`flex flex-wrap gap-2`)
+  onto as many lines as the category list needs, and the scroll-specific classes (the `-mx-4`/`px-4`
+  edge-bleed trick that gave the scrollable strip room to reach the screen edges) were removed
+  along with it, since a wrapping row has no need for edge-to-edge scroll room.
 
 ## Original Spec
 
