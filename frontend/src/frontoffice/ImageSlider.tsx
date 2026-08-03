@@ -44,19 +44,41 @@ export function ImageSlider({ images, alt }: ImageSliderProps) {
             type="button"
             onClick={goToPrevious}
             aria-label={t.detail.previousPhoto}
-            className="absolute left-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-cream-card/90 text-xl text-ink shadow-sm transition-colors hover:bg-cream-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracotta"
+            className="absolute left-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-terracotta text-white shadow-lg ring-2 ring-white/80 transition-all hover:scale-110 hover:bg-terracotta-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
-            <span aria-hidden="true">‹</span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-6 w-6"
+              aria-hidden="true"
+            >
+              <path d="M15 18l-6-6 6-6" />
+            </svg>
           </button>
           <button
             type="button"
             onClick={goToNext}
             aria-label={t.detail.nextPhoto}
-            className="absolute right-2 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-full bg-cream-card/90 text-xl text-ink shadow-sm transition-colors hover:bg-cream-card focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-terracotta"
+            className="absolute right-3 top-1/2 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-terracotta text-white shadow-lg ring-2 ring-white/80 transition-all hover:scale-110 hover:bg-terracotta-dark focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white"
           >
-            <span aria-hidden="true">›</span>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-6 w-6"
+              aria-hidden="true"
+            >
+              <path d="M9 18l6-6-6-6" />
+            </svg>
           </button>
-          <span className="absolute bottom-2 right-2 rounded-full bg-ink/60 px-2 py-0.5 text-xs font-medium text-white">
+          <span className="absolute bottom-3 right-3 rounded-full bg-ink/70 px-2.5 py-1 text-xs font-semibold text-white">
             {t.detail.photoCount
               .replace("{current}", String(index + 1))
               .replace("{total}", String(images.length))}
