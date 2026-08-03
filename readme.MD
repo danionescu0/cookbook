@@ -1619,6 +1619,22 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   lowercase `status` neither the API nor the ORM would ever produce, which is exactly the
   fingerprint to grep for if a recipe's flags ever look right in the DB but behave wrong in the
   app — `SELECT id FROM recipes WHERE status != upper(status);` finds any row like that.
+- **Securely accessing the prod database from a local GUI client** — in dev, `db` already
+  publishes `5432` straight to the host (`docker-compose.override.yml`), so any local Postgres
+  client (DBeaver, TablePlus, Beekeeper Studio, ...) can just connect to `localhost:5432`. Prod
+  deliberately does the opposite: `docker-compose.prod.yml` binds `db`'s port to
+  `127.0.0.1:5432:5432` — loopback only, so it's never reachable from outside the VPS no matter
+  what the firewall allows. The only way in is an SSH tunnel, riding on the SSH key access that's
+  already trusted for the VPS instead of adding any new credential or open port:
+  ```bash
+  ssh -L 5433:127.0.0.1:5432 <ssh-user>@<vps-host> -N
+  ```
+  Then point a GUI client at `localhost:5433` with the prod `POSTGRES_USER`/`POSTGRES_PASSWORD`/
+  `POSTGRES_DB` from the VPS's `.env`. The two sides of `-L` are independent —
+  `-L <local-port>:127.0.0.1:<remote-port>` — so `5433` here is just a local choice to avoid
+  clashing with a dev stack's own `5432` running at the same time; the remote side must stay
+  `5432` (that's the actual port Postgres binds to on the VPS). Leave the `ssh` command running
+  (or add `-f` to background it) for as long as the GUI client needs the connection open.
 
 ## Original Spec
 
