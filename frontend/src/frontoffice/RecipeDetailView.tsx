@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { BASE_URL } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useSeoMeta } from "../seo/useSeoMeta";
+import { ImageSlider } from "./ImageSlider";
 import { NutritionPanel } from "./NutritionPanel";
 import type { Nutrition, Recipe } from "../types";
 
@@ -34,8 +35,8 @@ export function RecipeDetailView({
   seo,
 }: RecipeDetailViewProps) {
   const { t } = useLanguage();
-  const image = recipe.images[0];
-  const imageUrl = image ? `${BASE_URL}${image}` : undefined;
+  const imageUrl = recipe.images[0] ? `${BASE_URL}${recipe.images[0]}` : undefined;
+  const allImageUrls = recipe.images.map((image) => `${BASE_URL}${image}`);
   // Only a manually-added, approved, owner-opted-in-to-share recipe is actually public — see
   // routers/recipes.py's visibility rule. Everything else (private, or shared but still pending
   // moderation) must never get indexing signals or structured data, even though its owner can
@@ -62,7 +63,7 @@ export function RecipeDetailView({
             "@context": "https://schema.org",
             "@type": "Recipe",
             name: recipe.title,
-            ...(imageUrl ? { image: [imageUrl] } : {}),
+            ...(allImageUrls.length > 0 ? { image: allImageUrls } : {}),
             ...(recipe.description ? { description: recipe.description } : {}),
             recipeIngredient: recipe.ingredients,
             recipeInstructions: recipe.steps,
@@ -98,11 +99,7 @@ export function RecipeDetailView({
         )}
       </div>
 
-      {imageUrl && (
-        <div className="mt-4 aspect-video w-full overflow-hidden rounded-lg bg-olive-light">
-          <img src={imageUrl} alt={recipe.title} className="h-full w-full object-cover" />
-        </div>
-      )}
+      <ImageSlider images={recipe.images} alt={recipe.title} />
 
       {recipe.description && <p className="mt-4 text-lg text-ink/80">{recipe.description}</p>}
 

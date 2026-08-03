@@ -144,6 +144,9 @@ const ro: Translation = {
     tips: "Sfaturi",
     addFavorite: "Salvează rețeta",
     removeFavorite: "Elimină din favorite",
+    previousPhoto: "Fotografia anterioară",
+    nextPhoto: "Fotografia următoare",
+    photoCount: "{current} din {total}",
   },
   backoffice: {
     accessDenied: "Nu ai acces la această pagină.",
