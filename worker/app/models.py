@@ -80,6 +80,7 @@ class RecipeTranslation(Base):
     language: Mapped[str] = mapped_column(String(10), nullable=False)
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    slug: Mapped[str] = mapped_column(String(110), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     ingredients: Mapped[list[str]] = mapped_column(JSON, default=list)
     steps: Mapped[list[str]] = mapped_column(JSON, default=list)

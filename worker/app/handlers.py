@@ -22,6 +22,7 @@ from app.models import (
 from app.queue import publish_nutrition_job
 from app.scraping import ScrapeDisallowedError, fetch_page
 from app.settings_service import SettingsSnapshot, get_settings
+from app.slugify import generate_unique_slug
 
 logger = logging.getLogger(__name__)
 
@@ -44,11 +45,12 @@ def _enqueue_nutrition_job(db: Session, recipe_id: int) -> None:
         db.commit()
 
 
-def _translations_from_data(translations_data: list[dict]) -> list[RecipeTranslation]:
+def _translations_from_data(db: Session, translations_data: list[dict]) -> list[RecipeTranslation]:
     return [
         RecipeTranslation(
             language=t["language"],
             title=t["title"],
+            slug=generate_unique_slug(db, t["language"], t["title"]),
             description=t.get("description", ""),
             ingredients=t.get("ingredients", []),
             steps=t.get("steps", []),
@@ -67,7 +69,7 @@ def _finish_import(
     # Validate/construct before touching the DB: if this raises partway (e.g. a malformed
     # translation entry), nothing has been added to the session yet, so the caller's `except`
     # blocks can safely commit just the job status without leaving an orphan Recipe row behind.
-    translations = _translations_from_data(translations_data)
+    translations = _translations_from_data(db, translations_data)
 
     # An admin already explicitly approved importing this exact URL (see
     # POST /imports/{id}/approve), so a successful import publishes immediately rather than

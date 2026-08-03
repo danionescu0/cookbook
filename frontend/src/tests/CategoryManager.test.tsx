@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { CategoryManager } from "../backoffice/CategoryManager";
@@ -68,7 +68,7 @@ describe("CategoryManager", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
   });
 
-  it("deletes a category", async () => {
+  it("asks for confirmation, then deletes a category once confirmed", async () => {
     const user = userEvent.setup();
     mockedApi.deleteCategory.mockResolvedValue(undefined);
     mockedApi.listCategories.mockResolvedValueOnce([desserts]).mockResolvedValueOnce([]);
@@ -77,8 +77,27 @@ describe("CategoryManager", () => {
     await screen.findByText("Desserts");
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(mockedApi.deleteCategory).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(mockedApi.deleteCategory).toHaveBeenCalledWith(1));
     expect(screen.queryByText("Desserts")).not.toBeInTheDocument();
+  });
+
+  it("does not delete a category when the confirm dialog is dismissed", async () => {
+    const user = userEvent.setup();
+
+    renderManager();
+    await screen.findByText("Desserts");
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(mockedApi.deleteCategory).not.toHaveBeenCalled();
+    expect(screen.getByText("Desserts")).toBeInTheDocument();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 });

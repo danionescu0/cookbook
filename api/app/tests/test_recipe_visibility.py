@@ -177,7 +177,7 @@ class TestShareEndpoint:
             source_url="https://example.com/imported-recipe",
             owner_user_id=admin_user.id,
         )
-        recipe.translations.append(RecipeTranslation(language="en", title="Imported"))
+        recipe.translations.append(RecipeTranslation(language="en", title="Imported", slug="imported"))
         db_session.add(recipe)
         db_session.commit()
         db_session.refresh(recipe)

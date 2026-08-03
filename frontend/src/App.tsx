@@ -1,4 +1,15 @@
-import { Link, Navigate, NavLink, Outlet, Route, Routes } from "react-router-dom";
+import { useEffect } from "react";
+import {
+  Link,
+  Navigate,
+  NavLink,
+  Outlet,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+  useParams,
+} from "react-router-dom";
 import { AccountPage } from "./account/AccountPage";
 import { RecipeSubmitForm } from "./account/RecipeSubmitForm";
 import { CategoryManager } from "./backoffice/CategoryManager";
@@ -11,9 +22,10 @@ import { SignupForm } from "./auth/SignupForm";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { useAuth } from "./auth/AuthContext";
 import { LandingPage } from "./frontoffice/LandingPage";
+import { PublicRecipeDetail } from "./frontoffice/PublicRecipeDetail";
 import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
 import { RecipeDetail } from "./frontoffice/RecipeDetail";
-import { SUPPORTED_LANGUAGES } from "./i18n/config";
+import { isLanguage, type Language } from "./i18n/config";
 import { useLanguage } from "./i18n/LanguageContext";
 import { TermsPage } from "./legal/TermsPage";
 import { secondaryButton } from "./ui/buttonStyles";
@@ -22,16 +34,37 @@ function navLinkClasses({ isActive }: { isActive: boolean }): string {
   return isActive ? "font-medium text-terracotta" : "text-ink/70 hover:text-ink";
 }
 
+// Matches the language-prefixed subtree's own paths (/{lang}, /{lang}/recipes,
+// /{lang}/recipes/{idSlug}) so the switcher can navigate within it instead of just changing
+// context state — capturing group 2 lets a detail page swap language by id (always valid; no
+// need to know the target language's slug up front, see PublicRecipeDetail's canonicalizing
+// redirect).
+const PREFIXED_ROUTE_RE = /^\/([a-z]{2,3})(?:\/recipes\/(\d+)(?:-[^/]*)?)?(?:\/|$)/;
+
 function LanguageSwitcher() {
-  const { language, setLanguage } = useLanguage();
+  const { language, setLanguage, supportedLanguages } = useLanguage();
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  const handleSelect = (code: Language) => {
+    const match = location.pathname.match(PREFIXED_ROUTE_RE);
+    if (match && isLanguage(match[1])) {
+      const recipeId = match[2];
+      navigate(
+        recipeId ? `/${code}/recipes/${recipeId}` : location.pathname.replace(`/${match[1]}`, `/${code}`)
+      );
+      return;
+    }
+    setLanguage(code);
+  };
 
   return (
     <div className="flex gap-1" role="group" aria-label="Language">
-      {SUPPORTED_LANGUAGES.map((code) => (
+      {supportedLanguages.map((code) => (
         <button
           key={code}
           type="button"
-          onClick={() => setLanguage(code)}
+          onClick={() => handleSelect(code)}
           aria-pressed={language === code}
           className={
             "rounded-md px-2 py-1 text-xs font-semibold uppercase transition-colors " +
@@ -131,6 +164,28 @@ function HomeRoute() {
   return isAuthenticated ? <RecipeBrowser /> : <LandingPage />;
 }
 
+// Parent of the public, language-prefixed subtree (/{lang}, /{lang}/recipes,
+// /{lang}/recipes/{idSlug}) — these are additive canonical/SEO entry points alongside the
+// original unprefixed routes (still used for internal nav), not a replacement for them; see
+// RecipeDetail's canonical tag. Syncs the URL's language into LanguageContext so the rest of the
+// UI (nav, translations) matches whichever language the visitor actually landed on.
+function LanguageRouteSync() {
+  const { lang } = useParams<{ lang: string }>();
+  const { language, setLanguage } = useLanguage();
+
+  useEffect(() => {
+    if (lang && isLanguage(lang) && lang !== language) {
+      setLanguage(lang);
+    }
+  }, [lang, language, setLanguage]);
+
+  if (!lang || !isLanguage(lang)) {
+    return <Navigate to="/" replace />;
+  }
+
+  return <Outlet />;
+}
+
 export function App() {
   const { t } = useLanguage();
   const { isAuthenticated, user, logout } = useAuth();
@@ -182,6 +237,11 @@ export function App() {
           <Route path="/" element={<HomeRoute />} />
           <Route path="/recipes" element={<RecipeBrowser />} />
           <Route path="/recipes/:id" element={<RecipeDetail />} />
+          <Route path="/:lang" element={<LanguageRouteSync />}>
+            <Route index element={<HomeRoute />} />
+            <Route path="recipes" element={<RecipeBrowser />} />
+            <Route path="recipes/:idSlug" element={<PublicRecipeDetail />} />
+          </Route>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />

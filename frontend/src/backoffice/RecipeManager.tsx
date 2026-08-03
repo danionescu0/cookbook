@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { api, BASE_URL } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton, secondaryButton } from "../ui/buttonStyles";
+import { useConfirm } from "../ui/useConfirm";
 import type { Category, Recipe } from "../types";
 
 function toLines(text: string): string[] {
@@ -43,6 +44,7 @@ function toEditForm(recipe: Recipe): EditForm {
 
 export function RecipeManager() {
   const { language, t } = useLanguage();
+  const { confirm, confirmDialog } = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [title, setTitle] = useState("");
@@ -98,6 +100,7 @@ export function RecipeManager() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!(await confirm(t.recipeManager.confirmDelete))) return;
     setError(null);
     try {
       await api.deleteRecipe(id);
@@ -507,6 +510,7 @@ export function RecipeManager() {
           </li>
         ))}
       </ul>
+      {confirmDialog}
     </div>
   );
 }

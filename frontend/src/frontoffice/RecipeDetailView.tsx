@@ -1,0 +1,171 @@
+import { Link } from "react-router-dom";
+import { BASE_URL } from "../api/client";
+import { useLanguage } from "../i18n/LanguageContext";
+import { useSeoMeta } from "../seo/useSeoMeta";
+import { NutritionPanel } from "./NutritionPanel";
+import type { Nutrition, Recipe } from "../types";
+
+export interface RecipeDetailSeo {
+  // Absolute URL of the canonical (language-prefixed, slug) page for this recipe — omitted when
+  // the recipe isn't public (nothing to canonicalize to). Per-language hreflang alternates are
+  // deliberately left to sitemap.xml rather than duplicated here (see api/app/routers/sitemap.py)
+  // — search engines only need one consistent hreflang source, and the sitemap already has every
+  // translation's slug at hand without an extra request.
+  canonical?: string;
+}
+
+interface RecipeDetailViewProps {
+  recipe: Recipe;
+  nutrition: Nutrition | null;
+  isAuthenticated: boolean;
+  isFavorited: boolean;
+  onToggleFavorite: () => void;
+  backTo: string;
+  seo: RecipeDetailSeo;
+}
+
+export function RecipeDetailView({
+  recipe,
+  nutrition,
+  isAuthenticated,
+  isFavorited,
+  onToggleFavorite,
+  backTo,
+  seo,
+}: RecipeDetailViewProps) {
+  const { t } = useLanguage();
+  const image = recipe.images[0];
+  const imageUrl = image ? `${BASE_URL}${image}` : undefined;
+  // Only a manually-added, approved, owner-opted-in-to-share recipe is actually public — see
+  // routers/recipes.py's visibility rule. Everything else (private, or shared but still pending
+  // moderation) must never get indexing signals or structured data, even though its owner can
+  // still view this same page.
+  const isPublic = recipe.status === "approved" && recipe.is_shared;
+
+  useSeoMeta({
+    title: `${recipe.title} — ${t.brand}`,
+    description: recipe.description || undefined,
+    image: imageUrl,
+    canonical: isPublic ? seo.canonical : undefined,
+    noindex: !isPublic,
+  });
+
+  const gramsByIndex = new Map(
+    (nutrition?.per_ingredient ?? []).map((item) => [item.index, item.estimated_grams])
+  );
+
+  return (
+    <article className="mx-auto max-w-3xl">
+      {isPublic && (
+        <script type="application/ld+json">
+          {JSON.stringify({
+            "@context": "https://schema.org",
+            "@type": "Recipe",
+            name: recipe.title,
+            ...(imageUrl ? { image: [imageUrl] } : {}),
+            ...(recipe.description ? { description: recipe.description } : {}),
+            recipeIngredient: recipe.ingredients,
+            recipeInstructions: recipe.steps,
+            inLanguage: recipe.language,
+            ...(recipe.approved_at ? { datePublished: recipe.approved_at } : {}),
+          })}
+        </script>
+      )}
+
+      <Link to={backTo} className="text-sm text-terracotta hover:underline">
+        {t.detail.back}
+      </Link>
+
+      <div className="mt-2 flex flex-wrap items-center gap-3">
+        <h1 className="font-serif text-3xl font-semibold text-ink sm:text-4xl">{recipe.title}</h1>
+        {isAuthenticated && (
+          <button
+            type="button"
+            onClick={onToggleFavorite}
+            aria-pressed={isFavorited}
+            className={
+              "flex h-9 w-9 items-center justify-center rounded-full text-xl ring-1 ring-black/5 transition-colors " +
+              (isFavorited
+                ? "bg-terracotta text-white"
+                : "bg-cream-card text-ink/60 hover:text-terracotta")
+            }
+          >
+            <span aria-hidden="true">{isFavorited ? "♥" : "♡"}</span>
+            <span className="sr-only">
+              {isFavorited ? t.detail.removeFavorite : t.detail.addFavorite}
+            </span>
+          </button>
+        )}
+      </div>
+
+      {imageUrl && (
+        <div className="mt-4 aspect-video w-full overflow-hidden rounded-lg bg-olive-light">
+          <img src={imageUrl} alt={recipe.title} className="h-full w-full object-cover" />
+        </div>
+      )}
+
+      {recipe.description && <p className="mt-4 text-lg text-ink/80">{recipe.description}</p>}
+
+      <div className="mt-8 grid gap-8 sm:grid-cols-[1fr_2fr]">
+        {recipe.ingredients.length > 0 && (
+          <section aria-labelledby="ingredients-heading">
+            <h2 id="ingredients-heading" className="font-serif text-xl font-semibold text-ink">
+              {t.detail.ingredients}
+            </h2>
+            <ul className="mt-3 space-y-2">
+              {recipe.ingredients.map((ingredient, index) => {
+                const grams = gramsByIndex.get(index);
+                return (
+                  <li key={index} className="flex gap-2 text-ink/90">
+                    <span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-terracotta" />
+                    <span>
+                      {ingredient}
+                      {grams !== undefined && (
+                        <span className="text-ink/50"> ({Math.round(grams)}g)</span>
+                      )}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
+          </section>
+        )}
+
+        {recipe.steps.length > 0 && (
+          <section aria-labelledby="steps-heading">
+            <h2 id="steps-heading" className="font-serif text-xl font-semibold text-ink">
+              {t.detail.steps}
+            </h2>
+            <ol className="mt-3 space-y-4">
+              {recipe.steps.map((step, index) => (
+                <li key={step} className="flex gap-3">
+                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-terracotta text-sm font-semibold text-white">
+                    {index + 1}
+                  </span>
+                  <span className="text-ink/90">{step}</span>
+                </li>
+              ))}
+            </ol>
+          </section>
+        )}
+      </div>
+
+      {recipe.tips.length > 0 && (
+        <section aria-labelledby="tips-heading" className="mt-8 rounded-lg bg-olive-light p-4">
+          <h2 id="tips-heading" className="font-serif text-xl font-semibold text-ink">
+            {t.detail.tips}
+          </h2>
+          <ul className="mt-3 space-y-2">
+            {recipe.tips.map((tip) => (
+              <li key={tip} className="text-ink/90">
+                {tip}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {nutrition && <NutritionPanel nutrition={nutrition} />}
+    </article>
+  );
+}

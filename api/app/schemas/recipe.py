@@ -58,6 +58,10 @@ class RecipeRead(BaseModel):
     # was requested if that translation didn't exist (falls back to the site's default language).
     language: str
     title: str
+    # SEO URL segment for this translation, e.g. "lemon-tart" — see
+    # RecipeTranslation.slug for how/when it's generated. Combine with `id` to build
+    # /{lang}/recipes/{id}-{slug}; the id is what's actually resolved server-side.
+    slug: str
     description: str
     ingredients: list[str]
     steps: list[str]

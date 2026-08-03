@@ -2,12 +2,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton } from "../ui/buttonStyles";
+import { useConfirm } from "../ui/useConfirm";
 import type { Category, ImportJob, ImportJobStatus } from "../types";
 
 const ACTIVE: ImportJobStatus[] = ["queued", "fetching", "processing"];
 
 export function ImportManager() {
   const { t } = useLanguage();
+  const { confirm, confirmDialog } = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [source, setSource] = useState("");
@@ -53,6 +55,7 @@ export function ImportManager() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!(await confirm(t.importManager.confirmDelete))) return;
     setError(null);
     try {
       await api.deleteImportJob(id);
@@ -165,6 +168,7 @@ export function ImportManager() {
           </ul>
         </>
       )}
+      {confirmDialog}
     </div>
   );
 }

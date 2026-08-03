@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton } from "../ui/buttonStyles";
+import { useConfirm } from "../ui/useConfirm";
 import type { Category } from "../types";
 
 export function CategoryManager() {
   const { t } = useLanguage();
+  const { confirm, confirmDialog } = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -30,6 +32,7 @@ export function CategoryManager() {
   };
 
   const handleDelete = async (id: number) => {
+    if (!(await confirm(t.categoryManager.confirmDelete))) return;
     setError(null);
     try {
       await api.deleteCategory(id);
@@ -86,6 +89,7 @@ export function CategoryManager() {
           </li>
         ))}
       </ul>
+      {confirmDialog}
     </section>
   );
 }

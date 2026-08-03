@@ -1,4 +1,16 @@
 {$DOMAIN} {
+	# Served at the site root (not under /api) because the sitemap protocol only allows a
+	# sitemap to list URLs at or below its own directory — and the URLs it lists
+	# (https://<domain>/en/recipes/..., etc.) are at the root. robots.txt is also root-only
+	# by convention (browsers/crawlers never look for it anywhere else).
+	handle /sitemap.xml {
+		reverse_proxy api:8000
+	}
+
+	handle /robots.txt {
+		reverse_proxy api:8000
+	}
+
 	handle /api/* {
 		uri strip_prefix /api
 		reverse_proxy api:8000

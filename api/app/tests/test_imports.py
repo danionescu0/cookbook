@@ -74,7 +74,7 @@ def test_create_import_job_rejects_url_already_imported_as_a_recipe(
     recipe = Recipe(
         category_id=category_id, source_url="https://example.com/recipe", owner_user_id=admin_user.id
     )
-    recipe.translations.append(RecipeTranslation(language="en", title="Existing"))
+    recipe.translations.append(RecipeTranslation(language="en", title="Existing", slug="existing"))
     db_session.add(recipe)
     db_session.commit()
 

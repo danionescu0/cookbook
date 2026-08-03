@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RecipeManager } from "../backoffice/RecipeManager";
@@ -26,6 +26,7 @@ const desserts: Category = { id: 1, name: "Desserts", slug: "desserts" };
 const cake: Recipe = {
   id: 1,
   title: "Cake",
+  slug: "cake",
   description: "",
   ingredients: [],
   steps: [],
@@ -45,6 +46,7 @@ const cake: Recipe = {
 const pendingSoup: Recipe = {
   id: 2,
   title: "Soup",
+  slug: "soup",
   description: "A warm soup.",
   ingredients: ["Water", "Salt"],
   steps: ["Boil", "Serve"],
@@ -112,7 +114,7 @@ describe("RecipeManager", () => {
     );
   });
 
-  it("deletes a recipe", async () => {
+  it("asks for confirmation, then deletes a recipe once confirmed", async () => {
     const user = userEvent.setup();
     mockedApi.deleteRecipe.mockResolvedValue(undefined);
 
@@ -120,8 +122,26 @@ describe("RecipeManager", () => {
     await screen.findByText(/Cake/);
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(mockedApi.deleteRecipe).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(mockedApi.deleteRecipe).toHaveBeenCalledWith(1));
+  });
+
+  it("does not delete a recipe when the confirm dialog is dismissed", async () => {
+    const user = userEvent.setup();
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(mockedApi.deleteRecipe).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("shows an approve button only for unapproved recipes and calls the API", async () => {

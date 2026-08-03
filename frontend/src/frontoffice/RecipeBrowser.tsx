@@ -3,6 +3,7 @@ import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
 import { useFavoriteIds } from "../auth/useFavoriteIds";
 import { useLanguage } from "../i18n/LanguageContext";
+import { useSeoMeta } from "../seo/useSeoMeta";
 import { CategoryNav } from "./CategoryNav";
 import { RecipeCard } from "./RecipeCard";
 import type { Category, Recipe } from "../types";
@@ -35,6 +36,8 @@ export function RecipeBrowser() {
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const { favoriteIds, toggleFavorite } = useFavoriteIds();
+
+  useSeoMeta({ title: `${t.brand} — ${t.browser.heading}` });
 
   useEffect(() => {
     api.listCategories().then(setCategories);

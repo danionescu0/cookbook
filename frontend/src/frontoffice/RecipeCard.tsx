@@ -10,12 +10,12 @@ interface RecipeCardProps {
 }
 
 export function RecipeCard({ recipe, isFavorited, onToggleFavorite }: RecipeCardProps) {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const image = recipe.images[0];
 
   return (
     <Link
-      to={`/recipes/${recipe.id}`}
+      to={`/${language}/recipes/${recipe.id}-${recipe.slug}`}
       className="group relative block overflow-hidden rounded-lg bg-cream-card shadow-sm ring-1 ring-black/5 transition-shadow hover:shadow-md"
     >
       {onToggleFavorite && (

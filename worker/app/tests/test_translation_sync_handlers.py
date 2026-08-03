@@ -64,7 +64,9 @@ def _seed_app_settings(db: Session, supported_languages: str = "ro,en") -> None:
 def _create_recipe(db: Session, ro_ingredients: list[str] | None = None) -> Recipe:
     recipe = Recipe(category_id=1, owner_user_id=1)
     recipe.translations.append(
-        RecipeTranslation(language="ro", title="Ciorbă", ingredients=ro_ingredients or ["apă"])
+        RecipeTranslation(
+            language="ro", title="Ciorbă", slug="ciorba", ingredients=ro_ingredients or ["apă"]
+        )
     )
     db.add(recipe)
     db.commit()

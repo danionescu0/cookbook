@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
+import { useSeoMeta } from "../seo/useSeoMeta";
 import { primaryButton, secondaryButton } from "../ui/buttonStyles";
 import { RecipeCard } from "./RecipeCard";
 import type { Recipe } from "../types";
@@ -11,6 +12,14 @@ const COMMUNITY_PREVIEW_COUNT = 8;
 export function LandingPage() {
   const { t, language } = useLanguage();
   const [communityRecipes, setCommunityRecipes] = useState<Recipe[]>([]);
+
+  useSeoMeta({
+    title: `${t.brand} — ${t.landing.heading}`,
+    description: t.landing.tagline,
+    // Points at the language-prefixed canonical entry point even when rendered at bare "/" —
+    // avoids the two URLs reading as duplicate content to a crawler.
+    canonical: `${window.location.origin}/${language}`,
+  });
 
   useEffect(() => {
     // Unauthenticated, so the API already scopes this to the shared+approved pool — nothing

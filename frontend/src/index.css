@@ -15,3 +15,30 @@
 body {
   @apply bg-cream text-ink;
 }
+
+/* Used by ui/ConfirmDialog.tsx via Tailwind's arbitrary animate-[name_duration_ease] syntax. */
+@keyframes dialog-backdrop-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes dialog-panel-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95) translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-safe-dialog-animation {
+    animation: none !important;
+  }
+}

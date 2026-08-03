@@ -11,6 +11,9 @@ export type RecipeProcessingStatus = "translating" | "recalculating_nutrition" |
 export interface Recipe {
   id: number;
   title: string;
+  // SEO URL segment for the resolved language, e.g. "lemon-tart" — combine with `id` to build
+  // /{lang}/recipes/{id}-{slug}. See api's RecipeTranslation.slug docstring.
+  slug: string;
   description: string;
   ingredients: string[];
   steps: string[];
@@ -124,6 +127,11 @@ export interface SettingsUpdate {
 
 export interface PublicSettings {
   turnstile_site_key: string;
+}
+
+export interface PublicLanguages {
+  supported: string[];
+  default: string;
 }
 
 export interface User {

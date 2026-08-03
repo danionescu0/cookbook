@@ -1,5 +1,9 @@
 const en = {
   brand: "Cookbook",
+  common: {
+    cancel: "Cancel",
+    delete: "Delete",
+  },
   nav: {
     recipes: "Recipes",
     backoffice: "Back office",
@@ -146,6 +150,7 @@ const en = {
     namePlaceholder: "e.g. Desserts",
     add: "Add category",
     delete: "Delete",
+    confirmDelete: "Delete this category? This can't be undone.",
   },
   recipeManager: {
     heading: "Recipes",
@@ -158,6 +163,7 @@ const en = {
     hidePreview: "Hide preview",
     approve: "Approve",
     delete: "Delete",
+    confirmDelete: "Delete this recipe? This can't be undone.",
     ingredients: "Ingredients",
     steps: "Steps",
     tips: "Tips",
@@ -188,6 +194,7 @@ const en = {
     runImport: "Run import",
     retry: "Retry",
     delete: "Delete",
+    confirmDelete: "Delete this import job? This can't be undone.",
     instagramHint:
       "Instagram post and reel links work too — the recipe is read from the caption and comments, and a preview photo is grabbed automatically. Nothing to do differently: paste the link and add it like any other URL.",
     privateHint: "Imported recipes are private to you — only you will ever see them.",

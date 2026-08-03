@@ -4,6 +4,10 @@ import type { Translation } from "./en";
 // silently-blank string in production.
 const ro: Translation = {
   brand: "Cookbook",
+  common: {
+    cancel: "Anulează",
+    delete: "Șterge",
+  },
   nav: {
     recipes: "Rețete",
     backoffice: "Panou admin",
@@ -150,6 +154,7 @@ const ro: Translation = {
     namePlaceholder: "ex. Deserturi",
     add: "Adaugă categorie",
     delete: "Șterge",
+    confirmDelete: "Ștergi această categorie? Această acțiune nu poate fi anulată.",
   },
   recipeManager: {
     heading: "Rețete",
@@ -162,6 +167,7 @@ const ro: Translation = {
     hidePreview: "Ascunde previzualizarea",
     approve: "Aprobă",
     delete: "Șterge",
+    confirmDelete: "Ștergi această rețetă? Această acțiune nu poate fi anulată.",
     ingredients: "Ingrediente",
     steps: "Pași",
     tips: "Sfaturi",
@@ -192,6 +198,7 @@ const ro: Translation = {
     runImport: "Rulează importul",
     retry: "Reîncearcă",
     delete: "Șterge",
+    confirmDelete: "Ștergi acest job de import? Această acțiune nu poate fi anulată.",
     instagramHint:
       "Funcționează și linkurile către postări sau reels de Instagram — rețeta este citită din descriere și comentarii, iar o fotografie reprezentativă este preluată automat. Nimic diferit de făcut: lipește linkul și adaugă-l ca pe orice alt URL.",
     privateHint: "Rețetele importate sunt private, doar pentru tine — nimeni altcineva nu le va vedea.",

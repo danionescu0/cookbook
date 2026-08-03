@@ -7,6 +7,7 @@ from app.claude_client import RecipeExtractionError, translate_recipe
 from app.handlers import _enqueue_nutrition_job
 from app.models import Recipe, RecipeTranslation, TranslationSyncJob, TranslationSyncJobStatus
 from app.settings_service import get_settings
+from app.slugify import generate_unique_slug
 
 logger = logging.getLogger(__name__)
 
@@ -61,9 +62,10 @@ def handle_translation_sync_job(body: bytes, db: Session) -> None:
             )
             for t in translated.get("translations", []):
                 translation = by_language.get(t["language"])
+                is_new_translation = translation is None
                 if translation is None:
                     translation = RecipeTranslation(
-                        recipe_id=recipe.id, language=t["language"], title=""
+                        recipe_id=recipe.id, language=t["language"], title="", slug=""
                     )
                     recipe.translations.append(translation)
                     by_language[t["language"]] = translation
@@ -72,6 +74,10 @@ def handle_translation_sync_job(body: bytes, db: Session) -> None:
                 translation.ingredients = t.get("ingredients", [])
                 translation.steps = t.get("steps", [])
                 translation.tips = t.get("tips", [])
+                if is_new_translation:
+                    # Generated once, here, and never auto-regenerated on later syncs — same
+                    # reasoning as api/app/models/recipe_translation.py's slug docstring.
+                    translation.slug = generate_unique_slug(db, t["language"], translation.title)
 
         job.status = TranslationSyncJobStatus.DONE
         db.commit()

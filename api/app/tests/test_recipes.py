@@ -1,7 +1,10 @@
+from pathlib import Path
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+from app.config import settings as app_settings
 from app.models.nutrition_job import NutritionJob, NutritionJobStatus
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
 from app.routers import recipes as recipes_router
@@ -33,6 +36,41 @@ def test_create_recipe_defaults_to_approved(client: TestClient) -> None:
     assert body["title"] == "Shredded Zucchini Casserole"
     assert body["status"] == "approved"
     assert body["category_id"] == category_id
+    assert body["slug"] == "shredded-zucchini-casserole"
+
+
+def test_create_recipe_generates_a_unique_slug_on_title_collision(client: TestClient) -> None:
+    category_id = _create_category(client)
+    first = client.post(
+        "/recipes", json={"title": "Lemon Tart", "category_id": category_id, "language": "en"}
+    ).json()
+    second = client.post(
+        "/recipes", json={"title": "Lemon Tart", "category_id": category_id, "language": "en"}
+    ).json()
+
+    assert first["slug"] == "lemon-tart"
+    assert second["slug"] == "lemon-tart-2"
+
+
+def test_editing_a_recipes_title_does_not_change_its_existing_slug(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Lemon Tart", "category_id": category_id, "language": "en"}
+    ).json()
+    assert created["slug"] == "lemon-tart"
+
+    response = client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"title": "Lime Tart"}},
+        params={"language": "en"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["title"] == "Lime Tart"
+    # Slug is generated once at creation and never auto-regenerated — changing it out from under
+    # a published URL would break inbound links/search rankings.
+    assert body["slug"] == "lemon-tart"
 
 
 def test_create_recipe_defaults_language_to_site_default(client: TestClient) -> None:
@@ -272,6 +310,7 @@ def test_update_recipe_translation_creates_a_missing_language(
     body = response.json()
     assert body["language"] == "ro"
     assert body["title"] == "Ciorbă"
+    assert body["slug"] == "ciorba"
     assert sorted(body["available_languages"]) == ["en", "ro"]
 
 
@@ -475,6 +514,80 @@ def test_delete_recipe(client: TestClient) -> None:
 
     assert delete_response.status_code == 204
     assert get_response.status_code == 404
+
+
+def test_delete_recipe_removes_its_image_files_from_disk(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app_settings, "images_dir", str(tmp_path))
+    image_path = tmp_path / "abc123.jpg"
+    image_path.write_bytes(b"fake-image-bytes")
+
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={"title": "Soup", "category_id": category_id, "images": ["/images/abc123.jpg"]},
+    ).json()
+    assert image_path.exists()
+
+    response = client.delete(f"/recipes/{created['id']}")
+
+    assert response.status_code == 204
+    assert not image_path.exists()
+
+
+def test_delete_recipe_without_images_does_not_error(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post("/recipes", json={"title": "Soup", "category_id": category_id}).json()
+
+    response = client.delete(f"/recipes/{created['id']}")
+
+    assert response.status_code == 204
+
+
+def test_update_recipe_removes_files_for_images_dropped_from_the_list(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app_settings, "images_dir", str(tmp_path))
+    kept_path = tmp_path / "kept.jpg"
+    removed_path = tmp_path / "removed.jpg"
+    kept_path.write_bytes(b"kept")
+    removed_path.write_bytes(b"removed")
+
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={
+            "title": "Soup",
+            "category_id": category_id,
+            "images": ["/images/kept.jpg", "/images/removed.jpg"],
+        },
+    ).json()
+
+    response = client.put(f"/recipes/{created['id']}", json={"images": ["/images/kept.jpg"]})
+
+    assert response.status_code == 200
+    assert not removed_path.exists()
+    assert kept_path.exists()
+
+
+def test_update_recipe_without_touching_images_does_not_delete_any_files(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(app_settings, "images_dir", str(tmp_path))
+    image_path = tmp_path / "photo.jpg"
+    image_path.write_bytes(b"photo")
+
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes",
+        json={"title": "Soup", "category_id": category_id, "images": ["/images/photo.jpg"]},
+    ).json()
+
+    response = client.put(f"/recipes/{created['id']}", json={"status": "unapproved"})
+
+    assert response.status_code == 200
+    assert image_path.exists()
 
 
 def test_create_recipe_requires_login(unauthenticated_client: TestClient) -> None:

@@ -1,4 +1,4 @@
-import { act, render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportManager } from "../backoffice/ImportManager";
@@ -120,7 +120,7 @@ describe("ImportManager", () => {
     await waitFor(() => expect(mockedApi.approveImportJob).toHaveBeenCalledWith(1));
   });
 
-  it("deleting a job calls the API", async () => {
+  it("asks for confirmation, then deletes a job once confirmed", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mockedApi.deleteImportJob.mockResolvedValue(undefined);
 
@@ -128,8 +128,26 @@ describe("ImportManager", () => {
     await screen.findByText("https://example.com/recipe");
 
     await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(mockedApi.deleteImportJob).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
 
     await waitFor(() => expect(mockedApi.deleteImportJob).toHaveBeenCalledWith(1));
+  });
+
+  it("does not delete a job when the confirm dialog is dismissed", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    renderManager();
+    await screen.findByText("https://example.com/recipe");
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(mockedApi.deleteImportJob).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
   });
 
   it("shows the job's error message when failed", async () => {

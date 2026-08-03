@@ -27,6 +27,7 @@ const mockedApi = vi.mocked(api);
 const cake: Recipe = {
   id: 1,
   title: "Cake",
+  slug: "cake",
   description: "A rich chocolate cake.",
   ingredients: ["flour", "sugar"],
   steps: ["Mix", "Bake"],

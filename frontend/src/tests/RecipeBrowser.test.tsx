@@ -30,6 +30,7 @@ const mains: Category = { id: 2, name: "Mains", slug: "mains" };
 const cake: Recipe = {
   id: 1,
   title: "Cake",
+  slug: "cake",
   description: "A rich chocolate cake.",
   ingredients: ["flour"],
   steps: ["bake"],
@@ -54,6 +55,7 @@ const soup: Recipe = {
   ...cake,
   id: 2,
   title: "Soup",
+  slug: "soup",
   owner_username: "someone",
   is_shared: false,
 };
@@ -90,7 +92,7 @@ describe("RecipeBrowser", () => {
     renderBrowser();
 
     const link = (await screen.findByText("Cake")).closest("a");
-    expect(link).toHaveAttribute("href", "/recipes/1");
+    expect(link).toHaveAttribute("href", "/en/recipes/1-cake");
   });
 
   it("filters by category when a pill is clicked", async () => {

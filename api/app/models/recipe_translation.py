@@ -8,6 +8,7 @@ class RecipeTranslation(Base):
     __tablename__ = "recipe_translations"
     __table_args__ = (
         UniqueConstraint("recipe_id", "language", name="uq_recipe_translations_recipe_language"),
+        UniqueConstraint("language", "slug", name="uq_recipe_translations_language_slug"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
@@ -19,6 +20,11 @@ class RecipeTranslation(Base):
     language: Mapped[str] = mapped_column(String(10), nullable=False)
 
     title: Mapped[str] = mapped_column(String(200), nullable=False)
+    # SEO-friendly URL segment, generated once from `title` at creation time (see app.slugify)
+    # and never auto-regenerated afterward — a slug changing out from under a published URL would
+    # break inbound links/search rankings. Decorative, not the actual lookup key: recipe detail
+    # URLs are `/{lang}/recipes/{id}-{slug}`, and the numeric id is what's resolved server-side.
+    slug: Mapped[str] = mapped_column(String(110), nullable=False)
     description: Mapped[str] = mapped_column(Text, default="")
     ingredients: Mapped[list[str]] = mapped_column(JSON, default=list)
     steps: Mapped[list[str]] = mapped_column(JSON, default=list)

@@ -14,8 +14,10 @@ from app.models.recipe_favorite import RecipeFavorite
 from app.models.recipe_translation import RecipeTranslation
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
 from app.queue import publish_translation_sync_job
+from app.routers.images import delete_images
 from app.schemas.recipe import RecipeCreate, RecipeRead, RecipeShareUpdate, RecipeUpdate
 from app.settings_service import get_settings
+from app.slugify import generate_unique_slug
 
 router = APIRouter(prefix="/recipes", tags=["recipes"])
 # Kept as a second router (rather than folding into router above) so the path prefix can be
@@ -156,6 +158,7 @@ def _serialize(
         approved_at=recipe.approved_at,
         language=translation.language,
         title=translation.title,
+        slug=translation.slug,
         description=translation.description,
         ingredients=translation.ingredients,
         steps=translation.steps,
@@ -224,6 +227,7 @@ def create_recipe(
             ingredients=payload.ingredients,
             steps=payload.steps,
             tips=payload.tips,
+            slug=generate_unique_slug(db, language, payload.title),
         )
     )
     db.add(recipe)
@@ -276,6 +280,7 @@ def update_recipe(
     default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
     target_language = language or default_language
+    previous_images = list(recipe.images)
 
     updates = payload.model_dump(exclude_unset=True, exclude={"translation"})
     if "category_id" in updates:
@@ -288,9 +293,10 @@ def update_recipe(
     if payload.translation is not None:
         by_language = {t.language: t for t in recipe.translations}
         translation = by_language.get(target_language)
+        is_new_translation = translation is None
         if translation is None:
             translation = RecipeTranslation(
-                recipe_id=recipe.id, language=target_language, title="", description=""
+                recipe_id=recipe.id, language=target_language, title="", description="", slug=""
             )
             recipe.translations.append(translation)
 
@@ -299,8 +305,20 @@ def update_recipe(
             setattr(translation, field, value)
         translation_changed = bool(translation_updates)
 
+        if is_new_translation:
+            # Slug is generated once, here, and never auto-regenerated on later edits — see
+            # RecipeTranslation.slug's docstring.
+            translation.slug = generate_unique_slug(db, target_language, translation.title)
+
     db.commit()
     db.refresh(recipe)
+
+    if "images" in updates:
+        # Only ever the ones actually dropped from the list — a still-referenced image (or one
+        # simply reordered) must not be touched. Same after-commit ordering as delete_recipe: an
+        # orphaned file is recoverable, a live recipe with a missing photo isn't.
+        removed_images = [url for url in previous_images if url not in recipe.images]
+        delete_images(removed_images)
 
     if translation_changed:
         # Propagate this edit to the other languages and re-run nutrition once they're in sync
@@ -341,8 +359,12 @@ def update_recipe_sharing(
 @router.delete("/{recipe_id}", status_code=204, dependencies=[Depends(require_admin)])
 def delete_recipe(recipe_id: int, db: Session = Depends(get_db)) -> None:
     recipe = _get_or_404(db, recipe_id)
+    images = list(recipe.images)
     db.delete(recipe)
     db.commit()
+    # After the commit, not before: if the DB delete somehow fails, the recipe (and its images)
+    # are still around — an orphaned file is recoverable, a live recipe with missing photos isn't.
+    delete_images(images)
 
 
 @router.post("/{recipe_id}/favorite", status_code=204)

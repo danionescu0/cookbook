@@ -5,6 +5,7 @@ import type {
   IngredientRefreshStatus,
   LoginResponse,
   Nutrition,
+  PublicLanguages,
   PublicSettings,
   Recipe,
   RecipeDraft,
@@ -99,6 +100,7 @@ export const api = {
       body: JSON.stringify({ current_password: currentPassword, new_password: newPassword }),
     }),
   getPublicSettings: () => request<PublicSettings>("/settings/public"),
+  getLanguages: () => request<PublicLanguages>("/languages"),
 
   listCategories: () => request<Category[]>("/categories"),
   createCategory: (name: string) =>

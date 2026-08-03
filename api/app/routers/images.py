@@ -34,3 +34,14 @@ def upload_image(
     (images_dir / filename).write_bytes(processed)
 
     return {"url": f"/images/{filename}"}
+
+
+def delete_images(image_urls: list[str]) -> None:
+    """Best-effort cleanup of files written by upload_image (or the worker's import pipeline,
+    same "/images/{uuid}.jpg" naming) — a missing file (already gone, or never existed) is not
+    an error, and this must never block whatever DB deletion triggered it.
+    """
+    images_dir = Path(settings.images_dir)
+    for url in image_urls:
+        filename = Path(url).name
+        (images_dir / filename).unlink(missing_ok=True)

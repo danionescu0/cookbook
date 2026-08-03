@@ -39,7 +39,7 @@ def db_session() -> Generator[Session, None, None]:
 def _create_recipe(db: Session, ingredients: list[str]) -> Recipe:
     recipe = Recipe(category_id=1, owner_user_id=1)
     recipe.translations.append(
-        RecipeTranslation(language="ro", title="Rețetă", ingredients=ingredients)
+        RecipeTranslation(language="ro", title="Rețetă", slug="reteta", ingredients=ingredients)
     )
     db.add(recipe)
     db.commit()
