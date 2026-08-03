@@ -24,6 +24,7 @@ class SettingsRead(BaseModel):
     turnstile_secret_key_is_set: bool
     public_site_url: str
     backoffice_recipes_page_size: int
+    max_imports_per_user: int
 
 
 class SettingsUpdate(BaseModel):
@@ -48,3 +49,4 @@ class SettingsUpdate(BaseModel):
     turnstile_secret_key: str | None = None
     public_site_url: str | None = None
     backoffice_recipes_page_size: int | None = Field(default=None, gt=0)
+    max_imports_per_user: int | None = Field(default=None, gt=0)

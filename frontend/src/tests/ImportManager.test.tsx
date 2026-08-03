@@ -1,7 +1,8 @@
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ImportManager } from "../backoffice/ImportManager";
+import { AuthProvider, AUTH_STORAGE_KEY } from "../auth/AuthContext";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
 import type { Category, ImportJob } from "../types";
@@ -13,7 +14,11 @@ vi.mock("../api/client", () => ({
     createImportJob: vi.fn(),
     approveImportJob: vi.fn(),
     deleteImportJob: vi.fn(),
+    me: vi.fn(),
+    getPublicSettings: vi.fn(),
   },
+  setAuthToken: vi.fn(),
+  setUnauthorizedHandler: vi.fn(),
 }));
 
 const mockedApi = vi.mocked(api);
@@ -37,16 +42,51 @@ const doneJob: ImportJob = { ...pendingJob, id: 4, status: "done" };
 function renderManager() {
   return render(
     <LanguageProvider>
-      <ImportManager />
+      <AuthProvider>
+        <ImportManager />
+      </AuthProvider>
     </LanguageProvider>
   );
+}
+
+// Admin by default — matches the existing fixtures ("imported by admin") and keeps every
+// pre-existing test's behavior unchanged, since admins skip the usage/limit fetch entirely.
+function logInAsAdmin() {
+  window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
+  mockedApi.me.mockResolvedValue({
+    id: 1,
+    username: "admin",
+    email: null,
+    is_admin: true,
+    is_super_admin: true,
+    imported_recipes_count: 0,
+  });
+}
+
+function logInAsRegularUser(importedRecipesCount: number, maxImportsPerUser: number) {
+  window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
+  mockedApi.me.mockResolvedValue({
+    id: 2,
+    username: "someone",
+    email: null,
+    is_admin: false,
+    is_super_admin: false,
+    imported_recipes_count: importedRecipesCount,
+  });
+  mockedApi.getPublicSettings.mockResolvedValue({
+    turnstile_site_key: "",
+    backoffice_recipes_page_size: 10,
+    max_imports_per_user: maxImportsPerUser,
+  });
 }
 
 beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers({ shouldAdvanceTime: true });
+  window.localStorage.removeItem(AUTH_STORAGE_KEY);
   mockedApi.listCategories.mockResolvedValue([desserts]);
   mockedApi.listImportJobs.mockResolvedValue([pendingJob]);
+  logInAsAdmin();
 });
 
 afterEach(() => {
@@ -171,5 +211,56 @@ describe("ImportManager", () => {
     // now settled to "done" — no further polling
     await act(() => vi.advanceTimersByTimeAsync(3000));
     expect(mockedApi.listImportJobs).toHaveBeenCalledTimes(2);
+  });
+
+  describe("lifetime import limit", () => {
+    it("does not show usage or fetch it for an admin", async () => {
+      renderManager();
+      await screen.findByText("Recipe URL");
+
+      expect(screen.queryByText(/imports used/)).not.toBeInTheDocument();
+      // AuthProvider itself calls `me()` once to rehydrate the logged-in profile — the
+      // assertion here is that ImportManager's own usage fetch (which would be a 2nd call)
+      // never happens for an admin.
+      expect(mockedApi.me).toHaveBeenCalledTimes(1);
+      expect(mockedApi.getPublicSettings).not.toHaveBeenCalled();
+    });
+
+    it("shows a non-admin's usage below the limit, with the button enabled", async () => {
+      logInAsRegularUser(12, 30);
+
+      renderManager();
+
+      expect(await screen.findByText("12 / 30 imports used")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: "Add" })).not.toBeDisabled();
+    });
+
+    it("blurs and disables the button once the limit is reached", async () => {
+      logInAsRegularUser(30, 30);
+
+      renderManager();
+      await screen.findByText("30 / 30 imports used");
+
+      const button = screen.getByRole("button", { name: "Add" });
+      expect(button).toBeDisabled();
+      expect(button.className).toMatch(/blur-/);
+      expect(
+        await screen.findByText(/You've used up your lifetime import limit/)
+      ).toBeInTheDocument();
+    });
+
+    it("does not submit when the limit is reached, even via a direct form submit", async () => {
+      logInAsRegularUser(30, 30);
+
+      const { container } = renderManager();
+      await screen.findByText("30 / 30 imports used");
+
+      // Bypasses the button's `disabled` attribute — belt-and-suspenders check that handleSubmit
+      // itself also guards on `atLimit`, not just the disabled button.
+      const form = container.querySelector("form")!;
+      fireEvent.submit(form);
+
+      expect(mockedApi.createImportJob).not.toHaveBeenCalled();
+    });
   });
 });

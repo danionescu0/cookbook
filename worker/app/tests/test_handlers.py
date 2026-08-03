@@ -21,6 +21,7 @@ from app.models import (
     Recipe,
     RecipeStatus,
     RecipeTranslation,
+    User,
 )
 from app.scraping import ScrapeDisallowedError
 
@@ -132,6 +133,56 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     assert nutrition_job.recipe_id == recipe.id
     assert nutrition_job.status == NutritionJobStatus.QUEUED
     assert published == [(nutrition_job.id, recipe.id)]
+
+
+def test_handle_import_job_increments_owners_lifetime_import_count(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    user = User(id=1, username="tester", imported_recipes_count=4)
+    db_session.add(user)
+    db_session.commit()
+
+    job = _create_job(db_session, created_by_user_id=user.id)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(
+        handlers, "extract_recipe", lambda html, languages, api_key: _TWO_LANGUAGE_EXTRACTION
+    )
+    monkeypatch.setattr(
+        handlers, "process_images", lambda urls, app_settings: ["/images/stored.jpg"]
+    )
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    db_session.refresh(user)
+    assert user.imported_recipes_count == 5
+
+
+def test_handle_import_job_does_not_increment_count_on_failure(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Only successful imports should count toward the lifetime cap — see
+    # app_settings.max_imports_per_user on the API side.
+    user = User(id=1, username="tester", imported_recipes_count=4)
+    db_session.add(user)
+    db_session.commit()
+
+    job = _create_job(db_session, created_by_user_id=user.id)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+
+    def _raise(html: str, languages: list[str], api_key: str) -> dict:
+        raise RecipeExtractionError("boom")
+
+    monkeypatch.setattr(handlers, "extract_recipe", _raise)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.FAILED
+    db_session.refresh(user)
+    assert user.imported_recipes_count == 4
 
 
 def test_handle_import_job_marks_nutrition_job_failed_when_publish_fails(

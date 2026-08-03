@@ -41,6 +41,7 @@ def get_settings(db: Session) -> AppSettings:
         turnstile_secret_key="",
         public_site_url="",
         backoffice_recipes_page_size=10,
+        max_imports_per_user=30,
     )
     db.add(row)
     db.commit()
@@ -101,6 +102,7 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         "turnstile_site_key",
         "public_site_url",
         "backoffice_recipes_page_size",
+        "max_imports_per_user",
     ):
         if field in updates:
             setattr(row, field, updates[field])

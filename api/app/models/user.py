@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from sqlalchemy import Boolean, DateTime, String, func
+from sqlalchemy import Boolean, DateTime, Integer, String, func
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -28,5 +28,11 @@ class User(Base):
     # before it existed) — nothing truthful to backfill for those.
     terms_accepted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     terms_version: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Lifetime count of successful imports, incremented once by the worker per completed import
+    # (see worker/app/handlers.py::_finish_import) and never decremented — deleting a recipe (or
+    # its import_jobs row) doesn't free up quota. Compared against app_settings.max_imports_per_user
+    # in routers/imports.py's create_import_job; admins are exempt from the cap.
+    imported_recipes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

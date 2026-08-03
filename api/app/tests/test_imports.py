@@ -114,6 +114,78 @@ def test_create_import_job_allows_resubmission_after_deleting_previous_job(
     assert response.status_code == 201
 
 
+def test_create_import_job_rejects_when_lifetime_limit_reached(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    category_id = _create_category(client)
+    client.patch("/settings", json={"max_imports_per_user": 2})
+    regular_user.imported_recipes_count = 2
+    db_session.commit()
+
+    response = user_client.post(
+        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
+    )
+
+    assert response.status_code == 403
+    assert "2/2" in response.json()["detail"]
+
+
+def test_create_import_job_allows_up_to_but_not_over_the_limit(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    category_id = _create_category(client)
+    client.patch("/settings", json={"max_imports_per_user": 2})
+    regular_user.imported_recipes_count = 1
+    db_session.commit()
+
+    response = user_client.post(
+        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
+    )
+
+    assert response.status_code == 201
+
+
+def test_create_import_job_exempts_admins_from_the_limit(
+    client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    category_id = _create_category(client)
+    client.patch("/settings", json={"max_imports_per_user": 1})
+    admin_user.imported_recipes_count = 50
+    db_session.commit()
+
+    response = client.post(
+        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
+    )
+
+    assert response.status_code == 201
+
+
+def test_import_limit_counter_is_unaffected_by_recipe_deletion(
+    client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    # The whole point of a lifetime counter: deleting the recipe an import produced must not
+    # free up quota. This doesn't exercise the worker's increment (see
+    # worker/app/handlers.py::_finish_import) — it just confirms nothing in the recipe-delete
+    # path touches imported_recipes_count.
+    category_id = _create_category(client)
+    recipe = Recipe(
+        category_id=category_id,
+        source_url="https://example.com/recipe",
+        owner_user_id=regular_user.id,
+    )
+    recipe.translations.append(RecipeTranslation(language="en", title="Gone", slug="gone"))
+    db_session.add(recipe)
+    regular_user.imported_recipes_count = 5
+    db_session.commit()
+    recipe_id = recipe.id
+
+    response = client.delete(f"/recipes/{recipe_id}")
+    assert response.status_code == 204
+
+    db_session.refresh(regular_user)
+    assert regular_user.imported_recipes_count == 5
+
+
 def test_approve_import_job_publishes_and_marks_queued(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

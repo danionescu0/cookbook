@@ -18,6 +18,7 @@ from app.models import (
     Recipe,
     RecipeStatus,
     RecipeTranslation,
+    User,
 )
 from app.queue import publish_nutrition_job
 from app.scraping import ScrapeDisallowedError, fetch_page
@@ -88,6 +89,14 @@ def _finish_import(
     )
     db.add(recipe)
     db.flush()  # assigns recipe.id, needed below, without committing yet
+
+    # Lifetime counter for the import limit (see app_settings.max_imports_per_user in the API) —
+    # incremented once per successful import, in the same transaction as the recipe insert, and
+    # never decremented anywhere: deleting this recipe later must not free up quota.
+    if job.created_by_user_id is not None:
+        owner = db.get(User, job.created_by_user_id)
+        if owner is not None:
+            owner.imported_recipes_count += 1
 
     job.status = ImportJobStatus.DONE
     db.commit()

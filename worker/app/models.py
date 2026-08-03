@@ -236,13 +236,17 @@ class TranslationSyncJob(Base):
 
 
 class User(Base):
-    # Kept in sync by hand with api/app/models/user.py — the worker only ever reads this table
-    # (to find the recipient's email address for a queued EmailJob), api owns writes.
+    # Kept in sync by hand with api/app/models/user.py. Mostly read-only from the worker's side
+    # (to find the recipient's email address for a queued EmailJob) — one exception:
+    # imported_recipes_count is incremented here, in _finish_import, since a successful import
+    # is only known at the end of the worker's fetch/extract/image pipeline. It's a lifetime
+    # counter, never decremented, so deleting the resulting recipe never frees up quota.
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    imported_recipes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
 
 class EmailJobStatus(str, enum.Enum):

@@ -51,6 +51,12 @@ class AppSettings(Base):
     # (a plain admin, not just a super-admin, needs it, and that's the endpoint already reachable
     # without the super-admin gate on GET /settings).
     backoffice_recipes_page_size: Mapped[int] = mapped_column(Integer, nullable=False, default=10)
+    # Lifetime cap on how many recipes a non-admin user may ever import, counting successful
+    # imports even after the recipe (or its import_jobs row) is deleted — see
+    # users.imported_recipes_count and routers/imports.py's create_import_job. Admins are exempt.
+    # Not secret, so it's readable via GET /settings/public alongside backoffice_recipes_page_size
+    # — the Account page needs it to show usage before anything becomes public.
+    max_imports_per_user: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
 
     @property
     def supported_languages_list(self) -> list[str]:

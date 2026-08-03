@@ -27,6 +27,7 @@ interface FormState {
   turnstileSecretKey: string;
   publicSiteUrl: string;
   backofficeRecipesPageSize: string;
+  maxImportsPerUser: string;
 }
 
 function toFormState(settings: Settings): FormState {
@@ -50,6 +51,7 @@ function toFormState(settings: Settings): FormState {
     turnstileSecretKey: "",
     publicSiteUrl: settings.public_site_url,
     backofficeRecipesPageSize: String(settings.backoffice_recipes_page_size),
+    maxImportsPerUser: String(settings.max_imports_per_user),
   };
 }
 
@@ -138,6 +140,7 @@ export function SettingsManager() {
         ...(form.turnstileSecretKey ? { turnstile_secret_key: form.turnstileSecretKey } : {}),
         public_site_url: form.publicSiteUrl.trim(),
         backoffice_recipes_page_size: Number(form.backofficeRecipesPageSize),
+        max_imports_per_user: Number(form.maxImportsPerUser),
       });
       setSettings(updated);
       setForm(toFormState(updated));
@@ -259,6 +262,14 @@ export function SettingsManager() {
           help={t.settingsManager.backofficeRecipesPageSizeHelp}
           value={form.backofficeRecipesPageSize}
           onChange={(v) => update({ backofficeRecipesPageSize: v })}
+        />
+        <Field
+          id="settings-max-imports-per-user"
+          type="number"
+          label={t.settingsManager.maxImportsPerUserLabel}
+          help={t.settingsManager.maxImportsPerUserHelp}
+          value={form.maxImportsPerUser}
+          onChange={(v) => update({ maxImportsPerUser: v })}
         />
         <Field
           id="settings-public-site-url"

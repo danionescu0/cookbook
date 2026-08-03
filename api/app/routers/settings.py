@@ -34,6 +34,7 @@ def _serialize(row: AppSettings) -> SettingsRead:
         turnstile_secret_key_is_set=bool(row.turnstile_secret_key),
         public_site_url=row.public_site_url,
         backoffice_recipes_page_size=row.backoffice_recipes_page_size,
+        max_imports_per_user=row.max_imports_per_user,
     )
 
 

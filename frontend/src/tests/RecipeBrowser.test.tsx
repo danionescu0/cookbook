@@ -94,7 +94,14 @@ function renderBrowser() {
 
 async function logInAs(username: string) {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
-  mockedApi.me.mockResolvedValue({ id: 1, username, email: null, is_admin: false, is_super_admin: false });
+  mockedApi.me.mockResolvedValue({
+    id: 1,
+    username,
+    email: null,
+    is_admin: false,
+    is_super_admin: false,
+    imported_recipes_count: 0,
+  });
   mockedApi.listFavorites.mockResolvedValue([]);
 }
 

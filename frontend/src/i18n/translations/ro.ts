@@ -219,6 +219,9 @@ const ro: Translation = {
       "Funcționează și linkurile către postări sau reels de Instagram — rețeta este citită din descriere și comentarii, iar o fotografie reprezentativă este preluată automat. Nimic diferit de făcut: lipește linkul și adaugă-l ca pe orice alt URL.",
     privateHint: "Rețetele importate sunt private, doar pentru tine — nimeni altcineva nu le va vedea.",
     importedBy: "importat de {username}",
+    usage: "{used} / {limit} importuri folosite",
+    limitReachedHint:
+      "Ai atins limita totală de importuri — ștergerea unei rețete nu eliberează limita. Reîncărcarea acesteia va fi o funcție plătită în viitor.",
     statuses: {
       pending: "În așteptare",
       queued: "În coadă",
@@ -265,6 +268,9 @@ const ro: Translation = {
     backofficeRecipesPageSizeLabel: "Rețete pe pagină (panou admin)",
     backofficeRecipesPageSizeHelp:
       "Câte rețete afișează pe pagină lista de rețete din panoul de administrare.",
+    maxImportsPerUserLabel: "Limită importuri per utilizator",
+    maxImportsPerUserHelp:
+      "Limita totală de rețete pe care un utilizator non-admin le poate importa vreodată, chiar și numărând cele șterse ulterior. Adminii sunt exceptați.",
     smtpHostLabel: "Server SMTP",
     smtpHostHelp: "Serverul de mail folosit pentru trimiterea emailurilor de verificare a contului.",
     smtpPortLabel: "Port SMTP",

@@ -213,4 +213,8 @@ def test_public_settings_exposes_turnstile_site_key_without_auth(
     response = unauthenticated_client.get("/settings/public")
 
     assert response.status_code == 200
-    assert response.json() == {"turnstile_site_key": "site-key", "backoffice_recipes_page_size": 10}
+    assert response.json() == {
+        "turnstile_site_key": "site-key",
+        "backoffice_recipes_page_size": 10,
+        "max_imports_per_user": 30,
+    }

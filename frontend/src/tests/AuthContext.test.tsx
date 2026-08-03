@@ -65,6 +65,7 @@ describe("AuthProvider", () => {
       email: null,
       is_admin: true,
       is_super_admin: true,
+      imported_recipes_count: 0,
     });
 
     renderConsumer();
@@ -118,6 +119,7 @@ describe("AuthProvider", () => {
       email: null,
       is_admin: true,
       is_super_admin: true,
+      imported_recipes_count: 0,
     });
     const user = userEvent.setup();
     renderConsumer();

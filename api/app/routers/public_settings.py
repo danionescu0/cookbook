@@ -18,4 +18,7 @@ def public_settings(db: Session = Depends(get_db)) -> dict[str, object]:
         # Not secret — a plain admin (not just a super-admin) needs this to size the backoffice's
         # recipe pagination, and GET /settings itself is gated to super-admin (it holds secrets).
         "backoffice_recipes_page_size": row.backoffice_recipes_page_size,
+        # Not secret either — the Account page needs it to show import usage before the button
+        # is disabled, and every visitor (logged in or not) can reach this endpoint.
+        "max_imports_per_user": row.max_imports_per_user,
     }

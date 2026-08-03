@@ -119,6 +119,7 @@ describe("RecipeDetail", () => {
       email: null,
       is_admin: false,
       is_super_admin: false,
+      imported_recipes_count: 0,
     });
     mockedApi.listFavorites.mockResolvedValue([]);
     mockedApi.favoriteRecipe.mockResolvedValue(undefined);

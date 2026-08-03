@@ -16,6 +16,10 @@ class UserProfile(BaseModel):
     email: str | None
     is_admin: bool
     is_super_admin: bool
+    # Lifetime count of successful imports — see users.imported_recipes_count. Meaningless for
+    # admins (they're exempt from the cap), but returned for everyone for a uniform response
+    # shape; the frontend only shows/enforces it for non-admins.
+    imported_recipes_count: int
 
 
 class PasswordChangeRequest(BaseModel):
@@ -41,6 +45,7 @@ def read_profile(
         email=user.email,
         is_admin=user.is_admin,
         is_super_admin=user.is_super_admin,
+        imported_recipes_count=user.imported_recipes_count,
     )
 
 

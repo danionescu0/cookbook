@@ -215,6 +215,9 @@ const en = {
       "Instagram post and reel links work too — the recipe is read from the caption and comments, and a preview photo is grabbed automatically. Nothing to do differently: paste the link and add it like any other URL.",
     privateHint: "Imported recipes are private to you — only you will ever see them.",
     importedBy: "imported by {username}",
+    usage: "{used} / {limit} imports used",
+    limitReachedHint:
+      "You've used up your lifetime import limit — deleting a recipe won't free up quota. Refilling this will be a paid upgrade in the future.",
     statuses: {
       pending: "Pending",
       queued: "Queued",
@@ -260,6 +263,9 @@ const en = {
     backofficeRecipesPageSizeLabel: "Backoffice recipes per page",
     backofficeRecipesPageSizeHelp:
       "How many recipes the back office's recipe list shows per page.",
+    maxImportsPerUserLabel: "Max imports per user",
+    maxImportsPerUserHelp:
+      "Lifetime cap on how many recipes a non-admin may ever import, even counting ones they've since deleted. Admins are exempt.",
     smtpHostLabel: "SMTP host",
     smtpHostHelp: "The mail server used to send account-verification emails.",
     smtpPortLabel: "SMTP port",

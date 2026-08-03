@@ -107,6 +107,7 @@ export interface Settings {
   turnstile_secret_key_is_set: boolean;
   public_site_url: string;
   backoffice_recipes_page_size: number;
+  max_imports_per_user: number;
 }
 
 export interface SettingsUpdate {
@@ -130,11 +131,13 @@ export interface SettingsUpdate {
   turnstile_secret_key?: string;
   public_site_url?: string;
   backoffice_recipes_page_size?: number;
+  max_imports_per_user?: number;
 }
 
 export interface PublicSettings {
   turnstile_site_key: string;
   backoffice_recipes_page_size: number;
+  max_imports_per_user: number;
 }
 
 export interface PublicLanguages {
@@ -152,6 +155,8 @@ export interface User {
 
 export interface UserProfile extends User {
   email: string | null;
+  // Lifetime count of successful imports — meaningless for admins (exempt from the cap).
+  imported_recipes_count: number;
 }
 
 export interface LoginResponse {

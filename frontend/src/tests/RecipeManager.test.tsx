@@ -82,6 +82,7 @@ beforeEach(() => {
   mockedApi.getPublicSettings.mockResolvedValue({
     turnstile_site_key: "",
     backoffice_recipes_page_size: 10,
+    max_imports_per_user: 30,
   });
   mockRecipeList([cake]);
 });
@@ -351,6 +352,7 @@ describe("RecipeManager", () => {
     mockedApi.getPublicSettings.mockResolvedValue({
       turnstile_site_key: "",
       backoffice_recipes_page_size: 1,
+      max_imports_per_user: 30,
     });
     mockedApi.listRecipesPage.mockImplementation((params) =>
       Promise.resolve({ items: params.offset === 0 ? [cake] : [pendingSoup], total: 2 })

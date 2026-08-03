@@ -25,6 +25,18 @@ def test_read_profile_for_a_plain_admin_shows_not_super_admin(admin_client: Test
     assert body["is_super_admin"] is False
 
 
+def test_read_profile_exposes_lifetime_import_count(
+    client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    admin_user.imported_recipes_count = 7
+    db_session.commit()
+
+    response = client.get("/users/me")
+
+    assert response.status_code == 200
+    assert response.json()["imported_recipes_count"] == 7
+
+
 def test_read_profile_requires_login(unauthenticated_client: TestClient) -> None:
     response = unauthenticated_client.get("/users/me")
 

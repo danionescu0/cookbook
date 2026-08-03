@@ -35,6 +35,7 @@ const baseSettings: Settings = {
   turnstile_secret_key_is_set: false,
   public_site_url: "",
   backoffice_recipes_page_size: 10,
+  max_imports_per_user: 30,
 };
 
 beforeEach(() => {
@@ -59,6 +60,24 @@ describe("SettingsManager", () => {
     expect(screen.getByLabelText("Import rate limit (requests/minute)")).toHaveValue(6);
     expect(screen.getByLabelText("Max image size (KB)")).toHaveValue(500);
     expect(screen.getByLabelText("SMTP port")).toHaveValue(587);
+    expect(screen.getByLabelText("Max imports per user")).toHaveValue(30);
+  });
+
+  it("saves a changed max imports per user", async () => {
+    const user = userEvent.setup();
+    mockedApi.updateSettings.mockResolvedValue({ ...baseSettings, max_imports_per_user: 50 });
+
+    renderManager();
+    const input = await screen.findByLabelText("Max imports per user");
+    await user.clear(input);
+    await user.type(input, "50");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ max_imports_per_user: 50 })
+      )
+    );
   });
 
   it("leaves secret fields blank and hints whether one is currently set", async () => {

@@ -9,8 +9,10 @@ from app.database import get_db
 from app.models.category import Category
 from app.models.import_job import ImportJob, ImportJobStatus, ImportJobType
 from app.models.recipe import Recipe
+from app.models.user import User
 from app.queue import publish_import_job
 from app.schemas.import_job import ImportJobCreate, ImportJobRead
+from app.settings_service import get_settings
 
 # Any logged-in user can import for themselves (imports are always private to whoever ran them —
 # see routers/recipes.py's visibility rule) — gated per-route below, not at the router level.
@@ -75,6 +77,24 @@ def _ensure_source_not_already_imported(db: Session, source: str, owner_id: int)
         raise HTTPException(status_code=409, detail="This URL is already in the import queue.")
 
 
+def _ensure_import_limit_not_reached(db: Session, user: User) -> None:
+    # Admins aren't capped — this is a monetization lever aimed at end users, not the site's own
+    # curators. `imported_recipes_count` is a lifetime counter (see users.py's model docstring),
+    # incremented once by the worker per successful import and never decremented — deleting a
+    # recipe (or its import_jobs row) never frees up quota.
+    if user.is_admin:
+        return
+    limit = get_settings(db).max_imports_per_user
+    if user.imported_recipes_count >= limit:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Import limit reached: {user.imported_recipes_count}/{limit} recipes ever "
+                "imported. Deleting a recipe does not free up quota."
+            ),
+        )
+
+
 def _queue_and_publish(db: Session, job: ImportJob) -> None:
     # Commit `queued` *before* publishing, not after: publishing first meant a worker fast
     # enough to consume the message before this transaction committed would read the job's
@@ -110,6 +130,10 @@ def create_import_job(
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
 ) -> ImportJob:
+    user = db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_import_limit_not_reached(db, user)
     _ensure_category_exists(db, payload.category_id)
     _ensure_source_not_already_imported(db, payload.source, current_user.id)
 

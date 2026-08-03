@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { api } from "../api/client";
+import { useAuth } from "../auth/AuthContext";
 import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton } from "../ui/buttonStyles";
 import { useConfirm } from "../ui/useConfirm";
@@ -9,18 +10,34 @@ const ACTIVE: ImportJobStatus[] = ["queued", "fetching", "processing"];
 
 export function ImportManager() {
   const { t } = useLanguage();
+  const { user } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
   const [categories, setCategories] = useState<Category[]>([]);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [source, setSource] = useState("");
   const [categoryId, setCategoryId] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
+  // Lifetime usage, not shown/enforced for admins — see app_settings.max_imports_per_user and
+  // users.imported_recipes_count. null until the first fetch resolves.
+  const [importsUsed, setImportsUsed] = useState<number | null>(null);
+  const [importsLimit, setImportsLimit] = useState<number | null>(null);
 
-  const reload = () => api.listImportJobs().then(setJobs).catch((e) => setError(String(e)));
+  const isAdmin = user?.is_admin ?? false;
+  const atLimit =
+    !isAdmin && importsUsed !== null && importsLimit !== null && importsUsed >= importsLimit;
+
+  const reload = () => {
+    api.listImportJobs().then(setJobs).catch((e) => setError(String(e)));
+    if (!isAdmin) {
+      api.me().then((profile) => setImportsUsed(profile.imported_recipes_count));
+      api.getPublicSettings().then((settings) => setImportsLimit(settings.max_imports_per_user));
+    }
+  };
 
   useEffect(() => {
     api.listCategories().then(setCategories).catch((e) => setError(String(e)));
     reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Poll while any job is mid-flight — jobs only progress via the worker in the background, not
@@ -33,7 +50,7 @@ export function ImportManager() {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!source.trim() || categoryId === "") return;
+    if (!source.trim() || categoryId === "" || atLimit) return;
     setError(null);
     try {
       await api.createImportJob(source.trim(), categoryId);
@@ -75,6 +92,18 @@ export function ImportManager() {
       <h3 className="font-serif text-lg font-semibold text-ink">{t.importManager.heading}</h3>
       <p className="mt-1 text-sm text-ink/60">{t.importManager.instagramHint}</p>
       <p className="mt-1 text-sm text-ink/60">{t.importManager.privateHint}</p>
+      {!isAdmin && importsUsed !== null && importsLimit !== null && (
+        <p className={`mt-1 text-sm ${atLimit ? "font-medium text-terracotta" : "text-ink/60"}`}>
+          {t.importManager.usage
+            .replace("{used}", String(importsUsed))
+            .replace("{limit}", String(importsLimit))}
+        </p>
+      )}
+      {atLimit && (
+        <p role="alert" className="mt-1 text-sm text-terracotta">
+          {t.importManager.limitReachedHint}
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex min-w-64 flex-1 flex-col gap-1">
@@ -109,7 +138,12 @@ export function ImportManager() {
           </select>
         </div>
 
-        <button type="submit" className={primaryButton}>
+        <button
+          type="submit"
+          disabled={atLimit}
+          title={atLimit ? t.importManager.limitReachedHint : undefined}
+          className={`${primaryButton} ${atLimit ? "blur-[1.5px]" : ""}`}
+        >
           {t.importManager.add}
         </button>
       </form>
