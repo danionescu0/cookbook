@@ -166,6 +166,10 @@ export const api = {
     }),
   deleteRecipe: (id: number) => request<void>(`/recipes/${id}`, { method: "DELETE" }),
   approveRecipe: (id: number) => request<Recipe>(`/recipes/${id}/approve`, { method: "POST" }),
+  reparseRecipe: (id: number) =>
+    request<{ job_id: number }>(`/recipes/${id}/reparse`, { method: "POST" }),
+  reparseAllImportedRecipes: () =>
+    request<{ queued: number }>("/recipes/reparse-all-imported", { method: "POST" }),
   toggleShare: (id: number, isShared: boolean) =>
     request<Recipe>(`/recipes/${id}/share`, {
       method: "PATCH",

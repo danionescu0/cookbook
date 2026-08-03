@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.claude_client import IngredientParseError, parse_ingredients_for_nutrition
 from app.models import Ingredient, NutritionJob, NutritionJobStatus, Recipe, RecipeIngredientLink
 from app.nutrition_api_client import extract_nutrients_per_100g, lookup_nutrition
+from app.recipe_sections import is_section_header
 from app.settings_service import SettingsSnapshot, get_settings
 
 logger = logging.getLogger(__name__)
@@ -151,6 +152,13 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
         for item in items:
             try:
                 line_index = int(item["line_index"])
+                # Defense-in-depth regardless of prompt compliance — a sub-group label (e.g.
+                # "### For the cake") is never a real ingredient, so it must never get a
+                # nutrition estimate/link, even if Claude's nutrition-parsing call didn't skip it.
+                if 0 <= line_index < len(ingredient_lines) and is_section_header(
+                    ingredient_lines[line_index]
+                ):
+                    continue
                 ingredient = _get_or_create_ingredient(
                     db, item["food_name"], app_settings.calorie_ninjas_api_key
                 )

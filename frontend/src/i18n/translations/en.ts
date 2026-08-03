@@ -187,10 +187,18 @@ const en = {
     processingStatus: {
       translating: "Translating…",
       recalculating_nutrition: "Recalculating nutrition…",
+      reparsing: "Reparsing…",
     },
     paginationLabel: "Recipe pages",
     previousPage: "Previous",
     nextPage: "Next",
+    reparse: "Reparse",
+    reparseConfirm:
+      "Reparse this recipe from its original source? This will overwrite its current title, description, ingredients, steps, and tips.",
+    reparseAllImported: "Reparse all imported recipes",
+    reparseAllImportedConfirm:
+      "Re-fetch and re-extract every imported recipe from its original source? This can take a while and will overwrite their current title/description/ingredients/steps/tips.",
+    reparseAllImportedQueued: "Queued {count} recipe(s) for reparsing.",
   },
   importManager: {
     heading: "Import from URL",

@@ -191,10 +191,18 @@ const ro: Translation = {
     processingStatus: {
       translating: "Se traduce…",
       recalculating_nutrition: "Se recalculează valorile nutriționale…",
+      reparsing: "Se reanalizează…",
     },
     paginationLabel: "Pagini de rețete",
     previousPage: "Anterioara",
     nextPage: "Următoarea",
+    reparse: "Reanalizează",
+    reparseConfirm:
+      "Reanalizezi această rețetă de la sursa originală? Va suprascrie titlul, descrierea, ingredientele, pașii și sfaturile actuale.",
+    reparseAllImported: "Reanalizează toate rețetele importate",
+    reparseAllImportedConfirm:
+      "Preiei și reanalizezi din nou fiecare rețetă importată de la sursa originală? Poate dura ceva timp și va suprascrie titlul/descrierea/ingredientele/pașii/sfaturile actuale.",
+    reparseAllImportedQueued: "{count} rețetă(e) puse în coadă pentru reanalizare.",
   },
   importManager: {
     heading: "Importă din URL",

@@ -9,6 +9,7 @@ from app.models.nutrition_job import NutritionJob, NutritionJobStatus
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_favorite import RecipeFavorite
 from app.models.recipe_ingredient_link import RecipeIngredientLink
+from app.models.recipe_reparse_job import RecipeReparseJob, RecipeReparseJobStatus
 from app.models.recipe_translation import RecipeTranslation
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
 from app.models.user import User
@@ -30,6 +31,8 @@ __all__ = [
     "Recipe",
     "RecipeFavorite",
     "RecipeIngredientLink",
+    "RecipeReparseJob",
+    "RecipeReparseJobStatus",
     "RecipeStatus",
     "RecipeTranslation",
     "TranslationSyncJob",

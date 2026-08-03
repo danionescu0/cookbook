@@ -142,4 +142,25 @@ describe("RecipeDetail", () => {
     await screen.findByRole("heading", { name: "Cake" });
     expect(screen.queryByRole("button", { name: "Save recipe" })).not.toBeInTheDocument();
   });
+
+  it("renders a '### ' sub-group label as a heading, not a bullet/numbered item", async () => {
+    mockedApi.getRecipe.mockResolvedValue({
+      ...cake,
+      ingredients: ["### For the cake", "flour", "sugar"],
+      steps: ["### For the cake", "Mix", "Bake"],
+    });
+
+    renderDetail();
+    await screen.findByRole("heading", { name: "Cake" });
+
+    // Two headings with this text: the ingredients group label and the steps group label.
+    const labels = screen.getAllByText("For the cake");
+    expect(labels).toHaveLength(2);
+    expect(screen.queryByText("### For the cake")).not.toBeInTheDocument();
+
+    // Step numbering is unaffected by the header occupying the first array slot.
+    expect(screen.getByText("1")).toBeInTheDocument();
+    expect(screen.getByText("2")).toBeInTheDocument();
+    expect(screen.queryByText("3")).not.toBeInTheDocument();
+  });
 });

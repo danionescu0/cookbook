@@ -6,7 +6,10 @@ from sqlalchemy.orm import Session
 
 from app.config import settings as app_settings
 from app.models.nutrition_job import NutritionJob, NutritionJobStatus
+from app.models.recipe import Recipe
+from app.models.recipe_translation import RecipeTranslation
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
+from app.models.user import User
 from app.routers import recipes as recipes_router
 
 
@@ -588,6 +591,110 @@ def test_update_recipe_without_touching_images_does_not_delete_any_files(
 
     assert response.status_code == 200
     assert image_path.exists()
+
+
+def test_reparse_recipe_rejects_a_recipe_without_a_source_url(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id}
+    ).json()
+
+    response = client.post(f"/recipes/{created['id']}/reparse")
+
+    assert response.status_code == 400
+
+
+def test_reparse_recipe_not_found(client: TestClient) -> None:
+    response = client.post("/recipes/999/reparse")
+
+    assert response.status_code == 404
+
+
+def test_reparse_recipe_requires_admin(user_client: TestClient) -> None:
+    response = user_client.post("/recipes/1/reparse")
+
+    assert response.status_code == 403
+
+
+def test_reparse_recipe_marks_job_failed_when_publish_raises(
+    client: TestClient, db_session: Session, admin_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    recipe = Recipe(
+        category_id=category_id,
+        source_url="https://example.com/recipe",
+        owner_user_id=admin_user.id,
+    )
+    recipe.translations.append(RecipeTranslation(language="en", title="Soup", slug="soup"))
+    db_session.add(recipe)
+    db_session.commit()
+    db_session.refresh(recipe)
+
+    def _raise(job_id: int, recipe_id: int) -> None:
+        raise RuntimeError("connection refused")
+
+    monkeypatch.setattr(recipes_router, "publish_reparse_job", _raise)
+
+    response = client.post(f"/recipes/{recipe.id}/reparse")
+
+    assert response.status_code == 202
+    job_id = response.json()["job_id"]
+    job = db_session.get(recipes_router.RecipeReparseJob, job_id)
+    assert job.status == recipes_router.RecipeReparseJobStatus.FAILED
+    assert "connection refused" in job.error
+
+
+def test_reparse_all_imported_recipes_only_queues_recipes_with_a_source_url(
+    client: TestClient, db_session: Session, admin_user: User, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    imported = Recipe(
+        category_id=category_id,
+        source_url="https://example.com/recipe",
+        owner_user_id=admin_user.id,
+    )
+    imported.translations.append(RecipeTranslation(language="en", title="Imported", slug="imported"))
+    manual = Recipe(category_id=category_id, owner_user_id=admin_user.id)
+    manual.translations.append(RecipeTranslation(language="en", title="Manual", slug="manual"))
+    db_session.add_all([imported, manual])
+    db_session.commit()
+
+    queued: list[int] = []
+    monkeypatch.setattr(
+        recipes_router, "publish_reparse_job", lambda job_id, recipe_id: queued.append(recipe_id)
+    )
+
+    response = client.post("/recipes/reparse-all-imported")
+
+    assert response.status_code == 202
+    assert response.json()["queued"] == 1
+    assert queued == [imported.id]
+
+
+def test_reparse_all_imported_recipes_requires_admin(user_client: TestClient) -> None:
+    response = user_client.post("/recipes/reparse-all-imported")
+
+    assert response.status_code == 403
+
+
+def test_get_recipe_shows_reparsing_status_while_a_reparse_job_is_active(
+    client: TestClient, db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id}
+    ).json()
+    monkeypatch.setattr(recipes_router, "publish_reparse_job", lambda *args: None)
+    # Give it a source_url directly (the create endpoint never sets one) so /reparse accepts it.
+    recipe = db_session.get(Recipe, created["id"])
+    recipe.source_url = "https://example.com/soup"
+    db_session.commit()
+
+    client.post(f"/recipes/{created['id']}/reparse")
+
+    response = client.get(f"/recipes/{created['id']}")
+
+    assert response.json()["processing_status"] == "reparsing"
 
 
 def test_create_recipe_requires_login(unauthenticated_client: TestClient) -> None:

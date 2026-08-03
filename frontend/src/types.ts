@@ -6,7 +6,7 @@ export interface Category {
 
 export type RecipeStatus = "unapproved" | "approved";
 
-export type RecipeProcessingStatus = "translating" | "recalculating_nutrition" | null;
+export type RecipeProcessingStatus = "translating" | "recalculating_nutrition" | "reparsing" | null;
 
 export interface Recipe {
   id: number;

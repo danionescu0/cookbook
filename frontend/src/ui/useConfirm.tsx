@@ -5,6 +5,7 @@ import { ConfirmDialog } from "./ConfirmDialog";
 
 interface PendingConfirm {
   message: string;
+  confirmLabel: string;
   resolve: (value: boolean) => void;
 }
 
@@ -16,11 +17,17 @@ export function useConfirm() {
   const { t } = useLanguage();
   const [pending, setPending] = useState<PendingConfirm | null>(null);
 
-  const confirm = useCallback((message: string) => {
-    return new Promise<boolean>((resolve) => {
-      setPending({ message, resolve });
-    });
-  }, []);
+  // confirmLabel defaults to "Delete" — every call site so far has been a delete confirmation;
+  // pass an explicit label (e.g. t.recipeManager.reparse) for anything else, so the button never
+  // says "Delete" for an action that isn't one.
+  const confirm = useCallback(
+    (message: string, confirmLabel?: string) => {
+      return new Promise<boolean>((resolve) => {
+        setPending({ message, confirmLabel: confirmLabel ?? t.common.delete, resolve });
+      });
+    },
+    [t]
+  );
 
   const respond = (value: boolean) => {
     pending?.resolve(value);
@@ -31,7 +38,7 @@ export function useConfirm() {
     ? createPortal(
         <ConfirmDialog
           message={pending.message}
-          confirmLabel={t.common.delete}
+          confirmLabel={pending.confirmLabel}
           cancelLabel={t.common.cancel}
           onConfirm={() => respond(true)}
           onCancel={() => respond(false)}

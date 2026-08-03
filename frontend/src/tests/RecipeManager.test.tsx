@@ -17,6 +17,8 @@ vi.mock("../api/client", () => ({
     deleteRecipe: vi.fn(),
     approveRecipe: vi.fn(),
     toggleShare: vi.fn(),
+    reparseRecipe: vi.fn(),
+    reparseAllImportedRecipes: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
 }));
@@ -280,6 +282,41 @@ describe("RecipeManager", () => {
 
     const sourceLink = screen.getByRole("link", { name: "imported from example.com" });
     expect(sourceLink).toHaveAttribute("href", "https://example.com/soup");
+  });
+
+  it("shows a Reparse button only for an imported recipe, and confirms before calling the API", async () => {
+    const user = userEvent.setup();
+    mockRecipeList([cake, pendingSoup]);
+    mockedApi.reparseRecipe.mockResolvedValue({ job_id: 1 });
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    expect(screen.getAllByRole("button", { name: "Reparse" })).toHaveLength(1);
+
+    await user.click(screen.getByRole("button", { name: "Reparse" }));
+    expect(mockedApi.reparseRecipe).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Reparse" }));
+
+    await waitFor(() => expect(mockedApi.reparseRecipe).toHaveBeenCalledWith(2));
+  });
+
+  it("queues a bulk reparse of every imported recipe and shows a confirmation message", async () => {
+    const user = userEvent.setup();
+    mockRecipeList([cake]);
+    mockedApi.reparseAllImportedRecipes.mockResolvedValue({ queued: 3 });
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    await user.click(screen.getByRole("button", { name: "Reparse all imported recipes" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Reparse" }));
+
+    await waitFor(() => expect(mockedApi.reparseAllImportedRecipes).toHaveBeenCalled());
+    expect(await screen.findByText("Queued 3 recipe(s) for reparsing.")).toBeInTheDocument();
   });
 
   it("shows a processing-status badge and polls until it clears", async () => {

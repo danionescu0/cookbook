@@ -291,6 +291,46 @@ def test_handle_nutrition_job_success_creates_ingredient_and_link(
     assert link.grams_source == "api_lookup"
 
 
+def test_handle_nutrition_job_skips_a_section_header_line_even_if_claude_returns_an_item_for_it(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recipe = _create_recipe(db_session, ["### For the cake", "1 medium onion"])
+    job = _create_job(db_session, recipe.id)
+    # Simulates the nutrition-parsing prompt not being perfectly obeyed — it returns an item for
+    # the header anyway (line_index 0). handle_nutrition_job must still discard it: see
+    # app.recipe_sections.is_section_header, checked directly against the stored line text rather
+    # than trusted on Claude's say-so.
+    parsed = {
+        "estimated_servings": 4,
+        "items": [
+            {
+                "line_index": 0,
+                "food_name": "section header",
+                "quantity": 1,
+                "unit": "",
+                "estimated_grams": 1,
+            },
+            {
+                "line_index": 1,
+                "food_name": "onion",
+                "quantity": 1,
+                "unit": "medium",
+                "estimated_grams": 90,
+            },
+        ],
+    }
+    monkeypatch.setattr(nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parsed)
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
+
+    handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    links = db_session.scalars(select(RecipeIngredientLink)).all()
+    assert len(links) == 1
+    assert links[0].ingredient_index == 1
+    ingredient = db_session.get(Ingredient, links[0].ingredient_id)
+    assert ingredient.name == "onion"
+
+
 def test_handle_nutrition_job_falls_back_to_claude_estimate_without_api_match(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

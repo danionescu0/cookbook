@@ -68,9 +68,10 @@ class RecipeRead(BaseModel):
     tips: list[str]
     available_languages: list[str]
 
-    # "translating" | "recalculating_nutrition" | None — set while a just-saved edit is still
-    # being propagated to other languages and/or nutrition is being re-enriched. See
-    # routers/recipes.py's _processing_statuses.
+    # "translating" | "recalculating_nutrition" | "reparsing" | None — set while a just-saved
+    # edit is still being propagated to other languages, nutrition is being re-enriched, or a
+    # reparse (re-scrape + re-extract) is in flight. See routers/recipes.py's
+    # _processing_statuses.
     processing_status: str | None = None
     # Every recipe has an owner now (see migration 0020) — this is always set, not just for user
     # submissions.

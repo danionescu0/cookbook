@@ -89,6 +89,27 @@ class RecipeTranslation(Base):
     recipe: Mapped["Recipe"] = relationship(back_populates="translations")
 
 
+class RecipeReparseJobStatus(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/recipe_reparse_job.py's RecipeReparseJobStatus.
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class RecipeReparseJob(Base):
+    __tablename__ = "recipe_reparse_jobs"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    recipe_id: Mapped[int] = mapped_column(ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False)
+    status: Mapped[RecipeReparseJobStatus] = mapped_column(
+        Enum(RecipeReparseJobStatus, native_enum=False), default=RecipeReparseJobStatus.QUEUED
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
 class AppSettings(Base):
     # Kept in sync by hand with api/app/models/app_settings.py — see that module's docstring
     # for what each column means. The worker only ever reads this table (via

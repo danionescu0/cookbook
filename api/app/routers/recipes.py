@@ -11,9 +11,10 @@ from app.models.category import Category
 from app.models.nutrition_job import NutritionJob, NutritionJobStatus
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_favorite import RecipeFavorite
+from app.models.recipe_reparse_job import RecipeReparseJob, RecipeReparseJobStatus
 from app.models.recipe_translation import RecipeTranslation
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
-from app.queue import publish_translation_sync_job
+from app.queue import publish_reparse_job, publish_translation_sync_job
 from app.routers.images import delete_images
 from app.schemas.recipe import RecipeCreate, RecipeRead, RecipeShareUpdate, RecipeUpdate
 from app.settings_service import get_settings
@@ -115,23 +116,26 @@ def _resolve_translation(recipe: Recipe, language: str, default_language: str) -
 
 _ACTIVE_NUTRITION_STATUSES = (NutritionJobStatus.QUEUED, NutritionJobStatus.PROCESSING)
 _ACTIVE_SYNC_STATUSES = (TranslationSyncJobStatus.QUEUED, TranslationSyncJobStatus.PROCESSING)
+_ACTIVE_REPARSE_STATUSES = (RecipeReparseJobStatus.QUEUED, RecipeReparseJobStatus.PROCESSING)
 
 
 def _processing_statuses(db: Session, recipe_ids: list[int]) -> dict[int, str]:
-    """recipe_id -> "translating" | "recalculating_nutrition" for whichever recipes currently
-    have a job in flight — so the back office can show that a just-saved edit is still being
-    propagated/re-enriched, not silently stuck. Checked as "any active job", not "is it the
-    *latest* job" (unlike nutrition.py's status resolution): the two queues process one job per
-    recipe at a time, so an old job left at queued/processing would mean something already went
-    wrong (a worker crash), and that's exactly the case where surfacing "still processing" is
-    most important, not least.
+    """recipe_id -> "translating" | "recalculating_nutrition" | "reparsing" for whichever
+    recipes currently have a job in flight — so the back office can show that a just-saved edit
+    (or a reparse) is still being propagated/re-enriched, not silently stuck. Checked as "any
+    active job", not "is it the *latest* job" (unlike nutrition.py's status resolution): each
+    queue processes one job per recipe at a time, so an old job left at queued/processing would
+    mean something already went wrong (a worker crash), and that's exactly the case where
+    surfacing "still processing" is most important, not least.
     """
     if not recipe_ids:
         return {}
 
     statuses: dict[int, str] = {}
-    # Nutrition first, so translating (which triggers nutrition next) wins if both happen to be
-    # active for the same recipe at once — it's the earlier phase of the same edit's pipeline.
+    # Later assignments win when more than one is active for the same recipe — ordered earliest
+    # pipeline phase last (reparse triggers a translation update, which the frontend never sees
+    # as a separate translation-sync step; nutrition is re-enriched once reparse/translation
+    # settles), so the *current* phase is always what's shown.
     for recipe_id in db.scalars(
         select(NutritionJob.recipe_id).where(
             NutritionJob.recipe_id.in_(recipe_ids), NutritionJob.status.in_(_ACTIVE_NUTRITION_STATUSES)
@@ -145,6 +149,13 @@ def _processing_statuses(db: Session, recipe_ids: list[int]) -> dict[int, str]:
         )
     ):
         statuses[recipe_id] = "translating"
+    for recipe_id in db.scalars(
+        select(RecipeReparseJob.recipe_id).where(
+            RecipeReparseJob.recipe_id.in_(recipe_ids),
+            RecipeReparseJob.status.in_(_ACTIVE_REPARSE_STATUSES),
+        )
+    ):
+        statuses[recipe_id] = "reparsing"
     return statuses
 
 
@@ -401,6 +412,40 @@ def delete_recipe(recipe_id: int, db: Session = Depends(get_db)) -> None:
     # After the commit, not before: if the DB delete somehow fails, the recipe (and its images)
     # are still around — an orphaned file is recoverable, a live recipe with missing photos isn't.
     delete_images(images)
+
+
+def _create_reparse_job(db: Session, recipe_id: int) -> RecipeReparseJob:
+    job = RecipeReparseJob(recipe_id=recipe_id, status=RecipeReparseJobStatus.QUEUED)
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+    try:
+        publish_reparse_job(job.id, recipe_id)
+    except Exception as exc:
+        job.status = RecipeReparseJobStatus.FAILED
+        job.error = f"failed to publish to queue: {exc}"
+        db.commit()
+    return job
+
+
+@router.post("/{recipe_id}/reparse", status_code=202, dependencies=[Depends(require_admin)])
+def reparse_recipe(recipe_id: int, db: Session = Depends(get_db)) -> dict[str, int]:
+    # Re-scrapes the recipe's existing source_url and updates its translations in place — used
+    # to pick up extraction-quality fixes for recipes imported before those fixes existed. See
+    # worker/app/reparse_handlers.py.
+    recipe = _get_or_404(db, recipe_id)
+    if not recipe.source_url:
+        raise HTTPException(status_code=400, detail="Recipe has no source URL to reparse from")
+    job = _create_reparse_job(db, recipe.id)
+    return {"job_id": job.id}
+
+
+@router.post("/reparse-all-imported", status_code=202, dependencies=[Depends(require_admin)])
+def reparse_all_imported_recipes(db: Session = Depends(get_db)) -> dict[str, int]:
+    recipe_ids = list(db.scalars(select(Recipe.id).where(Recipe.source_url.is_not(None))))
+    for recipe_id in recipe_ids:
+        _create_reparse_job(db, recipe_id)
+    return {"queued": len(recipe_ids)}
 
 
 @router.post("/{recipe_id}/favorite", status_code=204)

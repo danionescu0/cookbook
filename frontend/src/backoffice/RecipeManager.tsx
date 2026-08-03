@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, BASE_URL } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
+import { isSectionHeader, stripSectionHeader } from "../frontoffice/recipeSections";
 import { dangerButton, primaryButton, secondaryButton } from "../ui/buttonStyles";
 import { useConfirm } from "../ui/useConfirm";
 import type { Category, Recipe } from "../types";
@@ -70,6 +71,7 @@ export function RecipeManager() {
   const [ingredients, setIngredients] = useState("");
   const [isShared, setIsShared] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reparseMessage, setReparseMessage] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -178,6 +180,30 @@ export function RecipeManager() {
     }
   };
 
+  const handleReparse = async (id: number) => {
+    if (!(await confirm(t.recipeManager.reparseConfirm, t.recipeManager.reparse))) return;
+    setError(null);
+    setReparseMessage(null);
+    try {
+      await api.reparseRecipe(id);
+      await reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleReparseAllImported = async () => {
+    if (!(await confirm(t.recipeManager.reparseAllImportedConfirm, t.recipeManager.reparse))) return;
+    setError(null);
+    try {
+      const { queued } = await api.reparseAllImportedRecipes();
+      setReparseMessage(t.recipeManager.reparseAllImportedQueued.replace("{count}", String(queued)));
+      await reload();
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
   const startEdit = (recipe: Recipe) => {
     setPreviewId(null);
     setEditingId(recipe.id);
@@ -237,7 +263,17 @@ export function RecipeManager() {
 
   return (
     <div>
-      <h3 className="mt-6 font-serif text-lg font-semibold text-ink">{t.recipeManager.add}</h3>
+      <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
+        <h3 className="font-serif text-lg font-semibold text-ink">{t.recipeManager.add}</h3>
+        <button type="button" onClick={handleReparseAllImported} className={secondaryButton}>
+          {t.recipeManager.reparseAllImported}
+        </button>
+      </div>
+      {reparseMessage && (
+        <p role="status" className="mt-2 rounded-md bg-olive-light px-3 py-2 text-sm text-ink">
+          {reparseMessage}
+        </p>
+      )}
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
@@ -362,6 +398,15 @@ export function RecipeManager() {
                     className={secondaryButton}
                   >
                     {recipe.is_shared ? t.account.unshareAction : t.account.shareAction}
+                  </button>
+                )}
+                {recipe.source_url && (
+                  <button
+                    type="button"
+                    onClick={() => handleReparse(recipe.id)}
+                    className={secondaryButton}
+                  >
+                    {t.recipeManager.reparse}
                   </button>
                 )}
                 <button
@@ -523,9 +568,15 @@ export function RecipeManager() {
                       {t.recipeManager.ingredients}
                     </h3>
                     <ul className="mt-1 list-inside list-disc text-ink/80">
-                      {recipe.ingredients.map((ingredient) => (
-                        <li key={ingredient}>{ingredient}</li>
-                      ))}
+                      {recipe.ingredients.map((ingredient, index) =>
+                        isSectionHeader(ingredient) ? (
+                          <li key={index} className="mt-2 list-none font-semibold text-ink first:mt-0">
+                            {stripSectionHeader(ingredient)}
+                          </li>
+                        ) : (
+                          <li key={index}>{ingredient}</li>
+                        )
+                      )}
                     </ul>
                   </>
                 )}
@@ -534,10 +585,25 @@ export function RecipeManager() {
                     <h3 className="mt-3 font-serif text-lg font-semibold text-ink">
                       {t.recipeManager.steps}
                     </h3>
-                    <ol className="mt-1 list-inside list-decimal text-ink/80">
-                      {recipe.steps.map((step) => (
-                        <li key={step}>{step}</li>
-                      ))}
+                    <ol className="mt-1 list-none text-ink/80">
+                      {(() => {
+                        let stepNumber = 0;
+                        return recipe.steps.map((step, index) => {
+                          if (isSectionHeader(step)) {
+                            return (
+                              <li key={index} className="mt-2 font-semibold text-ink first:mt-0">
+                                {stripSectionHeader(step)}
+                              </li>
+                            );
+                          }
+                          stepNumber += 1;
+                          return (
+                            <li key={index}>
+                              <span className="text-ink/50">{stepNumber}.</span> <span>{step}</span>
+                            </li>
+                          );
+                        });
+                      })()}
                     </ol>
                   </>
                 )}

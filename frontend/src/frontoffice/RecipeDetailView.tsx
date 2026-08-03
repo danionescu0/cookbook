@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { BASE_URL } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
+import { isSectionHeader, stripSectionHeader } from "./recipeSections";
 import { useSeoMeta } from "../seo/useSeoMeta";
 import { ImageSlider } from "./ImageSlider";
 import { NutritionPanel } from "./NutritionPanel";
@@ -65,8 +66,8 @@ export function RecipeDetailView({
             name: recipe.title,
             ...(allImageUrls.length > 0 ? { image: allImageUrls } : {}),
             ...(recipe.description ? { description: recipe.description } : {}),
-            recipeIngredient: recipe.ingredients,
-            recipeInstructions: recipe.steps,
+            recipeIngredient: recipe.ingredients.map(stripSectionHeader),
+            recipeInstructions: recipe.steps.map(stripSectionHeader),
             inLanguage: recipe.language,
             ...(recipe.approved_at ? { datePublished: recipe.approved_at } : {}),
           })}
@@ -111,6 +112,16 @@ export function RecipeDetailView({
             </h2>
             <ul className="mt-3 space-y-2">
               {recipe.ingredients.map((ingredient, index) => {
+                if (isSectionHeader(ingredient)) {
+                  return (
+                    <li
+                      key={index}
+                      className="mt-4 font-serif font-semibold text-ink first:mt-0"
+                    >
+                      {stripSectionHeader(ingredient)}
+                    </li>
+                  );
+                }
                 const grams = gramsByIndex.get(index);
                 return (
                   <li key={index} className="flex gap-2 text-ink/90">
@@ -134,14 +145,27 @@ export function RecipeDetailView({
               {t.detail.steps}
             </h2>
             <ol className="mt-3 space-y-4">
-              {recipe.steps.map((step, index) => (
-                <li key={step} className="flex gap-3">
-                  <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-terracotta text-sm font-semibold text-white">
-                    {index + 1}
-                  </span>
-                  <span className="text-ink/90">{step}</span>
-                </li>
-              ))}
+              {(() => {
+                let stepNumber = 0;
+                return recipe.steps.map((step, index) => {
+                  if (isSectionHeader(step)) {
+                    return (
+                      <li key={index} className="mt-2 font-serif font-semibold text-ink first:mt-0">
+                        {stripSectionHeader(step)}
+                      </li>
+                    );
+                  }
+                  stepNumber += 1;
+                  return (
+                    <li key={index} className="flex gap-3">
+                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-terracotta text-sm font-semibold text-white">
+                        {stepNumber}
+                      </span>
+                      <span className="text-ink/90">{step}</span>
+                    </li>
+                  );
+                });
+              })()}
             </ol>
           </section>
         )}
