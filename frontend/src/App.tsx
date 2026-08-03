@@ -193,12 +193,12 @@ export function App() {
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
       <header className="border-b border-olive-light bg-cream-card">
-        <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-4 sm:px-6">
+        <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-y-2 px-4 py-4 sm:px-6">
           <Link to="/" className="font-serif text-2xl font-semibold text-ink">
             {t.brand}
           </Link>
-          <div className="flex items-center gap-4">
-            <nav className="flex items-center gap-4 text-sm">
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
               <NavLink to="/recipes" className={navLinkClasses}>
                 {t.nav.recipes}
               </NavLink>
@@ -232,7 +232,7 @@ export function App() {
         </div>
       </header>
 
-      <main className="mx-auto max-w-5xl flex-1 px-4 py-6 sm:px-6">
+      <main className="mx-auto w-full min-w-0 max-w-5xl flex-1 px-4 py-6 sm:px-6">
         <Routes>
           <Route path="/" element={<HomeRoute />} />
           <Route path="/recipes" element={<RecipeBrowser />} />
