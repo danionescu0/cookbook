@@ -1601,6 +1601,24 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   post-fix, while a real static asset (`/assets/index-*.js`) still resolved to the actual file
   with the correct content type — confirming `try_files` matches real files first and only falls
   through to `index.html` when nothing else matches.
+- **Manual hack: promoting an imported recipe to public** — there is deliberately no UI or API
+  path for this (see "Per-user accounts and recipe privacy" above: imports can never be shared,
+  permanently, by design), but the need still comes up in practice — e.g. wanting one specific
+  imported recipe to be publicly visible. The only way is to reclassify it as if it had been
+  manually added, by clearing `source_url` (the column the app actually uses to decide "is this an
+  import") and setting the sharing/approval flags directly:
+  ```bash
+  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>; UPDATE recipes SET source_url = NULL, is_shared = true, status = 'APPROVED' WHERE id = <ID>; SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>;"
+  ```
+  Two permanent side effects, since this changes how the app classifies the recipe, not just a
+  flag: it can no longer be re-scraped via **Reparse** (`POST /recipes/{id}/reparse` requires
+  `source_url`, 400s without one), and re-importing the same URL later for the same owner is no
+  longer blocked as a duplicate (that check is keyed on `Recipe.source_url`). `status` must be set
+  to the exact uppercase enum value (`'APPROVED'`) — a hand-typed lowercase `'approved'` is a real
+  incident this documents: an ad hoc `UPDATE` once left a recipe with `is_shared=true` and a
+  lowercase `status` neither the API nor the ORM would ever produce, which is exactly the
+  fingerprint to grep for if a recipe's flags ever look right in the DB but behave wrong in the
+  app — `SELECT id FROM recipes WHERE status != upper(status);` finds any row like that.
 
 ## Original Spec
 
