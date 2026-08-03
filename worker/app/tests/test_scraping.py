@@ -151,6 +151,92 @@ def test_fetch_page_strips_boilerplate_before_returning(monkeypatch: pytest.Monk
     assert "onclick" not in result
 
 
+def test_fetch_page_promotes_data_src_for_lazy_loaded_images(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Real-world regression: simplyrecipes.com (and many other recipe sites, via lazysizes.js-style
+    # lazy loading) ship <img> tags with no real `src` at all — just a data-src/data-srcset
+    # carrying the actual URL, filled in by JS after load. Blanket-stripping data-* attributes
+    # (needed to cut tracking-attribute noise) was silently deleting every such image, including
+    # the recipe's hero photo, with no error — the import just quietly produced an incomplete
+    # `images` list.
+    page_html = (
+        "<html><body>"
+        "<img data-src='https://example.com/hero.jpg' data-srcset='https://example.com/hero2x.jpg 2x'>"
+        "<img src='data:image/gif;base64,R0lGODlh' data-src='https://example.com/step1.jpg'>"
+        "<img data-srcset='https://example.com/step2.jpg 1x, https://example.com/step2-2x.jpg 2x'>"
+        "<img data-original='https://example.com/step3.jpg'>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert 'src="https://example.com/hero.jpg"' in result
+    assert 'src="https://example.com/step1.jpg"' in result
+    assert 'src="https://example.com/step2.jpg"' in result
+    assert 'src="https://example.com/step3.jpg"' in result
+    # the placeholder data: URI is replaced, not left alongside the real one
+    assert "base64,R0lGODlh" not in result
+    # the lazy-load attributes themselves are still stripped once promoted into src
+    assert "data-src" not in result
+    assert "data-srcset" not in result
+    assert "data-original" not in result
+
+
+def test_fetch_page_does_not_promote_a_real_src_onto_a_noise_data_attribute(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # An <img> that already has a real src must not be overwritten by an unrelated data-src
+    # (e.g. a higher-res variant meant for a different breakpoint) — only fill the gap, don't
+    # clobber a src that already works.
+    page_html = (
+        "<img src='https://example.com/already-real.jpg' "
+        "data-src='https://example.com/should-not-be-used.jpg'>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert 'src="https://example.com/already-real.jpg"' in result
+    assert "should-not-be-used.jpg" not in result
+
+
+def test_fetch_page_keeps_noscript_image_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Some sites put the only <img src="..."> with a real URL inside a <noscript> fallback for a
+    # lazy-loaded image, instead of (or alongside) a data-src attribute — noscript used to be
+    # blanket-stripped as page chrome, silently losing that image too.
+    page_html = (
+        "<html><body>"
+        "<img data-src='https://example.com/js-version.jpg'>"
+        "<noscript><img src='https://example.com/noscript-version.jpg'></noscript>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "noscript-version.jpg" in result
+
+
 def test_fetch_page_truncates_after_cleaning_not_before(monkeypatch: pytest.MonkeyPatch) -> None:
     # A big <script> block shouldn't eat into the max_html_chars budget that's meant for
     # actual recipe content — cleaning must happen before truncation, not after.

@@ -19,10 +19,13 @@ _rate_limiter = DomainRateLimiter(6)
 # Tags that never carry recipe content, just page chrome/boilerplate — stripping them
 # (scripts and styles especially) is what keeps a raw page dump from burning most of the
 # max_html_chars budget, and therefore most of the Claude input-token cost, on noise.
+# NOT noscript: some sites (e.g. simplyrecipes.com) put the only real <img src="..."> for a
+# lazy-loaded photo inside a <noscript> fallback — see _promote_lazy_image_sources below for the
+# more common case (a real URL in a data-* attribute instead), but this is the other shape of the
+# same "the real image URL isn't in a plain src" problem, so it's not safe to blanket-strip.
 _NOISE_TAGS = (
     "script",
     "style",
-    "noscript",
     "svg",
     "iframe",
     "link",
@@ -37,6 +40,28 @@ _NOISE_TAGS = (
 )
 _NOISE_ATTRS = frozenset({"class", "style", "role"})
 _NOISE_ATTR_PREFIXES = ("data-", "on", "aria-")
+# Common lazy-load attribute names (lazysizes.js and similar libraries) that carry an image's
+# real URL while `src` holds a tiny placeholder (or is absent) until JS runs. Checked in order;
+# the first one present wins. Promoted into `src` *before* the generic `data-*` stripping above
+# would otherwise delete them — without this, every lazy-loaded photo (the hero image, most step
+# photos on many recipe blogs) silently vanishes from what Claude sees.
+_LAZY_IMAGE_SRC_ATTRS = ("data-src", "data-lazy-src", "data-original", "data-srcset")
+
+
+def _promote_lazy_image_sources(soup: BeautifulSoup) -> None:
+    for img in soup.find_all("img"):
+        current_src = img.get("src", "")
+        if current_src and not current_src.startswith("data:"):
+            continue  # already has a real (non-placeholder) src
+        for attr in _LAZY_IMAGE_SRC_ATTRS:
+            value = img.get(attr)
+            if not value:
+                continue
+            # A srcset-shaped value is "url descriptor, url descriptor, ..." — take the first URL.
+            first_url = value.split(",")[0].strip().split(" ")[0]
+            if first_url:
+                img["src"] = first_url
+                break
 
 
 class ScrapeDisallowedError(Exception):
@@ -51,6 +76,8 @@ def _clean_html(html: str) -> str:
 
     for comment in soup.find_all(string=lambda text: isinstance(text, Comment)):
         comment.extract()
+
+    _promote_lazy_image_sources(soup)
 
     for tag in soup.find_all(True):
         for attr in list(tag.attrs):
