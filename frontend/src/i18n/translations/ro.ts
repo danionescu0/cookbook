@@ -152,6 +152,7 @@ const ro: Translation = {
     previousPhoto: "Fotografia anterioară",
     nextPhoto: "Fotografia următoare",
     photoCount: "{current} din {total}",
+    sourceLink: "Vezi rețeta originală pe {domain} ↗",
   },
   backoffice: {
     accessDenied: "Nu ai acces la această pagină.",

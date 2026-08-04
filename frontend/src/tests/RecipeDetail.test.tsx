@@ -94,6 +94,26 @@ describe("RecipeDetail", () => {
     expect(mockedApi.getRecipe).toHaveBeenCalledWith(1, "en");
   });
 
+  it("shows a link to the original source that opens in a new tab", async () => {
+    mockedApi.getRecipe.mockResolvedValue(cake);
+
+    renderDetail();
+
+    const link = await screen.findByRole("link", { name: "View original recipe on example.com ↗" });
+    expect(link).toHaveAttribute("href", "https://example.com/cake");
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  });
+
+  it("does not show a source link for a manually-added recipe", async () => {
+    mockedApi.getRecipe.mockResolvedValue({ ...cake, source_url: null });
+
+    renderDetail();
+
+    await screen.findByRole("heading", { name: "Cake" });
+    expect(screen.queryByRole("link", { name: /View original recipe/ })).not.toBeInTheDocument();
+  });
+
   it("shows a not-published message for an unapproved recipe", async () => {
     mockedApi.getRecipe.mockResolvedValue({ ...cake, status: "unapproved" });
 

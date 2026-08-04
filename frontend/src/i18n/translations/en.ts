@@ -148,6 +148,7 @@ const en = {
     previousPhoto: "Previous photo",
     nextPhoto: "Next photo",
     photoCount: "{current} of {total}",
+    sourceLink: "View original recipe on {domain} ↗",
   },
   backoffice: {
     accessDenied: "You don't have access to this page.",

@@ -7,6 +7,14 @@ import { ImageSlider } from "./ImageSlider";
 import { NutritionPanel } from "./NutritionPanel";
 import type { Nutrition, Recipe } from "../types";
 
+function hostnameOf(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return url;
+  }
+}
+
 export interface RecipeDetailSeo {
   // Absolute URL of the canonical (language-prefixed, slug) page for this recipe — omitted when
   // the recipe isn't public (nothing to canonicalize to). Per-language hreflang alternates are
@@ -187,6 +195,19 @@ export function RecipeDetailView({
       )}
 
       {nutrition && <NutritionPanel nutrition={nutrition} />}
+
+      {recipe.source_url && (
+        <p className="mt-8 border-t border-black/10 pt-4 text-sm">
+          <a
+            href={recipe.source_url}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-terracotta hover:underline"
+          >
+            {t.detail.sourceLink.replace("{domain}", hostnameOf(recipe.source_url))}
+          </a>
+        </p>
+      )}
     </article>
   );
 }
