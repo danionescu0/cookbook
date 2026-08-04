@@ -17,7 +17,7 @@ from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJ
 from app.models.user import User
 from app.queue import publish_reparse_job, publish_translation_sync_job
 from app.routers.images import delete_images
-from app.schemas.recipe import RecipeCreate, RecipeRead, RecipeShareUpdate, RecipeUpdate
+from app.schemas.recipe import RecipeCategoryUpdate, RecipeCreate, RecipeRead, RecipeShareUpdate, RecipeUpdate
 from app.settings_service import get_settings
 from app.slugify import generate_unique_slug
 
@@ -409,6 +409,31 @@ def update_recipe_sharing(
         # Re-review on every private-to-shared transition, same safeguard as sharing at creation
         # time — a non-admin's content never goes public without a look first.
         recipe.status = RecipeStatus.UNAPPROVED
+    db.commit()
+    db.refresh(recipe)
+    processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
+    return _serialize(recipe, language or default_language, default_language, processing_status)
+
+
+@router.patch("/{recipe_id}/category", response_model=RecipeRead)
+def update_recipe_category(
+    recipe_id: int,
+    payload: RecipeCategoryUpdate,
+    language: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> RecipeRead:
+    # Owner-or-admin, same as sharing above — unlike sharing, this has no manual/imported
+    # restriction: an import's category is only ever a guess made before the page was even
+    # fetched, and a hand-authored recipe's owner already picks its category at creation time, so
+    # there's no reason to let them fix one but not the other.
+    default_language = get_settings(db).default_language
+    recipe = _get_or_404(db, recipe_id)
+    if not current_user.is_admin and recipe.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner or an admin can change the category")
+    _ensure_category_exists(db, payload.category_id)
+
+    recipe.category_id = payload.category_id
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)

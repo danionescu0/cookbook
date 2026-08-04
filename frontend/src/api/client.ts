@@ -179,6 +179,11 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ is_shared: isShared }),
     }),
+  updateRecipeCategory: (id: number, categoryId: number) =>
+    request<Recipe>(`/recipes/${id}/category`, {
+      method: "PATCH",
+      body: JSON.stringify({ category_id: categoryId }),
+    }),
   favoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "POST" }),
   unfavoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "DELETE" }),
   listFavorites: () => request<Recipe[]>("/users/me/favorites"),

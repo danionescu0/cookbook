@@ -45,6 +45,10 @@ class RecipeShareUpdate(BaseModel):
     is_shared: bool
 
 
+class RecipeCategoryUpdate(BaseModel):
+    category_id: int
+
+
 class RecipeRead(BaseModel):
     id: int
     category_id: int

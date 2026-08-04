@@ -187,6 +187,97 @@ class TestShareEndpoint:
         assert response.status_code == 400
 
 
+class TestCategoryEndpoint:
+    def test_owner_can_change_their_own_recipes_category(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        other_category_id = _create_category(client, "Main courses")
+        recipe = _create_recipe(user_client, category_id)
+
+        response = user_client.patch(
+            f"/recipes/{recipe['id']}/category", json={"category_id": other_category_id}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["category_id"] == other_category_id
+
+    def test_owner_can_change_an_imported_recipes_category(
+        self,
+        client: TestClient,
+        user_client: TestClient,
+        db_session: Session,
+        regular_user: User,
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        other_category_id = _create_category(client, "Main courses")
+        recipe = Recipe(
+            category_id=category_id,
+            source_url="https://example.com/imported-recipe",
+            owner_user_id=regular_user.id,
+        )
+        recipe.translations.append(RecipeTranslation(language="en", title="Imported", slug="imported"))
+        db_session.add(recipe)
+        db_session.commit()
+        db_session.refresh(recipe)
+
+        response = user_client.patch(
+            f"/recipes/{recipe.id}/category", json={"category_id": other_category_id}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["category_id"] == other_category_id
+
+    def test_admin_can_change_someone_elses_recipe_category(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        other_category_id = _create_category(client, "Main courses")
+        recipe = _create_recipe(user_client, category_id)
+
+        response = client.patch(
+            f"/recipes/{recipe['id']}/category", json={"category_id": other_category_id}
+        )
+
+        assert response.status_code == 200
+        assert response.json()["category_id"] == other_category_id
+
+    def test_non_owner_non_admin_cannot_change_category(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        other_category_id = _create_category(client, "Main courses")
+        recipe = _create_recipe(client, category_id)
+
+        response = user_client.patch(
+            f"/recipes/{recipe['id']}/category", json={"category_id": other_category_id}
+        )
+
+        assert response.status_code == 403
+
+    def test_change_category_requires_login(
+        self, client: TestClient, unauthenticated_client: TestClient
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        recipe = _create_recipe(client, category_id)
+
+        response = unauthenticated_client.patch(
+            f"/recipes/{recipe['id']}/category", json={"category_id": category_id}
+        )
+
+        assert response.status_code == 401
+
+    def test_change_category_rejects_an_unknown_category(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client, "Desserts")
+        recipe = _create_recipe(user_client, category_id)
+
+        response = user_client.patch(f"/recipes/{recipe['id']}/category", json={"category_id": 999999})
+
+        assert response.status_code == 400
+
+
 class TestListPagination:
     def test_limit_and_offset_page_through_results_newest_first(
         self, client: TestClient

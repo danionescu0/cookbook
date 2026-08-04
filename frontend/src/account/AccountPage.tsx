@@ -6,7 +6,7 @@ import { api, BASE_URL } from "../api/client";
 import { ImportManager } from "../backoffice/ImportManager";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
-import type { Recipe, UserProfile } from "../types";
+import type { Category, Recipe, UserProfile } from "../types";
 
 const inputClasses =
   "rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none";
@@ -15,9 +15,17 @@ interface RecipeListProps {
   recipes: Recipe[];
   showStatus?: boolean;
   onToggleShare?: (recipe: Recipe) => void;
+  categories?: Category[];
+  onChangeCategory?: (recipe: Recipe, categoryId: number) => void;
 }
 
-function RecipeList({ recipes, showStatus, onToggleShare }: RecipeListProps) {
+function RecipeList({
+  recipes,
+  showStatus,
+  onToggleShare,
+  categories,
+  onChangeCategory,
+}: RecipeListProps) {
   const { t } = useLanguage();
   return (
     <ul className="mt-3 flex flex-wrap gap-4">
@@ -53,6 +61,20 @@ function RecipeList({ recipes, showStatus, onToggleShare }: RecipeListProps) {
               {recipe.is_shared ? t.account.unshareAction : t.account.shareAction}
             </button>
           )}
+          {onChangeCategory && categories && (
+            <select
+              aria-label={t.recipeManager.categoryLabel}
+              value={recipe.category_id}
+              onChange={(e) => onChangeCategory(recipe, Number(e.target.value))}
+              className="mt-1 w-full rounded-md border border-olive/30 bg-white px-1.5 py-1 text-xs text-ink focus:border-terracotta focus:outline-none"
+            >
+              {categories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          )}
         </li>
       ))}
     </ul>
@@ -64,6 +86,7 @@ export function AccountPage() {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [favorites, setFavorites] = useState<Recipe[]>([]);
   const [submissions, setSubmissions] = useState<Recipe[]>([]);
+  const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const [currentPassword, setCurrentPassword] = useState("");
@@ -76,12 +99,23 @@ export function AccountPage() {
     api.me().then(setProfile).catch((e) => setError(String(e)));
     api.listFavorites().then(setFavorites).catch((e) => setError(String(e)));
     api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
+    api.listCategories().then(setCategories).catch((e) => setError(String(e)));
   }, []);
 
   const handleToggleShare = async (recipe: Recipe) => {
     setError(null);
     try {
       const updated = await api.toggleShare(recipe.id, !recipe.is_shared);
+      setSubmissions((current) => current.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleChangeCategory = async (recipe: Recipe, categoryId: number) => {
+    setError(null);
+    try {
+      const updated = await api.updateRecipeCategory(recipe.id, categoryId);
       setSubmissions((current) => current.map((r) => (r.id === updated.id ? updated : r)));
     } catch (e) {
       setError(String(e));
@@ -191,7 +225,13 @@ export function AccountPage() {
         {submissions.length === 0 ? (
           <p className="mt-2 text-sm text-ink/60">{t.account.noRecipes}</p>
         ) : (
-          <RecipeList recipes={submissions} showStatus onToggleShare={handleToggleShare} />
+          <RecipeList
+            recipes={submissions}
+            showStatus
+            onToggleShare={handleToggleShare}
+            categories={categories}
+            onChangeCategory={handleChangeCategory}
+          />
         )}
       </section>
     </div>
