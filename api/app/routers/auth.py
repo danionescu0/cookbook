@@ -207,6 +207,9 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
             status_code=401, detail="Account not verified yet — check your email for the verification link."
         )
 
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+
     return LoginResponse(
         access_token=create_access_token(user),
         user=UserRead(

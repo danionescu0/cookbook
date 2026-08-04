@@ -248,6 +248,41 @@ class TestListPagination:
 
         assert response.status_code == 401
 
+    def test_owner_by_username_returns_that_users_recipes_any_status_for_an_admin(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        theirs_private = _create_recipe(user_client, category_id, title="Their private recipe")
+        theirs_shared = _create_recipe(
+            user_client, category_id, title="Their shared recipe", is_shared=True
+        )
+        _create_recipe(client, category_id, title="Admin's own recipe", is_shared=True)
+
+        response = client.get("/recipes", params={"owner": "regular"})
+
+        assert response.status_code == 200
+        ids = {r["id"] for r in response.json()}
+        assert ids == {theirs_private["id"], theirs_shared["id"]}
+
+    def test_owner_by_username_rejects_a_non_admin_caller(
+        self, user_client: TestClient
+    ) -> None:
+        response = user_client.get("/recipes", params={"owner": "admin"})
+
+        assert response.status_code == 403
+
+    def test_owner_by_username_rejects_an_anonymous_caller(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        response = unauthenticated_client.get("/recipes", params={"owner": "admin"})
+
+        assert response.status_code == 403
+
+    def test_owner_by_username_404s_for_an_unknown_username(self, client: TestClient) -> None:
+        response = client.get("/recipes", params={"owner": "nobody"})
+
+        assert response.status_code == 404
+
     def test_only_public_excludes_the_admins_own_private_recipes(
         self, client: TestClient
     ) -> None:

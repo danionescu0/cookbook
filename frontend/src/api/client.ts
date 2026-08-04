@@ -14,6 +14,7 @@ import type {
   Settings,
   SettingsUpdate,
   SignupRequest,
+  UserAdmin,
   UserProfile,
 } from "../types";
 
@@ -115,6 +116,7 @@ export const api = {
       body: JSON.stringify({ username, turnstile_token: turnstileToken }),
     }),
   me: () => request<UserProfile>("/users/me"),
+  listUsers: () => request<UserAdmin[]>("/users"),
   changePassword: (currentPassword: string, newPassword: string) =>
     request<void>("/users/me/password", {
       method: "PATCH",
@@ -138,7 +140,9 @@ export const api = {
   listRecipesPage: (params: {
     categoryId?: number;
     language?: string;
-    owner?: "me";
+    // "me", or (admin-only) another user's exact username — see routers/recipes.py's
+    // list_recipes.
+    owner?: string;
     onlyPublic?: boolean;
     limit: number;
     offset: number;

@@ -14,6 +14,7 @@ from app.models.recipe_favorite import RecipeFavorite
 from app.models.recipe_reparse_job import RecipeReparseJob, RecipeReparseJobStatus
 from app.models.recipe_translation import RecipeTranslation
 from app.models.translation_sync_job import TranslationSyncJob, TranslationSyncJobStatus
+from app.models.user import User
 from app.queue import publish_reparse_job, publish_translation_sync_job
 from app.routers.images import delete_images
 from app.schemas.recipe import RecipeCreate, RecipeRead, RecipeShareUpdate, RecipeUpdate
@@ -191,8 +192,10 @@ def list_recipes(
     category_id: int | None = None,
     language: str | None = Query(default=None),
     # "me": only the caller's own recipes, any status — powers the frontend's "My recipes"
-    # infinite scroll (requires auth; 401 for an anonymous caller). Mutually exclusive with
-    # only_public in practice, though nothing stops both being set — owner wins if so.
+    # infinite scroll (requires auth; 401 for an anonymous caller). Any other value is treated as
+    # a target username and requires the caller to be an admin (403 otherwise) — powers the
+    # superadmin Users page's per-user recipe list (see routers/users.py's list_users). Mutually
+    # exclusive with only_public in practice, though nothing stops both being set — owner wins.
     owner: str | None = Query(default=None),
     # Forces the public-only visibility clause regardless of who's asking, admin included —
     # powers the "From the community" infinite scroll, so an authenticated user can fetch just
@@ -215,6 +218,15 @@ def list_recipes(
         if current_user is None:
             raise HTTPException(status_code=401, detail="Not authenticated")
         clause = Recipe.owner_user_id == current_user.id
+        stmt = stmt.where(clause)
+        count_stmt = count_stmt.where(clause)
+    elif owner is not None:
+        if current_user is None or not current_user.is_admin:
+            raise HTTPException(status_code=403, detail="Admin access required")
+        target = db.scalar(select(User).where(User.username == owner))
+        if target is None:
+            raise HTTPException(status_code=404, detail="User not found")
+        clause = Recipe.owner_user_id == target.id
         stmt = stmt.where(clause)
         count_stmt = count_stmt.where(clause)
     elif only_public:

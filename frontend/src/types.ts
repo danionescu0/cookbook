@@ -159,6 +159,20 @@ export interface UserProfile extends User {
   imported_recipes_count: number;
 }
 
+export interface UserAdmin {
+  id: number;
+  username: string;
+  email: string | null;
+  is_verified: boolean;
+  created_at: string;
+  // Null if the account has never logged in since this column existed.
+  last_login_at: string | null;
+  // Lifetime count, not "currently owns" — see UserProfile.imported_recipes_count.
+  imported_recipes_count: number;
+  owned_recipes_count: number;
+  shared_recipes_count: number;
+}
+
 export interface LoginResponse {
   access_token: string;
   token_type: string;

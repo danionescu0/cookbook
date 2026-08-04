@@ -42,3 +42,7 @@ class User(Base):
     imported_recipes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    # Stamped on each successful POST /auth/login — a proxy for "last used," not a full activity
+    # log (this API is stateless JWT auth, so a request between logins doesn't touch this). Null
+    # for an account that's never logged in since this column existed.
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

@@ -18,6 +18,7 @@ import { ImportManager } from "./backoffice/ImportManager";
 import { LoginForm } from "./backoffice/LoginForm";
 import { RecipeManager } from "./backoffice/RecipeManager";
 import { SettingsManager } from "./backoffice/SettingsManager";
+import { UsersManager } from "./backoffice/UsersManager";
 import { SignupForm } from "./auth/SignupForm";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { useAuth } from "./auth/AuthContext";
@@ -136,9 +137,14 @@ function BackofficeLayout() {
           {t.nav.backofficeRecipes}
         </NavLink>
         {user.is_super_admin && (
-          <NavLink to="/backoffice/settings" className={navLinkClasses}>
-            {t.nav.backofficeSettings}
-          </NavLink>
+          <>
+            <NavLink to="/backoffice/users" className={navLinkClasses}>
+              {t.nav.backofficeUsers}
+            </NavLink>
+            <NavLink to="/backoffice/settings" className={navLinkClasses}>
+              {t.nav.backofficeSettings}
+            </NavLink>
+          </>
         )}
       </nav>
       <Outlet />
@@ -264,6 +270,14 @@ export function App() {
           />
           <Route path="/backoffice" element={<BackofficeLayout />}>
             <Route index element={<RecipesPage />} />
+            <Route
+              path="users"
+              element={
+                <RequireSuperAdmin>
+                  <UsersManager />
+                </RequireSuperAdmin>
+              }
+            />
             <Route
               path="settings"
               element={

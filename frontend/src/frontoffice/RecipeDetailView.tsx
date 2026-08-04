@@ -5,15 +5,8 @@ import { isSectionHeader, stripSectionHeader } from "./recipeSections";
 import { useSeoMeta } from "../seo/useSeoMeta";
 import { ImageSlider } from "./ImageSlider";
 import { NutritionPanel } from "./NutritionPanel";
+import { hostnameOf } from "../ui/hostnameOf";
 import type { Nutrition, Recipe } from "../types";
-
-function hostnameOf(url: string): string {
-  try {
-    return new URL(url).hostname;
-  } catch {
-    return url;
-  }
-}
 
 export interface RecipeDetailSeo {
   // Absolute URL of the canonical (language-prefixed, slug) page for this recipe — omitted when
