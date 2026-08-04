@@ -16,6 +16,7 @@ go live.
 - [Core Workflows](#core-workflows)
 - [Data Model](#data-model-sketch)
 - [Deployment](#deployment)
+- [Debug](#debug)
 - [Testing](#testing)
 - [Design Decisions](#design-decisions)
 - [Original Spec](#original-spec)
@@ -957,6 +958,71 @@ being re-imported as a duplicate.
   browser refresh in production; see [Design Decisions](#design-decisions), "SPA fallback for
   direct navigation/refresh in production".
 
+## Debug
+
+Operational/troubleshooting procedures for a running deployment — the "how", as opposed to
+[Design Decisions](#design-decisions), which is the "why".
+
+- **Watching logs.** Same `docker compose` command as everywhere else, just with both prod `-f`
+  flags (see [Deployment](#deployment)) run from the project directory on the VPS. No log
+  rotation/size limit is configured anywhere (`docker-compose.yml` uses Docker's default
+  `json-file` driver, unbounded) — logs grow on disk indefinitely, worth revisiting if that ever
+  becomes a problem.
+  ```bash
+  # tail everything, live
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f
+
+  # just one or two services (most often api + worker, since that's where imports/jobs run)
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f api worker
+
+  # last N lines instead of following
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml logs --tail=200 api
+  ```
+- **Securely accessing the prod database from a local GUI client.** In dev, `db` already publishes
+  `5432` straight to the host (`docker-compose.override.yml`), so any local Postgres client
+  (DBeaver, TablePlus, Beekeeper Studio, ...) can just connect to `localhost:5432`. Prod
+  deliberately does the opposite: `docker-compose.prod.yml` binds `db`'s port to
+  `127.0.0.1:5432:5432` — loopback only, so it's never reachable from outside the VPS no matter
+  what the firewall allows. The only way in is an SSH tunnel, riding on the SSH key access that's
+  already trusted for the VPS instead of adding any new credential or open port:
+  ```bash
+  ssh -L 5433:127.0.0.1:5432 <ssh-user>@<vps-host> -N
+  ```
+  Then point a GUI client at `localhost:5433` with the prod `POSTGRES_USER`/`POSTGRES_PASSWORD`/
+  `POSTGRES_DB` from the VPS's `.env`. The two sides of `-L` are independent —
+  `-L <local-port>:127.0.0.1:<remote-port>` — so `5433` here is just a local choice to avoid
+  clashing with a dev stack's own `5432` running at the same time; the remote side must stay
+  `5432` (that's the actual port Postgres binds to on the VPS). Leave the `ssh` command running
+  (or add `-f` to background it) for as long as the GUI client needs the connection open.
+- **Manual hack: promoting an imported recipe to public.** There is deliberately no UI or API path
+  for this (imports can never be shared, permanently, by design — see
+  [Design Decisions](#design-decisions), "Recipe privacy, with opt-in community sharing"), but the
+  need still comes up in practice — e.g. wanting one specific imported recipe to be publicly
+  visible. The only way is to reclassify it as if it had been manually added, by clearing
+  `source_url` (the column the app actually uses to decide "is this an import") and setting the
+  sharing/approval flags directly:
+  ```bash
+  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>; UPDATE recipes SET source_url = NULL, is_shared = true, status = 'APPROVED' WHERE id = <ID>; SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>;"
+  ```
+  Two permanent side effects, since this changes how the app classifies the recipe, not just a
+  flag: it can no longer be re-scraped via **Reparse** (`POST /recipes/{id}/reparse` requires
+  `source_url`, 400s without one), and re-importing the same URL later for the same owner is no
+  longer blocked as a duplicate (that check is keyed on `Recipe.source_url`). `status` must be set
+  to the exact uppercase enum value (`'APPROVED'`) — a hand-typed lowercase `'approved'` is a real
+  incident this documents: an ad hoc `UPDATE` once left a recipe with `is_shared=true` and a
+  lowercase `status` neither the API nor the ORM would ever produce, which is exactly the
+  fingerprint to grep for if a recipe's flags ever look right in the DB but behave wrong in the
+  app — `SELECT id FROM recipes WHERE status != upper(status);` finds any row like that.
+- **A prod signup confirmation email linked to `localhost`.** The verification link
+  (`worker/app/email_handlers.py`) is built from `app_settings.public_site_url` — an
+  admin-editable setting (Backoffice → Settings → "Public site URL"), not anything hardcoded or
+  read from `.env`. If it was ever set to a local dev value (or never set at all) and that carried
+  into prod, every verification/reset email built afterward embeds that same wrong URL. Fix is
+  purely operational: log in as a super-admin and set it to the real prod domain
+  (`https://easy2cook.app`) via Settings — no restart needed, `settings_service.get_settings`
+  reads the current row on every call. The same setting also feeds the sitemap
+  (`api/app/routers/sitemap.py`), so a wrong value silently breaks that too.
+
 ## Testing
 
 | Layer            | Framework                          | Status | Focus |
@@ -1605,40 +1671,9 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   post-fix, while a real static asset (`/assets/index-*.js`) still resolved to the actual file
   with the correct content type — confirming `try_files` matches real files first and only falls
   through to `index.html` when nothing else matches.
-- **Manual hack: promoting an imported recipe to public** — there is deliberately no UI or API
-  path for this (see "Per-user accounts and recipe privacy" above: imports can never be shared,
-  permanently, by design), but the need still comes up in practice — e.g. wanting one specific
-  imported recipe to be publicly visible. The only way is to reclassify it as if it had been
-  manually added, by clearing `source_url` (the column the app actually uses to decide "is this an
-  import") and setting the sharing/approval flags directly:
-  ```bash
-  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>; UPDATE recipes SET source_url = NULL, is_shared = true, status = 'APPROVED' WHERE id = <ID>; SELECT id, source_url, status, is_shared FROM recipes WHERE id = <ID>;"
-  ```
-  Two permanent side effects, since this changes how the app classifies the recipe, not just a
-  flag: it can no longer be re-scraped via **Reparse** (`POST /recipes/{id}/reparse` requires
-  `source_url`, 400s without one), and re-importing the same URL later for the same owner is no
-  longer blocked as a duplicate (that check is keyed on `Recipe.source_url`). `status` must be set
-  to the exact uppercase enum value (`'APPROVED'`) — a hand-typed lowercase `'approved'` is a real
-  incident this documents: an ad hoc `UPDATE` once left a recipe with `is_shared=true` and a
-  lowercase `status` neither the API nor the ORM would ever produce, which is exactly the
-  fingerprint to grep for if a recipe's flags ever look right in the DB but behave wrong in the
-  app — `SELECT id FROM recipes WHERE status != upper(status);` finds any row like that.
-- **Securely accessing the prod database from a local GUI client** — in dev, `db` already
-  publishes `5432` straight to the host (`docker-compose.override.yml`), so any local Postgres
-  client (DBeaver, TablePlus, Beekeeper Studio, ...) can just connect to `localhost:5432`. Prod
-  deliberately does the opposite: `docker-compose.prod.yml` binds `db`'s port to
-  `127.0.0.1:5432:5432` — loopback only, so it's never reachable from outside the VPS no matter
-  what the firewall allows. The only way in is an SSH tunnel, riding on the SSH key access that's
-  already trusted for the VPS instead of adding any new credential or open port:
-  ```bash
-  ssh -L 5433:127.0.0.1:5432 <ssh-user>@<vps-host> -N
-  ```
-  Then point a GUI client at `localhost:5433` with the prod `POSTGRES_USER`/`POSTGRES_PASSWORD`/
-  `POSTGRES_DB` from the VPS's `.env`. The two sides of `-L` are independent —
-  `-L <local-port>:127.0.0.1:<remote-port>` — so `5433` here is just a local choice to avoid
-  clashing with a dev stack's own `5432` running at the same time; the remote side must stay
-  `5432` (that's the actual port Postgres binds to on the VPS). Leave the `ssh` command running
-  (or add `-f` to background it) for as long as the GUI client needs the connection open.
+- **Manual hack: promoting an imported recipe to public** and **securely accessing the prod
+  database from a local GUI client** — both moved to [Debug](#debug), which now collects
+  operational/troubleshooting procedures separately from the "why" this section is for.
 
 ## Original Spec
 
