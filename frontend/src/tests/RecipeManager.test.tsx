@@ -304,22 +304,6 @@ describe("RecipeManager", () => {
     await waitFor(() => expect(mockedApi.reparseRecipe).toHaveBeenCalledWith(2));
   });
 
-  it("queues a bulk reparse of every imported recipe and shows a confirmation message", async () => {
-    const user = userEvent.setup();
-    mockRecipeList([cake]);
-    mockedApi.reparseAllImportedRecipes.mockResolvedValue({ queued: 3 });
-
-    renderManager();
-    await screen.findByText(/Cake/);
-
-    await user.click(screen.getByRole("button", { name: "Reparse all imported recipes" }));
-    const dialog = await screen.findByRole("alertdialog");
-    await user.click(within(dialog).getByRole("button", { name: "Reparse" }));
-
-    await waitFor(() => expect(mockedApi.reparseAllImportedRecipes).toHaveBeenCalled());
-    expect(await screen.findByText("Queued 3 recipe(s) for reparsing.")).toBeInTheDocument();
-  });
-
   it("shows a processing-status badge and polls until it clears", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mockedApi.listRecipesPage

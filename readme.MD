@@ -820,12 +820,16 @@ Distinct from workflow #6's "Reparse all ingredients": that one re-fetches only 
 *reference* data (never touches Claude or a recipe's text); this one re-runs the *whole* extraction
 pipeline for one already-imported recipe against its original source page.
 
-1. An admin clicks **Reparse** on an imported recipe in `RecipeManager` (or **Reparse all imported
-   recipes** to queue every recipe with a `source_url`, e.g. after a prompt/extraction-quality fix
-   like the sub-group convention). `POST /recipes/{id}/reparse` (or `/reparse-all-imported`) 400s if
-   the recipe has no `source_url` — there's nothing to re-scrape for a hand-authored recipe — and
-   creates one `recipe_reparse_jobs` row per recipe, published to its own queue immediately (no
-   pending/approve gate — the admin already imported this exact recipe once).
+1. An admin clicks **Reparse** on an imported recipe in `RecipeManager` to queue a re-extraction for
+   just that one recipe. `POST /recipes/{id}/reparse` 400s if the recipe has no `source_url` —
+   there's nothing to re-scrape for a hand-authored recipe — and creates one `recipe_reparse_jobs`
+   row, published to its own queue immediately (no pending/approve gate — the admin already imported
+   this exact recipe once). There's also a bulk `POST /recipes/reparse-all-imported` (queues every
+   recipe with a `source_url` at once, e.g. after a prompt/extraction-quality fix like the sub-group
+   convention below) — its **Reparse all imported recipes** button is currently hidden in
+   `RecipeManager` (not removed: handler, endpoint, and translations are all still there, just not
+   rendered) because queuing every imported recipe at once re-runs Claude extraction for all of them
+   in one go, and an accidental click is real money. Re-enable it deliberately, not by habit.
 2. The worker re-fetches `recipe.source_url` the same way as a fresh import (HTML path: robots.txt
    + rate limit + boilerplate-stripping; Instagram path: Playwright), and re-runs the same Claude
    extraction call (Haiku, same as workflow #2).

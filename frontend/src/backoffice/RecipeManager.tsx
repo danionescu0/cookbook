@@ -71,7 +71,6 @@ export function RecipeManager() {
   const [ingredients, setIngredients] = useState("");
   const [isShared, setIsShared] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [reparseMessage, setReparseMessage] = useState<string | null>(null);
   const [previewId, setPreviewId] = useState<number | null>(null);
   const [editingId, setEditingId] = useState<number | null>(null);
   const [editForm, setEditForm] = useState<EditForm | null>(null);
@@ -183,21 +182,8 @@ export function RecipeManager() {
   const handleReparse = async (id: number) => {
     if (!(await confirm(t.recipeManager.reparseConfirm, t.recipeManager.reparse))) return;
     setError(null);
-    setReparseMessage(null);
     try {
       await api.reparseRecipe(id);
-      await reload();
-    } catch (e) {
-      setError(String(e));
-    }
-  };
-
-  const handleReparseAllImported = async () => {
-    if (!(await confirm(t.recipeManager.reparseAllImportedConfirm, t.recipeManager.reparse))) return;
-    setError(null);
-    try {
-      const { queued } = await api.reparseAllImportedRecipes();
-      setReparseMessage(t.recipeManager.reparseAllImportedQueued.replace("{count}", String(queued)));
       await reload();
     } catch (e) {
       setError(String(e));
@@ -265,15 +251,7 @@ export function RecipeManager() {
     <div>
       <div className="mt-6 flex flex-wrap items-center justify-between gap-2">
         <h3 className="font-serif text-lg font-semibold text-ink">{t.recipeManager.add}</h3>
-        <button type="button" onClick={handleReparseAllImported} className={secondaryButton}>
-          {t.recipeManager.reparseAllImported}
-        </button>
       </div>
-      {reparseMessage && (
-        <p role="status" className="mt-2 rounded-md bg-olive-light px-3 py-2 text-sm text-ink">
-          {reparseMessage}
-        </p>
-      )}
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-wrap items-end gap-3">
         <div className="flex flex-col gap-1">
