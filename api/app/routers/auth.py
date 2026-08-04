@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -36,6 +36,13 @@ class SignupRequest(BaseModel):
     # (falls back silently in signup() instead) since a mismatch is just a stale/unusual client,
     # not something worth failing a signup over.
     language: str | None = None
+
+    @field_validator("username")
+    @classmethod
+    def username_must_be_alphanumeric(cls, value: str) -> str:
+        if not value.isalnum() or not value.isascii():
+            raise ValueError("Username can only contain letters and numbers")
+        return value
 
 
 class UserRead(BaseModel):

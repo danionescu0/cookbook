@@ -135,6 +135,83 @@ describe("SignupForm", () => {
     );
   });
 
+  it("rejects a username with non-alphanumeric characters instead of submitting", async () => {
+    const user = userEvent.setup();
+    renderForm();
+    await user.type(screen.getByLabelText("Username"), "new-user!");
+    await user.type(screen.getByLabelText("Email"), "newuser@example.com");
+    await user.type(screen.getByLabelText("Password"), "supersecret1");
+    await user.type(screen.getByLabelText("Confirm password"), "supersecret1");
+    await user.click(await screen.findByRole("button", { name: "solve captcha" }));
+
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
+    await user.click(await screen.findByRole("button", { name: "I have read and agree" }));
+    await user.click(screen.getByRole("button", { name: "Sign up" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Username can only contain letters and numbers."
+    );
+    expect(mockedApi.signup).not.toHaveBeenCalled();
+  });
+
+  it("flags an invalid username as soon as the field loses focus, before any submit attempt", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText("Username"), "new-user!");
+    await user.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Username can only contain letters and numbers."
+    );
+
+    await user.clear(screen.getByLabelText("Username"));
+    await user.type(screen.getByLabelText("Username"), "newuser");
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("flags an invalid email on blur", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText("Email"), "not-an-email");
+    await user.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Please enter a valid email address.");
+  });
+
+  it("flags a too-short password on blur", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText("Password"), "short");
+    await user.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Password must be at least 8 characters.");
+  });
+
+  it("flags a mismatched confirm-password on blur", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    await user.type(screen.getByLabelText("Password"), "supersecret1");
+    await user.type(screen.getByLabelText("Confirm password"), "somethingelse");
+    await user.tab();
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("Passwords don't match.");
+  });
+
+  it("leaves untouched empty fields alone on blur", async () => {
+    const user = userEvent.setup();
+    renderForm();
+
+    screen.getByLabelText("Username").focus();
+    await user.tab();
+
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
   it("closes the overlay without accepting when the close button is used", async () => {
     const user = userEvent.setup();
     renderForm();

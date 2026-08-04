@@ -84,6 +84,12 @@ def test_signup_rejects_duplicate_username(
     assert response.status_code == 400
 
 
+def test_signup_rejects_non_alphanumeric_username(unauthenticated_client: TestClient, monkeypatch) -> None:
+    response = _signup(unauthenticated_client, monkeypatch, username="new-user!")
+
+    assert response.status_code == 422
+
+
 def test_signup_rejects_duplicate_email(
     unauthenticated_client: TestClient, monkeypatch, admin_user: User
 ) -> None:
@@ -98,7 +104,7 @@ def test_signup_with_existing_unverified_email_resends_instead_of_erroring(
     _signup(unauthenticated_client, monkeypatch)
     first_token = db_session.query(EmailVerificationToken).one().token
 
-    response = _signup(unauthenticated_client, monkeypatch, username="a-different-username")
+    response = _signup(unauthenticated_client, monkeypatch, username="adifferentusername")
 
     assert response.status_code == 201
     assert "already exists but hasn't been verified" in response.json()["detail"]
@@ -117,7 +123,7 @@ def test_signup_with_existing_unverified_email_does_not_change_the_password(
     _signup(unauthenticated_client, monkeypatch)
     original_hash = db_session.query(User).filter_by(username="newuser").one().password_hash
 
-    _signup(unauthenticated_client, monkeypatch, username="someone-else", password="a-totally-different-pw")
+    _signup(unauthenticated_client, monkeypatch, username="someoneelse", password="a-totally-different-pw")
 
     assert db_session.query(User).filter_by(email="newuser@example.com").one().password_hash == original_hash
 

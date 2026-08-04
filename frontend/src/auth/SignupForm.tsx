@@ -9,6 +9,12 @@ import { TurnstileWidget } from "./TurnstileWidget";
 const inputClasses =
   "rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none";
 
+const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const MIN_PASSWORD_LENGTH = 8;
+
+type FieldName = "username" | "email" | "password" | "confirmPassword";
+
 export function SignupForm() {
   const { t, language } = useLanguage();
   const [username, setUsername] = useState("");
@@ -20,11 +26,38 @@ export function SignupForm() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   // The server's own message, not a fixed string — it differs when this email already has an
   // unconfirmed account (see api/app/routers/auth.py's signup()) and we want that distinction
   // to reach the visitor, not just a generic "check your email."
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
+  // Validates one field's current value and returns an error message, or null when it's fine.
+  // Empty fields are left alone here — missing-ness is a submit-time concern, not a blur one, so
+  // tabbing through untouched fields doesn't light up the whole form in red.
+  const validateField = (field: FieldName, value: string): string | null => {
+    switch (field) {
+      case "username":
+        return value && !USERNAME_PATTERN.test(value) ? t.signup.usernameInvalidError : null;
+      case "email":
+        return value && !EMAIL_PATTERN.test(value) ? t.signup.emailInvalidError : null;
+      case "password":
+        return value && value.length < MIN_PASSWORD_LENGTH ? t.signup.passwordTooShortError : null;
+      case "confirmPassword":
+        return value && value !== password ? t.signup.passwordMismatchError : null;
+    }
+  };
+
+  const handleBlur = (field: FieldName, value: string) => {
+    setFieldErrors((prev) => ({ ...prev, [field]: validateField(field, value) ?? undefined }));
+  };
+
+  const clearFieldError = (field: FieldName) => {
+    if (fieldErrors[field]) {
+      setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
+    }
+  };
 
   useEffect(() => {
     api
@@ -41,10 +74,18 @@ export function SignupForm() {
       setShowTerms(true);
       return;
     }
-    if (password !== confirmPassword) {
-      setError(t.signup.passwordMismatchError);
+
+    const values: Record<FieldName, string> = { username, email, password, confirmPassword };
+    const nextFieldErrors: Partial<Record<FieldName, string>> = {};
+    for (const field of Object.keys(values) as FieldName[]) {
+      const fieldError = validateField(field, values[field]);
+      if (fieldError) nextFieldErrors[field] = fieldError;
+    }
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
       return;
     }
+
     if (!turnstileToken) {
       setError(t.signup.captchaRequiredError);
       return;
@@ -95,9 +136,19 @@ export function SignupForm() {
             id="signup-username"
             autoComplete="username"
             value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            onChange={(e) => {
+              setUsername(e.target.value);
+              clearFieldError("username");
+            }}
+            onBlur={(e) => handleBlur("username", e.target.value)}
+            aria-invalid={Boolean(fieldErrors.username)}
             className={inputClasses}
           />
+          {fieldErrors.username && (
+            <p role="alert" className="text-xs text-red-700">
+              {fieldErrors.username}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -109,9 +160,19 @@ export function SignupForm() {
             type="email"
             autoComplete="email"
             value={email}
-            onChange={(e) => setEmail(e.target.value)}
+            onChange={(e) => {
+              setEmail(e.target.value);
+              clearFieldError("email");
+            }}
+            onBlur={(e) => handleBlur("email", e.target.value)}
+            aria-invalid={Boolean(fieldErrors.email)}
             className={inputClasses}
           />
+          {fieldErrors.email && (
+            <p role="alert" className="text-xs text-red-700">
+              {fieldErrors.email}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -123,9 +184,19 @@ export function SignupForm() {
             type="password"
             autoComplete="new-password"
             value={password}
-            onChange={(e) => setPassword(e.target.value)}
+            onChange={(e) => {
+              setPassword(e.target.value);
+              clearFieldError("password");
+            }}
+            onBlur={(e) => handleBlur("password", e.target.value)}
+            aria-invalid={Boolean(fieldErrors.password)}
             className={inputClasses}
           />
+          {fieldErrors.password && (
+            <p role="alert" className="text-xs text-red-700">
+              {fieldErrors.password}
+            </p>
+          )}
         </div>
 
         <div className="flex flex-col gap-1">
@@ -137,9 +208,19 @@ export function SignupForm() {
             type="password"
             autoComplete="new-password"
             value={confirmPassword}
-            onChange={(e) => setConfirmPassword(e.target.value)}
+            onChange={(e) => {
+              setConfirmPassword(e.target.value);
+              clearFieldError("confirmPassword");
+            }}
+            onBlur={(e) => handleBlur("confirmPassword", e.target.value)}
+            aria-invalid={Boolean(fieldErrors.confirmPassword)}
             className={inputClasses}
           />
+          {fieldErrors.confirmPassword && (
+            <p role="alert" className="text-xs text-red-700">
+              {fieldErrors.confirmPassword}
+            </p>
+          )}
         </div>
 
         {siteKey && <TurnstileWidget siteKey={siteKey} onToken={setTurnstileToken} />}
