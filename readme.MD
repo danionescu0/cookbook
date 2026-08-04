@@ -1036,6 +1036,29 @@ Operational/troubleshooting procedures for a running deployment — the "how", a
   (`https://easy2cook.app`) via Settings — no restart needed, `settings_service.get_settings`
   reads the current row on every call. The same setting also feeds the sitemap
   (`api/app/routers/sitemap.py`), so a wrong value silently breaks that too.
+- **Manual hack: deleting a user and everything they own.** There is deliberately no UI for this
+  either (self-service account deletion doesn't exist yet). A plain `DELETE FROM users` fails
+  rather than corrupts anything — but not the way the foreign keys suggest it should. Checked the
+  live schema directly (`information_schema`) instead of assuming: `recipes.owner_user_id` is
+  `NOT NULL` but its FK is `ON DELETE SET NULL` — a real inconsistency — so deleting a user who
+  owns any recipe hits a not-null-constraint error, not a clean cascade. `import_jobs.created_by_
+  user_id` is nullable but `ON DELETE NO ACTION`, so it blocks a delete too unless cleared first.
+  Everything else referencing `users.id` (`email_jobs`, `email_verification_tokens`,
+  `recipe_favorites`) already cascades on its own. The order that actually works:
+  ```bash
+  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, username, (SELECT count(*) FROM recipes WHERE owner_user_id = users.id) AS owned_recipes, (SELECT count(*) FROM import_jobs WHERE created_by_user_id = users.id) AS created_imports FROM users WHERE id = <ID>; DELETE FROM recipes WHERE owner_user_id = <ID>; UPDATE import_jobs SET created_by_user_id = NULL WHERE created_by_user_id = <ID>; DELETE FROM users WHERE id = <ID>; SELECT id FROM users WHERE id = <ID>;"
+  ```
+  The first `SELECT` shows what's about to be affected; `DELETE FROM recipes` removes the user's
+  own recipes first (cascades cleanly to `recipe_translations`, `recipe_ingredient_links`,
+  `nutrition_jobs`, `recipe_reparse_jobs`, `translation_sync_jobs`, and favorites of those
+  recipes — verified via the same `information_schema` query against `recipes.id`, all `CASCADE`);
+  the `UPDATE` anonymizes rather than deletes their import job history, since losing that felt like
+  more collateral damage than necessary; the final `DELETE`/`SELECT` remove the account and confirm
+  it's gone. **This is genuinely irreversible** — it deletes the user's recipes too, including
+  anything they'd shared with the community, not just their account — back up first
+  (`pg_dump`) if this is prod. Reassigning `owner_user_id` to another user instead of deleting
+  their recipes is the alternative, for when the goal is removing an account without losing its
+  content.
 
 ## Testing
 
