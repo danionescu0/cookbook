@@ -33,6 +33,26 @@ def test_signup_creates_unverified_user(
     assert user.is_admin is False
 
 
+def test_signup_records_the_submitted_language(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    response = _signup(unauthenticated_client, monkeypatch, language="en")
+
+    assert response.status_code == 201
+    user = db_session.query(User).filter_by(username="newuser").one()
+    assert user.language == "en"
+
+
+def test_signup_falls_back_to_the_default_language_when_none_is_submitted_or_unsupported(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    response = _signup(unauthenticated_client, monkeypatch, language="fr")
+
+    assert response.status_code == 201
+    user = db_session.query(User).filter_by(username="newuser").one()
+    assert user.language == "ro"
+
+
 def test_signup_records_terms_acceptance(unauthenticated_client: TestClient, monkeypatch, db_session: Session) -> None:
     response = _signup(unauthenticated_client, monkeypatch)
 

@@ -130,6 +130,7 @@ describe("SignupForm", () => {
         password: "supersecret1",
         turnstile_token: "test-turnstile-token",
         terms_accepted: true,
+        language: "en",
       })
     );
   });

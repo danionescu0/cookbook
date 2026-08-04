@@ -32,6 +32,10 @@ class SignupRequest(BaseModel):
     password: str = Field(min_length=8)
     turnstile_token: str
     terms_accepted: bool
+    # The signup form's current UI language — not validated against supported_languages here
+    # (falls back silently in signup() instead) since a mismatch is just a stale/unusual client,
+    # not something worth failing a signup over.
+    language: str | None = None
 
 
 class UserRead(BaseModel):
@@ -117,6 +121,12 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
     if db.scalar(select(User).where(User.username == payload.username)) is not None:
         raise HTTPException(status_code=400, detail="That username is already taken")
 
+    language = (
+        payload.language
+        if payload.language in app_settings.supported_languages_list
+        else app_settings.default_language
+    )
+
     password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode("ascii")
     user = User(
         username=payload.username,
@@ -125,6 +135,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
         is_verified=False,
         terms_accepted_at=datetime.now(timezone.utc),
         terms_version=TERMS_VERSION,
+        language=language,
     )
     db.add(user)
     db.commit()

@@ -56,8 +56,10 @@ def _seed_app_settings(db: Session) -> None:
     db.commit()
 
 
-def _create_user(db: Session, email: str | None = "someone@example.com") -> User:
-    user = User(username="someone", email=email)
+def _create_user(
+    db: Session, email: str | None = "someone@example.com", language: str = "ro"
+) -> User:
+    user = User(username="someone", email=email, language=language)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -136,8 +138,45 @@ def test_handle_email_job_sends_verification_email(db_session: Session, _fake_sm
     assert smtp.started_tls is True
     assert smtp.login_args == ("bot@example.com", "smtp-secret")
     assert len(smtp.sent_messages) == 1
-    body = smtp.sent_messages[0].get_content()
+    message = smtp.sent_messages[0]
+    body = message.get_content()
     assert f"https://cookbook.example.com/verify-email?token={token.token}" in body
+    # Romanian (the user's language, and this fixture's default) — greets by username and
+    # explains what the site is, not just a bare link.
+    assert "Salut, someone!" in body
+    assert "caiet de rețete" in body
+    assert message["Subject"] == "Confirmă-ți contul Cookbook"
+
+
+def test_handle_email_job_sends_the_verification_email_in_the_users_language(
+    db_session: Session, _fake_smtp
+) -> None:
+    _seed_app_settings(db_session)
+    user = _create_user(db_session, language="en")
+    _create_token(db_session, user.id)
+    job = _create_job(db_session, user.id)
+
+    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
+
+    message = _fake_smtp[0].sent_messages[0]
+    body = message.get_content()
+    assert "Hi someone," in body
+    assert "cookbook that's actually yours" in body
+    assert message["Subject"] == "Verify your Cookbook account"
+
+
+def test_handle_email_job_falls_back_to_english_for_an_unrecognized_language(
+    db_session: Session, _fake_smtp
+) -> None:
+    _seed_app_settings(db_session)
+    user = _create_user(db_session, language="fr")
+    _create_token(db_session, user.id)
+    job = _create_job(db_session, user.id)
+
+    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
+
+    message = _fake_smtp[0].sent_messages[0]
+    assert message["Subject"] == "Verify your Cookbook account"
 
 
 def test_handle_email_job_skips_login_when_no_smtp_username(

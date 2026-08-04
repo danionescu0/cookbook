@@ -171,6 +171,7 @@ export interface SignupRequest {
   password: string;
   turnstile_token: string;
   terms_accepted: boolean;
+  language: string;
 }
 
 export type NutritionStatus = "not_enriched" | "queued" | "processing" | "done" | "failed";

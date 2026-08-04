@@ -247,6 +247,8 @@ class User(Base):
     username: Mapped[str] = mapped_column(String(50), nullable=False)
     email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     imported_recipes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    # The language to send account emails in — see api/app/models/user.py's User.language.
+    language: Mapped[str] = mapped_column(String(5), nullable=False, default="ro")
 
 
 class EmailJobStatus(str, enum.Enum):

@@ -10,7 +10,7 @@ const inputClasses =
   "rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none";
 
 export function SignupForm() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -58,6 +58,7 @@ export function SignupForm() {
         password,
         turnstile_token: turnstileToken,
         terms_accepted: termsAccepted,
+        language,
       });
       setSuccessMessage(response.detail);
     } catch (e) {

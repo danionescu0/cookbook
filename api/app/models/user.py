@@ -23,6 +23,12 @@ class User(Base):
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # The UI language active at signup (see frontend/src/i18n) — used to send the verification
+    # email (and any future account emails) in a language the user actually reads, rather than
+    # whatever `default_language` happens to be configured. Not synced afterward if the user
+    # later switches languages — email language and browsing language are independent.
+    language: Mapped[str] = mapped_column(String(5), default="ro", nullable=False)
+
     # When/which version of the Terms and Conditions this account agreed to at signup. Null for
     # accounts that predate this policy (the migration-seeded admin, and anyone who signed up
     # before it existed) — nothing truthful to backfill for those.

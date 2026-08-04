@@ -11,18 +11,50 @@ from app.settings_service import SettingsSnapshot, get_settings
 
 logger = logging.getLogger(__name__)
 
+# Kept in sync by hand with the tone/content of frontend/src/i18n/translations/{en,ro}.ts's
+# `landing` section — the one place in the app that already explains what the site is in a
+# sentence. Only "en"/"ro" exist here regardless of how many languages `supported_languages`
+# lists; _verification_email_copy falls back to "en" for anything else.
+_VERIFICATION_EMAIL_COPY: dict[str, dict[str, str]] = {
+    "en": {
+        "subject": "Verify your Cookbook account",
+        "body": (
+            "Hi {username},\n\n"
+            "Welcome to Cookbook — a cookbook that's actually yours. Every recipe here is cooked, "
+            "tested, and translated by real people: browse what's already shared, import your own "
+            "from a URL, or add one by hand. Recipes you add are private to you by default; you "
+            "can share one with the community whenever you choose.\n\n"
+            "Verify your email address by opening this link:\n\n{link}\n\n"
+            "If you didn't sign up for this, you can ignore this message."
+        ),
+    },
+    "ro": {
+        "subject": "Confirmă-ți contul Cookbook",
+        "body": (
+            "Salut, {username}!\n\n"
+            "Bine ai venit pe Cookbook — un caiet de rețete cu adevărat al tău. Fiecare rețetă de "
+            "aici e gătită, testată și tradusă de oameni reali: răsfoiește ce e deja partajat, "
+            "importă propriile rețete de pe un link sau adaugă-le manual. Rețetele adăugate de tine "
+            "sunt private în mod implicit; poți partaja oricând una cu comunitatea.\n\n"
+            "Confirmă-ți adresa de email deschizând acest link:\n\n{link}\n\n"
+            "Dacă nu tu ai creat acest cont, poți ignora acest mesaj."
+        ),
+    },
+}
+
+
+def _verification_email_copy(language: str) -> dict[str, str]:
+    return _VERIFICATION_EMAIL_COPY.get(language, _VERIFICATION_EMAIL_COPY["en"])
+
 
 def _send_verification_email(user: User, token: EmailVerificationToken, app_settings: SettingsSnapshot) -> None:
     link = f"{app_settings.public_site_url.rstrip('/')}/verify-email?token={token.token}"
+    copy = _verification_email_copy(user.language)
     message = EmailMessage()
-    message["Subject"] = "Verify your Cookbook account"
+    message["Subject"] = copy["subject"]
     message["From"] = app_settings.smtp_from_address
     message["To"] = user.email
-    message.set_content(
-        "Welcome to Cookbook!\n\n"
-        f"Verify your email address by opening this link:\n\n{link}\n\n"
-        "If you didn't sign up for this, you can ignore this message."
-    )
+    message.set_content(copy["body"].format(username=user.username, link=link))
     with smtplib.SMTP(app_settings.smtp_host, app_settings.smtp_port, timeout=15) as smtp:
         if app_settings.smtp_use_tls:
             smtp.starttls()
