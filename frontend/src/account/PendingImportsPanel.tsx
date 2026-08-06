@@ -5,7 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLanguage } from "../i18n/LanguageContext";
 import { secondaryButton } from "../ui/buttonStyles";
 import { hostnameOf } from "../ui/hostnameOf";
-import type { ImportJob, ImportJobStatus, Recipe } from "../types";
+import type { Category, ImportJob, ImportJobStatus, Recipe } from "../types";
 
 // Mirrors api's routers/imports.py _INSTAGRAM_HOSTS — used here only to decide whether to show
 // the play-button warning, not to detect the job type itself (that's already settled server-side
@@ -22,6 +22,10 @@ interface PendingImportsPanelProps {
   // Already fetched by AccountPage via listMySubmissions() — this component only filters it, it
   // doesn't fetch recipes itself.
   submissions: Recipe[];
+  // Already fetched by AccountPage too — used only to resolve a pending recipe's category_id to
+  // a display name for the "AI-selected category" label below, since the category the worker
+  // picked (see worker/app/handlers.py's _resolve_category_id) is otherwise just an opaque id.
+  categories: Category[];
   onAcknowledged: (recipe: Recipe) => void;
   // Called on every background poll while a job is still active (see the effect below) — a job
   // settling to "done" means a brand new recipe now exists, and this component has no other way
@@ -38,6 +42,7 @@ interface PendingImportsPanelProps {
 
 export function PendingImportsPanel({
   submissions,
+  categories,
   onAcknowledged,
   onImportsPolled,
   reloadTrigger,
@@ -46,6 +51,9 @@ export function PendingImportsPanel({
   const { user } = useAuth();
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [error, setError] = useState<string | null>(null);
+
+  const categoryName = (categoryId: number): string | null =>
+    categories.find((category) => category.id === categoryId)?.name ?? null;
 
   // GET /imports returns every user's jobs for an admin caller (needed for backoffice
   // moderation) — this is a personal review panel on the Account page, not a moderation tool, so
@@ -136,6 +144,14 @@ export function PendingImportsPanel({
                   </div>
                 )}
                 <p className="mt-2 text-sm font-medium text-ink">{recipe.title}</p>
+                {categoryName(recipe.category_id) && (
+                  <p className="mt-0.5 text-xs text-ink/50">
+                    {t.account.aiCategoryLabel.replace(
+                      "{category}",
+                      categoryName(recipe.category_id) ?? ""
+                    )}
+                  </p>
+                )}
                 {isInstagramImport(recipe) && (
                   <p className="mt-1 text-xs text-terracotta">
                     {t.account.instagramPlayButtonWarning}

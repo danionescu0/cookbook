@@ -233,10 +233,10 @@ export const api = {
   },
 
   listImportJobs: () => request<ImportJob[]>("/imports"),
-  createImportJob: (source: string, categoryId: number) =>
+  createImportJob: (source: string) =>
     request<ImportJob>("/imports", {
       method: "POST",
-      body: JSON.stringify({ source, category_id: categoryId }),
+      body: JSON.stringify({ source }),
     }),
   approveImportJob: (id: number) =>
     request<ImportJob>(`/imports/${id}/approve`, { method: "POST" }),

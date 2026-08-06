@@ -87,7 +87,11 @@ export type ImportErrorKind = "disallowed" | "technical";
 
 export interface ImportJob {
   id: number;
-  category_id: number;
+  // Null until the worker resolves it from Claude's own suggestion once extraction succeeds —
+  // the requester no longer picks a category up front (see the account page's
+  // PendingImportsPanel, which displays whatever Claude picked). Stays null forever for a job
+  // that never gets that far (e.g. a failed fetch).
+  category_id: number | null;
   type: "single" | "bulk" | "bookmark" | "instagram";
   source: string;
   status: ImportJobStatus;

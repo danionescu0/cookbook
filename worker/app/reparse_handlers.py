@@ -3,12 +3,13 @@ import logging
 from urllib.parse import urlparse
 
 import httpx
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.claude_client import RecipeExtractionError, extract_recipe, parse_recipe_from_text
 from app.handlers import _enqueue_nutrition_job
 from app.instagram_client import InstagramFetchError, fetch_instagram_post
-from app.models import Recipe, RecipeReparseJob, RecipeReparseJobStatus, RecipeTranslation
+from app.models import Category, Recipe, RecipeReparseJob, RecipeReparseJobStatus, RecipeTranslation
 from app.scraping import ScrapeDisallowedError, fetch_page
 from app.settings_service import get_settings
 from app.slugify import generate_unique_slug
@@ -80,6 +81,14 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
     db.commit()
 
     try:
+        # Extraction always asks Claude for a category suggestion too (see claude_client.py) —
+        # deliberately ignored here. A reparse re-scrapes an *existing* recipe whose category the
+        # owner/admin may have already corrected; silently overwriting it on every reparse would
+        # be a surprising side effect of what's meant to be a content-quality refresh, not a
+        # recategorization. Still needs a real category list to build the prompt, even though the
+        # result goes unused.
+        category_names = [c.name for c in db.scalars(select(Category).order_by(Category.id))]
+
         # Images are deliberately left untouched — only the text content (title, description,
         # ingredients, steps, tips) is re-extracted and updated. Re-fetching images would also
         # need to clean up the old files (see api/app/routers/images.py's delete_images, an
@@ -88,12 +97,18 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
             post = fetch_instagram_post(recipe.source_url, app_settings.scrape_timeout_seconds)
             source_text = post.text[: app_settings.max_html_chars]
             extracted = parse_recipe_from_text(
-                source_text, app_settings.supported_languages_list, app_settings.anthropic_api_key
+                source_text,
+                app_settings.supported_languages_list,
+                app_settings.anthropic_api_key,
+                category_names,
             )
         else:
             html = fetch_page(recipe.source_url, app_settings)
             extracted = extract_recipe(
-                html, app_settings.supported_languages_list, app_settings.anthropic_api_key
+                html,
+                app_settings.supported_languages_list,
+                app_settings.anthropic_api_key,
+                category_names,
             )
 
         translations_data = extracted.get("translations", [])

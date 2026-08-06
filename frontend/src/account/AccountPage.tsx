@@ -247,6 +247,7 @@ export function AccountPage() {
         </div>
         <PendingImportsPanel
           submissions={submissions}
+          categories={categories}
           onAcknowledged={handleAcknowledgeImport}
           onImportsPolled={reloadSubmissions}
           reloadTrigger={importTrigger}

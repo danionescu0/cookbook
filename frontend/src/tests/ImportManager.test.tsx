@@ -5,11 +5,10 @@ import { ImportManager } from "../backoffice/ImportManager";
 import { AuthProvider, AUTH_STORAGE_KEY } from "../auth/AuthContext";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
-import type { Category, ImportJob } from "../types";
+import type { ImportJob } from "../types";
 
 vi.mock("../api/client", () => ({
   api: {
-    listCategories: vi.fn(),
     listImportJobs: vi.fn(),
     createImportJob: vi.fn(),
     approveImportJob: vi.fn(),
@@ -23,11 +22,9 @@ vi.mock("../api/client", () => ({
 
 const mockedApi = vi.mocked(api);
 
-const desserts: Category = { id: 1, name: "Desserts", slug: "desserts" };
-
 const pendingJob: ImportJob = {
   id: 1,
-  category_id: 1,
+  category_id: null,
   type: "single",
   source: "https://example.com/recipe",
   status: "pending",
@@ -87,7 +84,6 @@ beforeEach(() => {
   vi.resetAllMocks();
   vi.useFakeTimers({ shouldAdvanceTime: true });
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
-  mockedApi.listCategories.mockResolvedValue([desserts]);
   mockedApi.listImportJobs.mockResolvedValue([pendingJob]);
   logInAsAdmin();
 });
@@ -115,7 +111,7 @@ describe("ImportManager", () => {
     expect(await screen.findByText("imported by admin")).toBeInTheDocument();
   });
 
-  it("submits a URL and category, creating a pending job", async () => {
+  it("submits a URL, creating a pending job", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     mockedApi.createImportJob.mockResolvedValue(pendingJob);
 
@@ -123,11 +119,10 @@ describe("ImportManager", () => {
     await screen.findByText("https://example.com/recipe");
 
     await user.type(screen.getByLabelText("Recipe URL"), "https://example.com/new");
-    await user.selectOptions(screen.getByLabelText("Category"), "Desserts");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() =>
-      expect(mockedApi.createImportJob).toHaveBeenCalledWith("https://example.com/new", 1)
+      expect(mockedApi.createImportJob).toHaveBeenCalledWith("https://example.com/new")
     );
   });
 
@@ -140,7 +135,6 @@ describe("ImportManager", () => {
     await screen.findByText("https://example.com/recipe");
 
     await user.type(screen.getByLabelText("Recipe URL"), "https://example.com/new");
-    await user.selectOptions(screen.getByLabelText("Category"), "Desserts");
     await user.click(screen.getByRole("button", { name: "Add" }));
 
     await waitFor(() => expect(onJobCreated).toHaveBeenCalledTimes(1));

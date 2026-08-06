@@ -7,14 +7,16 @@ from app.models.import_job import ImportErrorKind, ImportJobStatus, ImportJobTyp
 
 class ImportJobCreate(BaseModel):
     source: str
-    category_id: int
 
 
 class ImportJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
-    category_id: int
+    # Null until the worker resolves it from Claude's own suggestion once extraction succeeds —
+    # see worker/app/handlers.py's _resolve_category_id. Stays null forever for a job that never
+    # gets that far (e.g. a failed fetch).
+    category_id: int | None
     type: ImportJobType
     source: str
     status: ImportJobStatus

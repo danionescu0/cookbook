@@ -67,6 +67,18 @@ describe("FailedImportsManager", () => {
     expect(screen.getByText("Technical")).toBeInTheDocument();
   });
 
+  it("doesn't show a category badge when the job never reached category resolution", async () => {
+    // Most failed jobs never get that far — see worker/app/handlers.py's handle_import_job,
+    // where category resolution happens near the end of the try block, after fetch/extraction
+    // already succeeded.
+    mockedApi.listFailedImportsPage.mockResolvedValue(page([{ ...failedJob, category_id: null }]));
+
+    renderManager();
+
+    await screen.findByText("example.com");
+    expect(screen.queryByText("Desserts")).not.toBeInTheDocument();
+  });
+
   it("shows an empty state when there are no failed imports", async () => {
     mockedApi.listFailedImportsPage.mockResolvedValue(page([]));
 

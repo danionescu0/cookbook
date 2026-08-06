@@ -76,6 +76,7 @@ const en = {
     importedBadge: "Imported",
     pendingImportsHeading: "Recently imported",
     pendingImportsOk: "OK, got it",
+    aiCategoryLabel: "AI-selected category: {category}",
     instagramPlayButtonWarning:
       "The preview photo may still have Instagram's play button on it — use Edit to swap it for a manual screenshot if it bothers you.",
     editRecipeLink: "Edit",
@@ -222,8 +223,6 @@ const en = {
     heading: "Import from URL",
     inProgressHeading: "In progress",
     urlLabel: "Recipe URL",
-    categoryLabel: "Category",
-    categoryPlaceholder: "Select a category",
     add: "Add",
     runImport: "Run import",
     retry: "Retry",

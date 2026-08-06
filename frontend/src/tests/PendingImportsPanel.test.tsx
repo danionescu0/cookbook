@@ -6,7 +6,7 @@ import { PendingImportsPanel } from "../account/PendingImportsPanel";
 import { AuthProvider, AUTH_STORAGE_KEY } from "../auth/AuthContext";
 import { LanguageProvider } from "../i18n/LanguageContext";
 import { api } from "../api/client";
-import type { ImportJob, Recipe } from "../types";
+import type { Category, ImportJob, Recipe } from "../types";
 
 vi.mock("../api/client", () => ({
   api: {
@@ -44,6 +44,11 @@ const baseRecipe: Recipe = {
   import_reviewed_at: null,
 };
 
+const categories: Category[] = [
+  { id: 1, name: "Desserts", slug: "desserts" },
+  { id: 2, name: "Main course", slug: "main-course" },
+];
+
 const manualRecipe: Recipe = { ...baseRecipe, id: 2, source_url: null };
 const alreadyReviewedImport: Recipe = { ...baseRecipe, id: 3, import_reviewed_at: "2026-08-05T00:00:00Z" };
 const instagramImport: Recipe = { ...baseRecipe, id: 4, source_url: "https://www.instagram.com/p/xyz/" };
@@ -73,6 +78,7 @@ function renderPanel(
         <AuthProvider>
           <PendingImportsPanel
             submissions={submissions}
+            categories={categories}
             onAcknowledged={onAcknowledged}
             onImportsPolled={onImportsPolled}
           />
@@ -116,6 +122,12 @@ describe("PendingImportsPanel", () => {
 
     expect((await screen.findAllByText("Imported cake"))[0]).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Edit" })).toHaveAttribute("href", "/recipes/1/edit");
+  });
+
+  it("shows which category Claude picked for a pending import", async () => {
+    renderPanel([{ ...baseRecipe, category_id: 2 }]);
+
+    expect(await screen.findByText("AI-selected category: Main course")).toBeInTheDocument();
   });
 
   it("warns about Instagram's play button only for an Instagram import", async () => {

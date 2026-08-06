@@ -161,7 +161,7 @@ describe("AccountPage", () => {
     };
     mockedApi.createImportJob.mockResolvedValue({
       id: 99,
-      category_id: 1,
+      category_id: null,
       type: "single",
       source: "https://example.com/new",
       status: "queued",
@@ -181,7 +181,6 @@ describe("AccountPage", () => {
     const importForm = urlInput.closest("form")!;
 
     await user.type(urlInput, "https://example.com/new");
-    await user.selectOptions(within(importForm).getByLabelText("Category"), "Desserts");
     await user.click(within(importForm).getByRole("button", { name: "Add" }));
 
     expect((await screen.findAllByText("Rulada de dovlecei"))[0]).toBeInTheDocument();

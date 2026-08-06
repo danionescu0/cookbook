@@ -54,8 +54,13 @@ export function FailedImportsManager() {
     if (currentPage > totalPages) setCurrentPage(totalPages);
   }, [currentPage, totalPages]);
 
-  const categoryName = (categoryId: number) =>
-    categories.find((c) => c.id === categoryId)?.name ?? categoryId;
+  // Most failed jobs never reach category resolution at all (see worker/app/handlers.py's
+  // handle_import_job — it happens near the end of the try block, after fetch/extraction already
+  // succeeded), so category_id is null far more often than not here, unlike on a successful job.
+  const categoryName = (categoryId: number | null) =>
+    categoryId === null
+      ? null
+      : (categories.find((c) => c.id === categoryId)?.name ?? categoryId);
 
   const handleRetry = async (id: number) => {
     setError(null);
@@ -116,7 +121,9 @@ export function FailedImportsManager() {
                   >
                     {hostnameOf(job.source)}
                   </a>
-                  <span className="ml-2 text-sm text-ink/50">{categoryName(job.category_id)}</span>
+                  {categoryName(job.category_id) !== null && (
+                    <span className="ml-2 text-sm text-ink/50">{categoryName(job.category_id)}</span>
+                  )}
                   {job.created_by_username && (
                     <span className="ml-2 text-sm text-ink/50">
                       {t.importManager.importedBy.replace("{username}", job.created_by_username)}

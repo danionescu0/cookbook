@@ -80,6 +80,7 @@ const ro: Translation = {
     importedBadge: "Importată",
     pendingImportsHeading: "Importate recent",
     pendingImportsOk: "Am înțeles",
+    aiCategoryLabel: "Categorie aleasă de AI: {category}",
     instagramPlayButtonWarning:
       "Fotografia de previzualizare poate avea încă butonul de play al Instagram pe ea — folosește Editează pentru a o înlocui cu o captură de ecran făcută manual, dacă te deranjează.",
     editRecipeLink: "Editează",
@@ -226,8 +227,6 @@ const ro: Translation = {
     heading: "Importă din URL",
     inProgressHeading: "În desfășurare",
     urlLabel: "URL rețetă",
-    categoryLabel: "Categorie",
-    categoryPlaceholder: "Alege o categorie",
     add: "Adaugă",
     runImport: "Rulează importul",
     retry: "Reîncearcă",

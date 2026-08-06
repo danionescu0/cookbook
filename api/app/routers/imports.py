@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.auth import AuthUser, get_current_user, require_admin
 from app.database import get_db
-from app.models.category import Category
 from app.models.import_job import ImportErrorKind, ImportJob, ImportJobStatus, ImportJobType
 from app.models.recipe import Recipe
 from app.models.user import User
@@ -47,11 +46,6 @@ def _get_owned_or_404(db: Session, job_id: int, current_user: AuthUser) -> Impor
         # even exists.
         raise HTTPException(status_code=404, detail="Import job not found")
     return job
-
-
-def _ensure_category_exists(db: Session, category_id: int) -> None:
-    if db.get(Category, category_id) is None:
-        raise HTTPException(status_code=400, detail="Category does not exist")
 
 
 def _ensure_source_not_already_imported(db: Session, source: str, owner_id: int) -> None:
@@ -186,12 +180,13 @@ def create_import_job(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     _ensure_import_limit_not_reached(db, user)
-    _ensure_category_exists(db, payload.category_id)
     _ensure_source_not_already_imported(db, payload.source, current_user.id)
 
+    # category_id starts null — the worker resolves it from Claude's own suggestion once
+    # extraction succeeds (see worker/app/handlers.py's _resolve_category_id), rather than the
+    # requester picking one up front.
     job = ImportJob(
         source=payload.source,
-        category_id=payload.category_id,
         type=_detect_job_type(payload.source),
         created_by_user_id=current_user.id,
     )

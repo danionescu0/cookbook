@@ -41,6 +41,15 @@ _EXTRACT_RECIPE_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "category": {
+                "type": "string",
+                "description": (
+                    "The single best-matching category name, chosen from the exact list of "
+                    "existing category names given in the prompt. Always return one of those "
+                    "exact names verbatim, even if the match is only approximate — never invent "
+                    "a new one."
+                ),
+            },
             "images": {
                 "type": "array",
                 "items": {"type": "string"},
@@ -87,7 +96,7 @@ _EXTRACT_RECIPE_TOOL = {
                 },
             },
         },
-        "required": ["images", "translations"],
+        "required": ["category", "images", "translations"],
     },
 }
 
@@ -163,6 +172,15 @@ _PARSE_RECIPE_TEXT_TOOL = {
     "input_schema": {
         "type": "object",
         "properties": {
+            "category": {
+                "type": "string",
+                "description": (
+                    "The single best-matching category name, chosen from the exact list of "
+                    "existing category names given in the prompt. Always return one of those "
+                    "exact names verbatim, even if the match is only approximate — never invent "
+                    "a new one. Empty string if no recipe is present in the text at all."
+                ),
+            },
             "translations": {
                 "type": "array",
                 "description": (
@@ -204,7 +222,7 @@ _PARSE_RECIPE_TEXT_TOOL = {
                 },
             },
         },
-        "required": ["translations"],
+        "required": ["category", "translations"],
     },
 }
 
@@ -276,7 +294,19 @@ def _client(api_key: str) -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=api_key)
 
 
-def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
+def _category_instruction(category_names: list[str]) -> str:
+    # Categories are admin-created, free-text rows (see CategoryManager), not a fixed enum — so
+    # Claude is given the real, current list and told to pick from it verbatim, rather than the
+    # code trying to guess/maintain a mapping from Claude's own free-text label to a category id.
+    names_str = ", ".join(repr(name) for name in category_names)
+    return (
+        f"Also choose the single best-matching category for this recipe from this exact list of "
+        f"existing categories: {names_str}. Return one of those exact names verbatim in the "
+        f"`category` field, even if the match is only approximate."
+    )
+
+
+def extract_recipe(html: str, languages: list[str], api_key: str, category_names: list[str]) -> dict:
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
         model=EXTRACTION_MODEL,
@@ -291,7 +321,8 @@ def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
                     "Strip ads, navigation, comments, and any other boilerplate. Keep only the "
                     "recipe's own images, description, ingredients, steps, and tips. "
                     f"{_SECTION_HEADER_INSTRUCTION} Produce one translation for each of these "
-                    f"language codes: {languages_str}. Here is the page HTML:\n\n{html}"
+                    f"language codes: {languages_str}. {_category_instruction(category_names)} "
+                    f"Here is the page HTML:\n\n{html}"
                 ),
             }
         ],
@@ -332,7 +363,9 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
     raise IngredientParseError("Claude did not return parsed ingredients")
 
 
-def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dict:
+def parse_recipe_from_text(
+    text: str, languages: list[str], api_key: str, category_names: list[str]
+) -> dict:
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
         model=EXTRACTION_MODEL,
@@ -348,8 +381,9 @@ def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dic
                     "the caption, or split between the caption and a comment. Ignore unrelated "
                     "comments (praise, questions, hashtags, engagement bait, other users' posts). "
                     f"{_SECTION_HEADER_INSTRUCTION} Produce one translation for each of these "
-                    f"language codes: {languages_str}. If no recipe is present anywhere in the "
-                    f"text, return an empty translations array. Here is the post's text:\n\n{text}"
+                    f"language codes: {languages_str}. {_category_instruction(category_names)} "
+                    "If no recipe is present anywhere in the text, return an empty translations "
+                    f"array and an empty `category` string. Here is the post's text:\n\n{text}"
                 ),
             }
         ],

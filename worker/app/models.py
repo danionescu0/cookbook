@@ -7,6 +7,14 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
 
+class Category(Base):
+    __tablename__ = "categories"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(120), nullable=False)
+    slug: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+
+
 class ImportJobType(str, enum.Enum):
     SINGLE = "single"
     BULK = "bulk"
@@ -38,7 +46,7 @@ class ImportJob(Base):
     __tablename__ = "import_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    category_id: Mapped[int] = mapped_column(nullable=False)
+    category_id: Mapped[int | None] = mapped_column(nullable=True)
     type: Mapped[ImportJobType] = mapped_column(
         Enum(ImportJobType, native_enum=False), default=ImportJobType.SINGLE
     )

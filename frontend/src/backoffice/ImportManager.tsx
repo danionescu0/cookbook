@@ -4,7 +4,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useLanguage } from "../i18n/LanguageContext";
 import { dangerButton, primaryButton } from "../ui/buttonStyles";
 import { useConfirm } from "../ui/useConfirm";
-import type { Category, ImportJob, ImportJobStatus } from "../types";
+import type { ImportJob, ImportJobStatus } from "../types";
 
 const ACTIVE: ImportJobStatus[] = ["queued", "fetching", "processing"];
 
@@ -21,10 +21,8 @@ export function ImportManager({ onJobCreated }: ImportManagerProps) {
   const { t } = useLanguage();
   const { user } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
-  const [categories, setCategories] = useState<Category[]>([]);
   const [jobs, setJobs] = useState<ImportJob[]>([]);
   const [source, setSource] = useState("");
-  const [categoryId, setCategoryId] = useState<number | "">("");
   const [error, setError] = useState<string | null>(null);
   // Lifetime usage, not shown/enforced for admins — see app_settings.max_imports_per_user and
   // users.imported_recipes_count. null until the first fetch resolves.
@@ -44,7 +42,6 @@ export function ImportManager({ onJobCreated }: ImportManagerProps) {
   };
 
   useEffect(() => {
-    api.listCategories().then(setCategories).catch((e) => setError(String(e)));
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -59,10 +56,10 @@ export function ImportManager({ onJobCreated }: ImportManagerProps) {
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!source.trim() || categoryId === "" || atLimit) return;
+    if (!source.trim() || atLimit) return;
     setError(null);
     try {
-      await api.createImportJob(source.trim(), categoryId);
+      await api.createImportJob(source.trim());
       setSource("");
       await reload();
       onJobCreated?.();
@@ -128,25 +125,6 @@ export function ImportManager({ onJobCreated }: ImportManagerProps) {
             placeholder="https://example.com/some-recipe"
             className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
           />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <label htmlFor="import-category" className="text-sm font-medium text-ink/70">
-            {t.importManager.categoryLabel}
-          </label>
-          <select
-            id="import-category"
-            value={categoryId}
-            onChange={(e) => setCategoryId(e.target.value ? Number(e.target.value) : "")}
-            className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
-          >
-            <option value="">{t.importManager.categoryPlaceholder}</option>
-            {categories.map((category) => (
-              <option key={category.id} value={category.id}>
-                {category.name}
-              </option>
-            ))}
-          </select>
         </div>
 
         <button

@@ -41,7 +41,11 @@ class ImportJob(Base):
     __tablename__ = "import_jobs"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
+    # Null until the worker resolves it from Claude's own suggestion, once extraction succeeds —
+    # the requester no longer picks a category up front (see routers/imports.py's
+    # create_import_job and worker/app/handlers.py's _resolve_category_id). Stays null forever for
+    # a job that never reaches that point (e.g. a failed fetch).
+    category_id: Mapped[int | None] = mapped_column(ForeignKey("categories.id"), nullable=True)
     type: Mapped[ImportJobType] = mapped_column(
         Enum(ImportJobType, native_enum=False), default=ImportJobType.SINGLE
     )

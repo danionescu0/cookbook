@@ -16,7 +16,6 @@ def _create_category(client: TestClient, name: str = "Desserts") -> int:
 def test_create_import_job_stays_pending_and_does_not_publish(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
     published = []
     monkeypatch.setattr(
         imports_router,
@@ -24,14 +23,14 @@ def test_create_import_job_stays_pending_and_does_not_publish(
         lambda job_id, job_type, source: published.append((job_id, job_type, source)),
     )
 
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 201
     body = response.json()
     assert body["source"] == "https://example.com/recipe"
-    assert body["category_id"] == category_id
+    # Not picked by the requester any more — the worker resolves it from Claude's own
+    # suggestion once extraction succeeds (see worker/app/handlers.py's _resolve_category_id).
+    assert body["category_id"] is None
     assert body["type"] == "single"
     assert body["status"] == "pending"
     assert published == []  # not published until approved
@@ -51,20 +50,10 @@ def test_create_import_job_stays_pending_and_does_not_publish(
 def test_create_import_job_detects_instagram_urls(
     client: TestClient, source: str, expected_type: str
 ) -> None:
-    category_id = _create_category(client)
-
-    response = client.post("/imports", json={"source": source, "category_id": category_id})
+    response = client.post("/imports", json={"source": source})
 
     assert response.status_code == 201
     assert response.json()["type"] == expected_type
-
-
-def test_create_import_job_rejects_unknown_category(client: TestClient) -> None:
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": 999}
-    )
-
-    assert response.status_code == 400
 
 
 def test_create_import_job_rejects_url_already_imported_as_a_recipe(
@@ -78,22 +67,15 @@ def test_create_import_job_rejects_url_already_imported_as_a_recipe(
     db_session.add(recipe)
     db_session.commit()
 
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 409
 
 
 def test_create_import_job_rejects_url_already_in_the_queue(client: TestClient) -> None:
-    category_id = _create_category(client)
-    client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    client.post("/imports", json={"source": "https://example.com/recipe"})
 
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 409
 
@@ -101,15 +83,10 @@ def test_create_import_job_rejects_url_already_in_the_queue(client: TestClient) 
 def test_create_import_job_allows_resubmission_after_deleting_previous_job(
     client: TestClient,
 ) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
     client.delete(f"/imports/{created['id']}")
 
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 201
 
@@ -117,14 +94,11 @@ def test_create_import_job_allows_resubmission_after_deleting_previous_job(
 def test_create_import_job_rejects_when_lifetime_limit_reached(
     user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
 ) -> None:
-    category_id = _create_category(client)
     client.patch("/settings", json={"max_imports_per_user": 2})
     regular_user.imported_recipes_count = 2
     db_session.commit()
 
-    response = user_client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = user_client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 403
     assert "2/2" in response.json()["detail"]
@@ -133,14 +107,11 @@ def test_create_import_job_rejects_when_lifetime_limit_reached(
 def test_create_import_job_allows_up_to_but_not_over_the_limit(
     user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
 ) -> None:
-    category_id = _create_category(client)
     client.patch("/settings", json={"max_imports_per_user": 2})
     regular_user.imported_recipes_count = 1
     db_session.commit()
 
-    response = user_client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = user_client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 201
 
@@ -148,14 +119,11 @@ def test_create_import_job_allows_up_to_but_not_over_the_limit(
 def test_create_import_job_exempts_admins_from_the_limit(
     client: TestClient, db_session: Session, admin_user: User
 ) -> None:
-    category_id = _create_category(client)
     client.patch("/settings", json={"max_imports_per_user": 1})
     admin_user.imported_recipes_count = 50
     db_session.commit()
 
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 201
 
@@ -189,10 +157,7 @@ def test_import_limit_counter_is_unaffected_by_recipe_deletion(
 def test_approve_import_job_publishes_and_marks_queued(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
     published = []
     monkeypatch.setattr(
         imports_router,
@@ -211,10 +176,7 @@ def test_approve_import_job_publishes_and_marks_queued(
 def test_approve_import_job_marks_failed_when_publish_raises(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
 
     def _raise(job_id: int, job_type: str, source: str) -> None:
         raise RuntimeError("connection refused")
@@ -232,10 +194,7 @@ def test_approve_import_job_marks_failed_when_publish_raises(
 def test_approve_import_job_can_retry_a_failed_job(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
     monkeypatch.setattr(
         imports_router,
         "publish_import_job",
@@ -255,10 +214,7 @@ def test_approve_import_job_can_retry_a_failed_job(
 def test_approve_import_job_rejects_already_queued_job(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
     monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
     client.post(f"/imports/{created['id']}/approve")
 
@@ -274,10 +230,7 @@ def test_approve_import_job_not_found(client: TestClient) -> None:
 
 
 def test_delete_import_job(client: TestClient) -> None:
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
 
     delete_response = client.delete(f"/imports/{created['id']}")
     get_response = client.get(f"/imports/{created['id']}")
@@ -287,10 +240,8 @@ def test_delete_import_job(client: TestClient) -> None:
 
 
 def test_list_import_jobs(client: TestClient) -> None:
-    category_id = _create_category(client)
-
-    client.post("/imports", json={"source": "https://example.com/a", "category_id": category_id})
-    client.post("/imports", json={"source": "https://example.com/b", "category_id": category_id})
+    client.post("/imports", json={"source": "https://example.com/a"})
+    client.post("/imports", json={"source": "https://example.com/b"})
 
     response = client.get("/imports")
 
@@ -305,11 +256,7 @@ def test_get_import_job_not_found(client: TestClient) -> None:
 
 
 def test_create_import_job_shows_the_creators_username(client: TestClient) -> None:
-    category_id = _create_category(client)
-
-    response = client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.json()["created_by_username"] == "admin"
 
@@ -319,7 +266,6 @@ def test_non_admin_import_queues_and_publishes_immediately(
 ) -> None:
     # No public-exposure review is needed for a private import — unlike an admin's own job,
     # which stays "pending" until explicitly approved.
-    category_id = _create_category(client)
     published = []
     monkeypatch.setattr(
         imports_router,
@@ -327,9 +273,7 @@ def test_non_admin_import_queues_and_publishes_immediately(
         lambda job_id, job_type, source: published.append((job_id, job_type, source)),
     )
 
-    response = user_client.post(
-        "/imports", json={"source": "https://example.com/recipe", "category_id": category_id}
-    )
+    response = user_client.post("/imports", json={"source": "https://example.com/recipe"})
 
     assert response.status_code == 201
     body = response.json()
@@ -342,15 +286,10 @@ def test_two_different_users_can_import_the_same_url(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Imports are private per owner now, so this isn't a duplicate — each gets their own copy.
-    category_id = _create_category(client)
     monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
 
-    first = client.post(
-        "/imports", json={"source": "https://example.com/shared-recipe", "category_id": category_id}
-    )
-    second = user_client.post(
-        "/imports", json={"source": "https://example.com/shared-recipe", "category_id": category_id}
-    )
+    first = client.post("/imports", json={"source": "https://example.com/shared-recipe"})
+    second = user_client.post("/imports", json={"source": "https://example.com/shared-recipe"})
 
     assert first.status_code == 201
     assert second.status_code == 201
@@ -360,11 +299,8 @@ def test_two_different_users_can_import_the_same_url(
 def test_non_admin_only_sees_their_own_import_jobs(
     client: TestClient, user_client: TestClient
 ) -> None:
-    category_id = _create_category(client)
-    client.post("/imports", json={"source": "https://example.com/admins", "category_id": category_id})
-    mine = user_client.post(
-        "/imports", json={"source": "https://example.com/mine", "category_id": category_id}
-    ).json()
+    client.post("/imports", json={"source": "https://example.com/admins"})
+    mine = user_client.post("/imports", json={"source": "https://example.com/mine"}).json()
 
     response = user_client.get("/imports")
 
@@ -372,11 +308,8 @@ def test_non_admin_only_sees_their_own_import_jobs(
 
 
 def test_admin_sees_every_users_import_jobs(client: TestClient, user_client: TestClient) -> None:
-    category_id = _create_category(client)
-    client.post("/imports", json={"source": "https://example.com/admins", "category_id": category_id})
-    user_client.post(
-        "/imports", json={"source": "https://example.com/mine", "category_id": category_id}
-    )
+    client.post("/imports", json={"source": "https://example.com/admins"})
+    user_client.post("/imports", json={"source": "https://example.com/mine"})
 
     response = client.get("/imports")
 
@@ -386,10 +319,7 @@ def test_admin_sees_every_users_import_jobs(client: TestClient, user_client: Tes
 def test_non_admin_cannot_see_or_modify_someone_elses_import_job(
     client: TestClient, user_client: TestClient
 ) -> None:
-    category_id = _create_category(client)
-    admins_job = client.post(
-        "/imports", json={"source": "https://example.com/admins-only", "category_id": category_id}
-    ).json()
+    admins_job = client.post("/imports", json={"source": "https://example.com/admins-only"}).json()
 
     assert user_client.get(f"/imports/{admins_job['id']}").status_code == 404
     assert user_client.post(f"/imports/{admins_job['id']}/approve").status_code == 404
@@ -399,13 +329,10 @@ def test_non_admin_cannot_see_or_modify_someone_elses_import_job(
 def test_non_admin_can_retry_their_own_failed_job(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
     monkeypatch.setattr(
         imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
     )
-    created = user_client.post(
-        "/imports", json={"source": "https://example.com/retry-me", "category_id": category_id}
-    ).json()
+    created = user_client.post("/imports", json={"source": "https://example.com/retry-me"}).json()
     assert created["status"] == "failed"  # the immediate publish attempt failed
 
     monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
@@ -419,10 +346,7 @@ def test_admin_can_see_a_non_admins_import_job(
     client: TestClient, db_session: Session, regular_user: User
 ) -> None:
     # An admin isn't limited by the ownership check that applies to everyone else.
-    category_id = _create_category(client)
-    job = ImportJob(
-        source="https://example.com/x", category_id=category_id, created_by_user_id=regular_user.id
-    )
+    job = ImportJob(source="https://example.com/x", created_by_user_id=regular_user.id)
     db_session.add(job)
     db_session.commit()
     db_session.refresh(job)
@@ -432,20 +356,17 @@ def test_admin_can_see_a_non_admins_import_job(
     assert response.status_code == 200
 
 
-def _fail_a_job(client: TestClient, monkeypatch: pytest.MonkeyPatch, category_id: int) -> dict:
+def _fail_a_job(client: TestClient, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(
         imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
     )
-    return client.post(
-        "/imports", json={"source": "https://example.com/fails", "category_id": category_id}
-    ).json()
+    return client.post("/imports", json={"source": "https://example.com/fails"}).json()
 
 
 def test_dismiss_failed_import_job(
     user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
     assert failed["status"] == "failed"
 
     response = user_client.post(f"/imports/{failed['id']}/dismiss")
@@ -455,10 +376,7 @@ def test_dismiss_failed_import_job(
 
 
 def test_dismiss_rejects_a_job_that_has_not_failed(client: TestClient) -> None:
-    category_id = _create_category(client)
-    pending = client.post(
-        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
-    ).json()
+    pending = client.post("/imports", json={"source": "https://example.com/still-pending"}).json()
     assert pending["status"] == "pending"
 
     response = client.post(f"/imports/{pending['id']}/dismiss")
@@ -471,10 +389,7 @@ def test_non_owner_non_admin_cannot_dismiss(
 ) -> None:
     # An admin's own job doesn't auto-publish on creation (see create_import_job), so it has to
     # fail via approve/retry instead of _fail_a_job's create-time failure.
-    category_id = _create_category(client)
-    created = client.post(
-        "/imports", json={"source": "https://example.com/admins-failure", "category_id": category_id}
-    ).json()
+    created = client.post("/imports", json={"source": "https://example.com/admins-failure"}).json()
     monkeypatch.setattr(
         imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
     )
@@ -490,8 +405,7 @@ def test_non_owner_non_admin_cannot_dismiss(
 def test_admin_dismissing_does_not_require_ownership(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
 
     response = client.post(f"/imports/{failed['id']}/dismiss")
 
@@ -501,8 +415,7 @@ def test_admin_dismissing_does_not_require_ownership(
 def test_non_admin_never_sees_the_raw_error_only_error_kind(
     user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
 
     assert failed["error"] is None
     assert failed["error_kind"] == "technical"
@@ -515,8 +428,7 @@ def test_non_admin_never_sees_the_raw_error_only_error_kind(
 def test_admin_sees_the_raw_error(
     user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
 
     response = client.get(f"/imports/{failed['id']}")
 
@@ -525,9 +437,8 @@ def test_admin_sees_the_raw_error(
 
 
 def test_list_import_jobs_paginates_when_limit_is_given(client: TestClient) -> None:
-    category_id = _create_category(client)
     for i in range(3):
-        client.post("/imports", json={"source": f"https://example.com/{i}", "category_id": category_id})
+        client.post("/imports", json={"source": f"https://example.com/{i}"})
 
     response = client.get("/imports", params={"limit": 2, "offset": 0})
 
@@ -540,9 +451,8 @@ def test_list_import_jobs_paginates_when_limit_is_given(client: TestClient) -> N
 
 
 def test_list_import_jobs_without_limit_returns_everything_unheadered(client: TestClient) -> None:
-    category_id = _create_category(client)
     for i in range(3):
-        client.post("/imports", json={"source": f"https://example.com/{i}", "category_id": category_id})
+        client.post("/imports", json={"source": f"https://example.com/{i}"})
 
     response = client.get("/imports")
 
@@ -553,11 +463,8 @@ def test_list_import_jobs_without_limit_returns_everything_unheadered(client: Te
 def test_list_import_jobs_filters_by_status(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
-    client.post(
-        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
-    )
+    failed = _fail_a_job(user_client, monkeypatch)
+    client.post("/imports", json={"source": "https://example.com/still-pending"})
 
     response = client.get("/imports", params={"status": "failed", "limit": 10, "offset": 0})
 
@@ -568,8 +475,7 @@ def test_list_import_jobs_filters_by_status(
 def test_mark_reviewed_requires_admin(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
 
     response = user_client.post(f"/imports/{failed['id']}/mark-reviewed")
 
@@ -579,8 +485,7 @@ def test_mark_reviewed_requires_admin(
 def test_mark_reviewed_sets_the_timestamp_and_does_not_touch_dismissed_at(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
 
     response = client.post(f"/imports/{failed['id']}/mark-reviewed")
 
@@ -591,10 +496,7 @@ def test_mark_reviewed_sets_the_timestamp_and_does_not_touch_dismissed_at(
 
 
 def test_mark_reviewed_rejects_a_job_that_has_not_failed(client: TestClient) -> None:
-    category_id = _create_category(client)
-    pending = client.post(
-        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
-    ).json()
+    pending = client.post("/imports", json={"source": "https://example.com/still-pending"}).json()
 
     response = client.post(f"/imports/{pending['id']}/mark-reviewed")
 
@@ -604,8 +506,7 @@ def test_mark_reviewed_rejects_a_job_that_has_not_failed(client: TestClient) -> 
 def test_owner_dismissing_does_not_affect_admin_reviewed_at(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    failed = _fail_a_job(user_client, monkeypatch)
     client.post(f"/imports/{failed['id']}/mark-reviewed")
 
     response = user_client.post(f"/imports/{failed['id']}/dismiss")
@@ -620,14 +521,13 @@ def test_owner_dismissing_does_not_affect_admin_reviewed_at(
 def test_list_import_jobs_filters_by_admin_reviewed(
     client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    category_id = _create_category(client)
-    reviewed = _fail_a_job(user_client, monkeypatch, category_id)
+    reviewed = _fail_a_job(user_client, monkeypatch)
     client.post(f"/imports/{reviewed['id']}/mark-reviewed")
     monkeypatch.setattr(
         imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
     )
     unreviewed = user_client.post(
-        "/imports", json={"source": "https://example.com/still-unreviewed", "category_id": category_id}
+        "/imports", json={"source": "https://example.com/still-unreviewed"}
     ).json()
 
     response = client.get(

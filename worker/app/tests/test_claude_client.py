@@ -52,7 +52,9 @@ def test_extract_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> N
     )
     monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
-    result = claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
+    result = claude_client.extract_recipe(
+        "<html></html>", ["ro", "en"], "test-key", ["Desserts", "Main"]
+    )
 
     assert result == expected
 
@@ -62,7 +64,7 @@ def test_extract_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.Monkey
     monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
-        claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
+        claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key", ["Desserts"])
 
 
 def test_extract_recipe_uses_the_given_api_key(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,7 +78,7 @@ def test_extract_recipe_uses_the_given_api_key(monkeypatch: pytest.MonkeyPatch) 
         lambda api_key: received_keys.append(api_key) or FakeClient(fake_response),
     )
 
-    claude_client.extract_recipe("<html></html>", ["ro"], "sk-ant-live-key")
+    claude_client.extract_recipe("<html></html>", ["ro"], "sk-ant-live-key", ["Desserts"])
 
     assert received_keys == ["sk-ant-live-key"]
 
@@ -131,7 +133,9 @@ def test_parse_recipe_from_text_returns_tool_input(monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
-    result = claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key")
+    result = claude_client.parse_recipe_from_text(
+        "caption text here", ["ro"], "test-key", ["Desserts"]
+    )
 
     assert result == expected
 
@@ -143,7 +147,7 @@ def test_parse_recipe_from_text_raises_when_no_tool_use_block(
     monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
-        claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key")
+        claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key", ["Desserts"])
 
 
 def test_translate_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,7 +209,7 @@ def test_extract_recipe_uses_extraction_model(monkeypatch: pytest.MonkeyPatch) -
     fake_client = RecordingFakeClient(fake_response)
     monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
 
-    claude_client.extract_recipe("<html></html>", ["ro"], "test-key")
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts"])
 
     assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
 
@@ -229,7 +233,7 @@ def test_parse_recipe_from_text_uses_extraction_model(monkeypatch: pytest.Monkey
     fake_client = RecordingFakeClient(fake_response)
     monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
 
-    claude_client.parse_recipe_from_text("caption text", ["ro"], "test-key")
+    claude_client.parse_recipe_from_text("caption text", ["ro"], "test-key", ["Desserts"])
 
     assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
 
@@ -256,7 +260,7 @@ def test_extract_recipe_uses_a_high_enough_max_tokens_for_a_long_multilingual_re
     fake_client = RecordingFakeClient(fake_response)
     monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
 
-    claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
+    claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key", ["Desserts"])
 
     assert fake_client.messages.received_kwargs["max_tokens"] >= 8192
 
@@ -270,9 +274,45 @@ def test_parse_recipe_from_text_uses_a_high_enough_max_tokens(
     fake_client = RecordingFakeClient(fake_response)
     monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
 
-    claude_client.parse_recipe_from_text("caption text", ["ro", "en"], "test-key")
+    claude_client.parse_recipe_from_text("caption text", ["ro", "en"], "test-key", ["Desserts"])
 
     assert fake_client.messages.received_kwargs["max_tokens"] >= 8192
+
+
+# Categories are admin-created, free-text rows (not a fixed enum) — Claude has to be given the
+# real, current list per call so it can pick from it verbatim (see claude_client.py's
+# _category_instruction and worker/app/handlers.py's _resolve_category_id, which resolves
+# whatever name comes back to a real category_id).
+def test_extract_recipe_includes_the_category_list_in_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts", "Main course"])
+
+    prompt = fake_client.messages.received_kwargs["messages"][0]["content"]
+    assert "Desserts" in prompt
+    assert "Main course" in prompt
+
+
+def test_parse_recipe_from_text_includes_the_category_list_in_the_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.parse_recipe_from_text(
+        "caption text", ["ro"], "test-key", ["Desserts", "Main course"]
+    )
+
+    prompt = fake_client.messages.received_kwargs["messages"][0]["content"]
+    assert "Desserts" in prompt
+    assert "Main course" in prompt
 
 
 def test_translate_recipe_uses_a_high_enough_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
