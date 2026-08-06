@@ -94,21 +94,10 @@ _EXTRACT_RECIPE_TOOL = {
 
 _PARSE_INGREDIENTS_TOOL = {
     "name": "parsed_ingredients",
-    "description": (
-        "Structured, nutrition-lookup-ready breakdown of a recipe's ingredient list, plus an "
-        "estimate of how many people the recipe serves."
-    ),
+    "description": ("Structured, nutrition-lookup-ready breakdown of a recipe's ingredient list."),
     "input_schema": {
         "type": "object",
         "properties": {
-            "estimated_servings": {
-                "type": "integer",
-                "description": (
-                    "Best estimate of how many people this recipe serves, based on the "
-                    "ingredient quantities (any explicit serving count in the recipe wins if "
-                    "one was given)."
-                ),
-            },
             "items": {
                 "type": "array",
                 "description": (
@@ -159,7 +148,7 @@ _PARSE_INGREDIENTS_TOOL = {
                 },
             },
         },
-        "required": ["estimated_servings", "items"],
+        "required": ["items"],
     },
 }
 
@@ -328,10 +317,9 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
                 "content": (
                     "Parse this recipe's ingredient list for a nutrition-database lookup. For "
                     "each line, give the generic food name, its quantity and unit, and your own "
-                    "best-guess total weight in grams. Also estimate how many people the whole "
-                    f"recipe serves. Lines starting with {SECTION_HEADER_PREFIX!r} are sub-group "
-                    f"labels, not ingredients — skip them, don't return an item for them.\n\n"
-                    f"{numbered}"
+                    f"best-guess total weight in grams. Lines starting with {SECTION_HEADER_PREFIX!r} "
+                    "are sub-group labels, not ingredients — skip them, don't return an item for "
+                    f"them.\n\n{numbered}"
                 ),
             }
         ],

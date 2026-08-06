@@ -227,6 +227,9 @@ export interface Nutrition {
   status: NutritionStatus;
   error: string | null;
   estimated_servings: number | null;
+  // Sum of every per_ingredient estimated_grams — the finished dish's total weight, and what
+  // estimated_servings is actually derived from.
+  total_grams: number | null;
   totals: NutritionTotals | null;
   per_serving: NutritionTotals | null;
   per_ingredient: NutritionIngredient[];

@@ -103,6 +103,7 @@ def test_get_nutrition_computes_totals_from_links(
     assert body["totals"]["calories"] == pytest.approx(167.8, abs=0.05)
     # 0.1*1.10 (onion) + 100*0.14 (oil) = 0.11 + 14.0 = 14.11
     assert body["totals"]["fat_g"] == pytest.approx(14.1, abs=0.05)
+    assert body["total_grams"] == 124.0  # 110 (onion) + 14 (oil)
     assert body["per_serving"] is None  # no estimated_servings set
     assert body["per_ingredient"] == [
         {"index": 0, "estimated_grams": 110.0, "grams_source": "api_lookup"},

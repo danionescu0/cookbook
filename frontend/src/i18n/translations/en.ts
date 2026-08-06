@@ -320,6 +320,7 @@ const en = {
     sugars: "Sugars",
     fat: "Fat",
     servesEstimate: "Serves ~{count}",
+    totalWeight: "~{amount} total",
     perServing: "Per serving",
     wholeRecipe: "Whole recipe",
     estimateNote: "estimated from ingredient quantities",

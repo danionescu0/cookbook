@@ -99,7 +99,6 @@ def _lookup_item(**overrides: object) -> dict:
 
 
 _ONE_ITEM_PARSE = {
-    "estimated_servings": 4,
     "items": [
         {
             "line_index": 0,
@@ -140,7 +139,6 @@ def test_handle_nutrition_job_rounds_decimal_quantity_before_the_grams_lookup(
     recipe = _create_recipe(db_session, ["5.5 medium tomato"])
     job = _create_job(db_session, recipe.id)
     parse_result = {
-        "estimated_servings": 4,
         "items": [
             {
                 "line_index": 0,
@@ -178,9 +176,9 @@ def test_handle_nutrition_job_rounds_decimal_quantity_before_the_grams_lookup(
 @pytest.mark.parametrize(
     ("api_grams", "claude_grams", "expect_api"),
     [
-        (55000.0, 250.0, False),  # "250 ml vegetable broth" bug: unit not recognized, API
-        # silently applies a 220g/cup default x quantity instead of erroring — 220x claude's guess
-        (700.0, 50.0, False),  # "50 ml oil" bug: 14g/tbsp default x 50 = 700g, 14x claude's guess
+        (55000.0, 250.0, False),  # a hypothetical bad-unit bug not yet in _UNRELIABLE_UNITS —
+        # the ratio check is the safety net for units that haven't been confirmed/denylisted yet
+        (700.0, 50.0, False),  # same idea, a different order-of-magnitude divergence
         (110.0, 90.0, True),  # a genuine, modest API correction — must not be discarded
         (2000.0, 250.0, True),  # exactly at the boundary (8x) is still trusted (inclusive)
         (2000.1, 250.0, False),  # just past the boundary is discarded
@@ -189,10 +187,12 @@ def test_handle_nutrition_job_rounds_decimal_quantity_before_the_grams_lookup(
 def test_resolve_grams_discards_implausible_api_values(
     api_grams: float, claude_grams: float, expect_api: bool, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Unit deliberately not in _UNRELIABLE_UNITS — this test is only exercising the ratio
+    # threshold; the denylist itself (ml/gr/liters) has its own tests below.
     item = {
         "food_name": "vegetable broth",
         "quantity": 250,
-        "unit": "ml",
+        "unit": "medium",
         "estimated_grams": claude_grams,
     }
     monkeypatch.setattr(
@@ -209,6 +209,72 @@ def test_resolve_grams_discards_implausible_api_values(
         assert source == "claude_estimate"
 
 
+@pytest.mark.parametrize("unit", ["ml", "mL", "gr", "l", "liter", "liters", "litre", "litres"])
+def test_resolve_grams_skips_the_api_entirely_for_confirmed_unreliable_units(
+    unit: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Regression test for the recipe-45 bug report: "3 liters water" resolved to 711g (CalorieNinjas
+    # doesn't recognize "liters", so it silently substitutes ~237g — one cup — per unit instead of
+    # erroring: 3 x 237 = 711) instead of the correct ~2650g. Rather than rely on the ratio check
+    # (711 vs Claude's 2650 is only ~3.7x, under the 8x threshold — it slipped through), these units
+    # skip the API call entirely once confirmed unreliable, same as the already-known "ml"/"gr" bug.
+    def _fail_if_called(query: str, key: str) -> dict:
+        raise AssertionError(f"should not query CalorieNinjas for an unreliable unit, got {query!r}")
+
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", _fail_if_called)
+    item = {"food_name": "water", "quantity": 2.65, "unit": unit, "estimated_grams": 2650}
+
+    grams, source = nutrition_handlers._resolve_grams(item, "test-key")
+
+    assert grams == 2650.0
+    assert source == "claude_estimate"
+
+
+def test_estimated_servings_is_computed_from_total_resolved_grams(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No longer a separate Claude guess — see handle_nutrition_job's own comment for the sourcing
+    # behind STANDARD_PORTION_GRAMS. 950g total / 475g = exactly 2.
+    recipe = _create_recipe(db_session, ["1 medium onion", "1 large potato"])
+    job = _create_job(db_session, recipe.id)
+    parse_result = {
+        "items": [
+            {"line_index": 0, "food_name": "onion", "quantity": 1, "unit": "medium", "estimated_grams": 450},
+            {"line_index": 1, "food_name": "potato", "quantity": 1, "unit": "large", "estimated_grams": 500},
+        ]
+    }
+    monkeypatch.setattr(
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+    )
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
+
+    handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    db_session.refresh(recipe)
+    assert recipe.estimated_servings == 2
+
+
+def test_estimated_servings_is_never_zero_for_a_small_recipe(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    recipe = _create_recipe(db_session, ["1 pinch salt"])
+    job = _create_job(db_session, recipe.id)
+    parse_result = {
+        "items": [
+            {"line_index": 0, "food_name": "salt", "quantity": 1, "unit": "pinch", "estimated_grams": 1}
+        ]
+    }
+    monkeypatch.setattr(
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+    )
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
+
+    handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    db_session.refresh(recipe)
+    assert recipe.estimated_servings == 1
+
+
 def test_handle_nutrition_job_discards_implausible_ml_grams_and_uses_claude_estimate(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -219,7 +285,6 @@ def test_handle_nutrition_job_discards_implausible_ml_grams_and_uses_claude_esti
     recipe = _create_recipe(db_session, ["250 ml supă de legume"])
     job = _create_job(db_session, recipe.id)
     parse_result = {
-        "estimated_servings": 2,
         "items": [
             {
                 "line_index": 0,
@@ -276,7 +341,10 @@ def test_handle_nutrition_job_success_creates_ingredient_and_link(
     assert job.error is None
 
     db_session.refresh(recipe)
-    assert recipe.estimated_servings == 4
+    # Computed from total resolved grams (110g here) / STANDARD_PORTION_GRAMS, floored at 1 —
+    # not a separate Claude guess anymore, see test_estimated_servings_is_computed_from_total_grams
+    # below for the actual computation's own coverage.
+    assert recipe.estimated_servings == 1
 
     ingredient = db_session.scalars(select(Ingredient)).one()
     assert ingredient.name == "onion"
@@ -301,7 +369,6 @@ def test_handle_nutrition_job_skips_a_section_header_line_even_if_claude_returns
     # app.recipe_sections.is_section_header, checked directly against the stored line text rather
     # than trusted on Claude's say-so.
     parsed = {
-        "estimated_servings": 4,
         "items": [
             {
                 "line_index": 0,
@@ -398,7 +465,6 @@ def test_handle_nutrition_job_skips_one_bad_item_without_failing_the_rest(
     # skipped rather than failing the whole job, same "skip, don't fail the batch" pattern as
     # images.process_images.
     malformed_parse = {
-        "estimated_servings": 2,
         "items": [
             {
                 "line_index": 0,
@@ -447,7 +513,7 @@ def test_handle_nutrition_job_fails_when_claude_returns_no_items(
     monkeypatch.setattr(
         nutrition_handlers,
         "parse_ingredients_for_nutrition",
-        lambda lines, key: {"estimated_servings": 1, "items": []},
+        lambda lines, key: {"items": []},
     )
 
     handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)

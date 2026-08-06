@@ -12,6 +12,9 @@ from app.settings_service import SettingsSnapshot, get_settings
 
 logger = logging.getLogger(__name__)
 
+# See the comment where this is used, in handle_nutrition_job, for the sourcing.
+STANDARD_PORTION_GRAMS = 475
+
 
 def _get_ingredient_lines(recipe: Recipe, default_language: str) -> list[str]:
     # Any translation works for parsing — Claude normalizes the food name to English regardless
@@ -70,14 +73,27 @@ def _quantity_for_query(quantity: object) -> str:
 
 
 # CalorieNinjas' NLP has another confirmed bug, worse than the decimal-quantity one above: when it
-# doesn't recognize the unit word at all (confirmed for "ml" and the "gr" abbreviation, and there's
-# no way to enumerate every unit word Claude might emit across recipe languages), it silently falls
-# back to treating the quantity as a count of that food's default "cup" serving instead of raising
-# an error — e.g. "250 ml vegetable broth" returns serving_size_g=55000 (250 x the 220g/cup default
-# for vegetable broth), not an error we could detect and handle. A genuine API correction of
-# Claude's own estimate is normally within a small factor (portion data correcting a rough guess);
-# an order-of-magnitude-plus divergence is this bug, not a correction, so it's discarded in favor
-# of Claude's estimate rather than trusted.
+# doesn't recognize the unit word at all, it silently falls back to treating the quantity as a
+# count of that food's default "cup" serving instead of raising an error — e.g. "250 ml vegetable
+# broth" returns serving_size_g=55000 (250 x the 220g/cup default for vegetable broth), not an
+# error we could detect and handle. Confirmed for "ml", the "gr" abbreviation, and — found while
+# investigating why a soup's water line came back as 711g instead of ~2650g for "3 liters water"
+# (711 / 3 ≈ 237g, almost exactly one cup) — "liter(s)"/"litre(s)"/"l" too. There's no way to
+# enumerate every unit word Claude might emit across recipe languages, so this is a denylist of
+# specifically confirmed offenders, not a general fix: for these, skip the CalorieNinjas
+# refinement entirely and trust Claude's own estimate, since a divergence here isn't a real
+# correction (see README Design Decisions, "Ingredient nutrition").
+_UNRELIABLE_UNITS = {
+    "ml", "milliliter", "milliliters", "millilitre", "millilitres",
+    "gr",
+    "l", "liter", "liters", "litre", "litres",
+}
+
+# A genuine API correction of Claude's own estimate is normally within a small factor (portion
+# data correcting a rough guess); an order-of-magnitude-plus divergence is the same class of bug
+# as _UNRELIABLE_UNITS above (an unrecognized query silently falling back to a "cup" default) for
+# a unit word not yet confirmed/denylisted, so it's discarded in favor of Claude's estimate rather
+# than trusted.
 _IMPLAUSIBLE_GRAMS_RATIO = 8.0
 
 
@@ -89,7 +105,7 @@ def _resolve_grams(item: dict, api_key: str) -> tuple[float, str]:
     food_name = str(item.get("food_name") or "")
     query = " ".join(part for part in (quantity_str, unit, food_name) if part)
 
-    if api_key and query:
+    if api_key and query and unit.lower() not in _UNRELIABLE_UNITS:
         try:
             # A second, line-specific lookup: the exact quantity phrase (e.g. "1 medium onion")
             # resolves its own serving_size_g, which is a real-world weight rather than an LLM
@@ -142,13 +158,10 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
         if not items:
             raise IngredientParseError("Claude returned no parsed ingredients")
 
-        estimated_servings = parsed.get("estimated_servings")
-        if estimated_servings:
-            recipe.estimated_servings = int(estimated_servings)
-
         # Replace any links from a previous run rather than accumulating stale rows.
         db.execute(delete(RecipeIngredientLink).where(RecipeIngredientLink.recipe_id == recipe.id))
 
+        total_grams = 0.0
         for item in items:
             try:
                 line_index = int(item["line_index"])
@@ -178,6 +191,7 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
                         grams_source=grams_source,
                     )
                 )
+                total_grams += grams
             except Exception:
                 # One bad ingredient line shouldn't sink the whole recipe's nutrition data — same
                 # "skip, don't fail the batch" pattern as images.process_images.
@@ -186,6 +200,20 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
                     exc_info=True,
                 )
                 continue
+
+        # Servings used to be a separate Claude guess, disconnected from the actual ingredient
+        # weights — it visibly broke on recipes with a large stated liquid volume (a soup using
+        # 2.5-2.8L of water guessed at 4 servings, implying a ~1kg bowl). Computed instead, from
+        # the finished dish's total weight divided by a single, source-backed average portion:
+        # 475g, the midpoint of the ~400-550g a full one-adult main-course portion weighs
+        # (https://www.foodspring.co.uk/magazine/serving-size), cross-checked against the ~450-900g
+        # (1-2 lb) typical whole-meal-including-beverage figure reported at
+        # https://www.thedonutwhole.com/how-many-pounds-is-the-average-meal/. Deliberately one
+        # constant applied to every recipe rather than a per-category table (e.g. FDA's 245g
+        # soup RACC): this app's categories are free-text, admin-created strings, not a fixed enum
+        # that could be reliably mapped to a food-labeling category.
+        if total_grams > 0:
+            recipe.estimated_servings = max(1, round(total_grams / STANDARD_PORTION_GRAMS))
 
         job.status = NutritionJobStatus.DONE
         db.commit()

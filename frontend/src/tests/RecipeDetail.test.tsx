@@ -57,6 +57,7 @@ beforeEach(() => {
     status: "not_enriched",
     error: null,
     estimated_servings: null,
+    total_grams: null,
     totals: null,
     per_serving: null,
     per_ingredient: [],

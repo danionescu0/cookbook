@@ -325,6 +325,7 @@ const ro: Translation = {
     sugars: "Zaharuri",
     fat: "Grăsimi",
     servesEstimate: "Porții: ~{count}",
+    totalWeight: "~{amount} total",
     perServing: "Per porție",
     wholeRecipe: "Rețeta întreagă",
     estimateNote: "estimat din cantitățile de ingrediente",

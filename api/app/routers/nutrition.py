@@ -38,7 +38,7 @@ def _compute_summary(db: Session, recipe: Recipe) -> NutritionRead:
     # re-run is in progress or failed — a background re-enrichment attempt shouldn't make
     # previously-good nutrition data disappear from the front office while it runs.
     if links:
-        calories = protein_g = carbs_g = sugars_g = fat_g = 0.0
+        calories = protein_g = carbs_g = sugars_g = fat_g = total_grams = 0.0
         per_ingredient: list[NutritionIngredient] = []
         for link in links:
             factor = link.estimated_grams / 100
@@ -48,6 +48,7 @@ def _compute_summary(db: Session, recipe: Recipe) -> NutritionRead:
             carbs_g += ingredient.carbs_per_100g * factor
             sugars_g += ingredient.sugars_per_100g * factor
             fat_g += ingredient.fat_per_100g * factor
+            total_grams += link.estimated_grams
             per_ingredient.append(
                 NutritionIngredient(
                     index=link.ingredient_index,
@@ -84,6 +85,7 @@ def _compute_summary(db: Session, recipe: Recipe) -> NutritionRead:
         return NutritionRead(
             status=status,
             estimated_servings=recipe.estimated_servings,
+            total_grams=round(total_grams, 1),
             totals=totals,
             per_serving=per_serving,
             per_ingredient=per_ingredient,

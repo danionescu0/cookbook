@@ -3,6 +3,7 @@ import {
   DropletIcon,
   DrumstickIcon,
   FlameIcon,
+  ScaleIcon,
   ServingsIcon,
   SugarCubesIcon,
   WheatIcon,
@@ -11,6 +12,12 @@ import type { Nutrition } from "../types";
 
 interface NutritionPanelProps {
   nutrition: Nutrition;
+}
+
+// "g" isn't meaningfully more readable than "kg" for a several-kilogram pot of soup — same
+// threshold a kitchen scale's own display would switch at.
+function formatWeight(grams: number): string {
+  return grams >= 1000 ? `${(grams / 1000).toFixed(1)} kg` : `${Math.round(grams)} g`;
 }
 
 export function NutritionPanel({ nutrition }: NutritionPanelProps) {
@@ -42,12 +49,20 @@ export function NutritionPanel({ nutrition }: NutritionPanelProps) {
         <h2 id="nutrition-heading" className="font-serif text-xl font-semibold text-ink">
           {t.nutrition.heading}
         </h2>
-        {nutrition.estimated_servings && (
-          <span className="flex items-center gap-1.5 rounded-full bg-olive-light px-3 py-1 text-sm text-ink/80">
-            <ServingsIcon className="h-4 w-4 text-olive" />
-            {t.nutrition.servesEstimate.replace("{count}", String(nutrition.estimated_servings))}
-          </span>
-        )}
+        <div className="flex flex-wrap items-center gap-2">
+          {nutrition.estimated_servings && (
+            <span className="flex items-center gap-1.5 rounded-full bg-olive-light px-3 py-1 text-sm text-ink/80">
+              <ServingsIcon className="h-4 w-4 text-olive" />
+              {t.nutrition.servesEstimate.replace("{count}", String(nutrition.estimated_servings))}
+            </span>
+          )}
+          {nutrition.total_grams && (
+            <span className="flex items-center gap-1.5 rounded-full bg-olive-light px-3 py-1 text-sm text-ink/80">
+              <ScaleIcon className="h-4 w-4 text-olive" />
+              {t.nutrition.totalWeight.replace("{amount}", formatWeight(nutrition.total_grams))}
+            </span>
+          )}
+        </div>
       </div>
 
       <p className="mt-1 text-xs text-ink/50">

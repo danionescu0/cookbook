@@ -85,7 +85,6 @@ def test_parse_ingredients_for_nutrition_returns_tool_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     expected = {
-        "estimated_servings": 4,
         "items": [
             {
                 "line_index": 0,

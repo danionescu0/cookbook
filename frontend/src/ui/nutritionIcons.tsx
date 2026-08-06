@@ -58,6 +58,18 @@ export function DropletIcon({ className }: IconProps) {
   );
 }
 
+export function ScaleIcon({ className }: IconProps) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} aria-hidden="true">
+      <line x1="12" y1="4" x2="12" y2="18" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <line x1="4" y1="7" x2="20" y2="7" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M4 7l-2.5 5a2.5 2.5 0 0 0 5 0z" fill="currentColor" opacity="0.7" />
+      <path d="M20 7l-2.5 5a2.5 2.5 0 0 0 5 0z" fill="currentColor" opacity="0.7" />
+      <rect x="8" y="18" width="8" height="2.2" rx="1.1" fill="currentColor" />
+    </svg>
+  );
+}
+
 export function ServingsIcon({ className }: IconProps) {
   return (
     <svg viewBox="0 0 24 24" className={className} aria-hidden="true">

@@ -20,6 +20,9 @@ class NutritionRead(BaseModel):
     status: str
     error: str | None = None
     estimated_servings: int | None = None
+    # Sum of every per_ingredient estimated_grams — the finished dish's total weight, and what
+    # estimated_servings is actually derived from (see worker's nutrition_handlers.py).
+    total_grams: float | None = None
     totals: NutritionTotals | None = None
     per_serving: NutritionTotals | None = None
     per_ingredient: list[NutritionIngredient] = []
