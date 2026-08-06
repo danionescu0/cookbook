@@ -11,8 +11,10 @@ import {
   useParams,
 } from "react-router-dom";
 import { AccountPage } from "./account/AccountPage";
+import { RecipeEditPage } from "./account/RecipeEditPage";
 import { RecipeSubmitForm } from "./account/RecipeSubmitForm";
 import { CategoryManager } from "./backoffice/CategoryManager";
+import { FailedImportsManager } from "./backoffice/FailedImportsManager";
 import { IngredientRefreshPanel } from "./backoffice/IngredientRefreshPanel";
 import { ImportManager } from "./backoffice/ImportManager";
 import { LoginForm } from "./backoffice/LoginForm";
@@ -135,6 +137,9 @@ function BackofficeLayout() {
       <nav className="flex gap-4 border-b border-olive-light pb-3 text-sm" aria-label="Backoffice">
         <NavLink to="/backoffice" end className={navLinkClasses}>
           {t.nav.backofficeRecipes}
+        </NavLink>
+        <NavLink to="/backoffice/failed-imports" className={navLinkClasses}>
+          {t.nav.backofficeFailedImports}
         </NavLink>
         {user.is_super_admin && (
           <>
@@ -268,8 +273,17 @@ export function App() {
               </RequireAuth>
             }
           />
+          <Route
+            path="/recipes/:id/edit"
+            element={
+              <RequireAuth>
+                <RecipeEditPage />
+              </RequireAuth>
+            }
+          />
           <Route path="/backoffice" element={<BackofficeLayout />}>
             <Route index element={<RecipesPage />} />
+            <Route path="failed-imports" element={<FailedImportsManager />} />
             <Route
               path="users"
               element={

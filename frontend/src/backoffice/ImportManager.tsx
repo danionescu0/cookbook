@@ -8,7 +8,16 @@ import type { Category, ImportJob, ImportJobStatus } from "../types";
 
 const ACTIVE: ImportJobStatus[] = ["queued", "fetching", "processing"];
 
-export function ImportManager() {
+interface ImportManagerProps {
+  // AccountPage passes this so its sibling PendingImportsPanel — which fetches its own,
+  // independent copy of the import jobs list — learns about a job the instant it's created here,
+  // rather than only ever finding out on its own next poll. That poll only ever starts once its
+  // own state already contains an active job, so without this, a fresh import submitted after the
+  // panel mounted with nothing in flight would never be picked up at all, not even after a delay.
+  onJobCreated?: () => void;
+}
+
+export function ImportManager({ onJobCreated }: ImportManagerProps) {
   const { t } = useLanguage();
   const { user } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
@@ -56,6 +65,7 @@ export function ImportManager() {
       await api.createImportJob(source.trim(), categoryId);
       setSource("");
       await reload();
+      onJobCreated?.();
     } catch (e) {
       setError(String(e));
     }
@@ -66,6 +76,7 @@ export function ImportManager() {
     try {
       await api.approveImportJob(id);
       await reload();
+      onJobCreated?.();
     } catch (e) {
       setError(String(e));
     }

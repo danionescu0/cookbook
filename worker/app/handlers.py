@@ -10,6 +10,7 @@ from app.claude_client import RecipeExtractionError, extract_recipe, parse_recip
 from app.images import process_images
 from app.instagram_client import InstagramFetchError, fetch_instagram_post
 from app.models import (
+    ImportErrorKind,
     ImportJob,
     ImportJobStatus,
     ImportJobType,
@@ -157,21 +158,28 @@ def handle_import_job(body: bytes, db: Session) -> None:
     except InstagramFetchError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = str(exc)
+        job.error_kind = ImportErrorKind.TECHNICAL
         db.commit()
     except ScrapeDisallowedError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = str(exc)
+        # Not a bug on our end — retrying won't help, so a non-admin viewer gets a distinct,
+        # non-actionable message instead of the generic "an admin will take a look" one.
+        job.error_kind = ImportErrorKind.DISALLOWED
         db.commit()
     except httpx.HTTPError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = f"failed to fetch page: {exc}"
+        job.error_kind = ImportErrorKind.TECHNICAL
         db.commit()
     except RecipeExtractionError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = str(exc)
+        job.error_kind = ImportErrorKind.TECHNICAL
         db.commit()
     except Exception as exc:
         logger.exception("unexpected error handling import job %s", job_id)
         job.status = ImportJobStatus.FAILED
         job.error = f"unexpected error: {exc}"
+        job.error_kind = ImportErrorKind.TECHNICAL
         db.commit()

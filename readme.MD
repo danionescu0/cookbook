@@ -64,6 +64,14 @@ recipes together — with a share/unshare toggle on anything that isn't an impor
 
 <img src="docs/screenshots/account-my-recipes.jpg" alt="Account page's My recipes section with a Make private toggle on a shared recipe" width="800">
 
+A just-finished import stays in a dismissible "Recently imported" card — with an Instagram
+play-button warning where relevant, and an Edit link — until the owner clicks "OK, got it"; a
+failed import shows a plain-language reason instead of a raw error, with a link to add the recipe
+manually and its own "OK" to dismiss (see [Design Decisions](#design-decisions), "Post-import
+review panel"):
+
+<img src="docs/screenshots/account-pending-imports.jpg" alt="Account page's post-import review panel, showing an unreviewed Instagram import with a play-button warning and Edit link, and two dismissible failed-import cards with plain-language error messages" width="800">
+
 **Back office** — JWT-gated admin area, split into two pages (**Recipes** / **Setări**) behind a
 small sub-nav — see [Design Decisions](#design-decisions):
 
@@ -80,6 +88,12 @@ manually-authored recipes; saving a changed translation re-syncs every other lan
 nutrition automatically (see [Core Workflows](#core-workflows), workflow #5):
 
 <img src="docs/screenshots/backoffice-recipe-edit.jpg" alt="Full recipe editing form with title, category, description, ingredients, steps, tips, and image upload fields" width="800">
+
+The new **Failed imports** page (admin-only, paginated) lists every failed import job across every
+user, with its full raw error and an `error_kind` badge — unlike the owner's own Account page,
+this never hides an entry just because its owner already dismissed it:
+
+<img src="docs/screenshots/backoffice-failed-imports.jpg" alt="Backoffice Failed imports page listing two failed jobs with their category, importer, timestamp, error-kind badge, full raw error text, and Retry/Delete buttons" width="800">
 
 Settings page (super-admin only): the admin-editable subset of config — languages, credentials
 including the CalorieNinjas/Anthropic/Turnstile keys and SMTP settings for verification emails,
@@ -257,10 +271,36 @@ state:
       explicit username for an admin caller (previously only `"me"`), 403ing a non-admin and 404ing
       an unknown username. See [Design Decisions](#design-decisions).
 - [x] Owner-editable recipe category: `PATCH /recipes/{id}/category` lets a recipe's owner (or an
-      admin, for anyone's) change its category after the fact — manually-added or imported alike —
-      without needing the still-admin-only full edit (`PUT /recipes/{id}`). Surfaced as a `<select>`
-      per card in the Account page's "My recipes" list, saving on change. See
-      [Design Decisions](#design-decisions), "Owner-editable category".
+      admin, for anyone's) change its category after the fact — manually-added or imported alike.
+      Surfaced as a `<select>` per card in the Account page's "My recipes" list, saving on change.
+      See [Design Decisions](#design-decisions), "Owner-editable category".
+- [x] Post-import review panel + owner-editable recipes + an admin failed-imports page: a finished
+      import used to just quietly join the "My recipes" grid, and a failed one showed only a raw,
+      admin-facing error string. The Account page now surfaces both under "My recipes" until
+      dismissed — a **"Recently imported"** card per unreviewed recipe (thumbnail, an Instagram-
+      specific warning that the preview photo may still have Instagram's own play-button icon baked
+      into it — see `TODO.MD` for why that isn't fixed automatically — an **Edit** link, and an
+      **OK, got it** button setting the new `recipes.import_reviewed_at`), and an **"Import
+      problems"** card per undismissed failed job (a canned message keyed off the new
+      `import_jobs.error_kind` — `disallowed` vs `technical`, never the raw `error` text for a
+      non-admin — a link to add the recipe manually instead, and an **OK** button setting the new
+      `import_jobs.dismissed_at`). `PUT /recipes/{id}` is now reachable by the recipe's owner (not
+      just an admin) via a new `/recipes/{id}/edit` page, with a guard rejecting a non-admin's
+      attempt to change `status` through it. A new admin-only, paginated **Failed imports** back
+      office page (`/backoffice/failed-imports`) shows every failed job's full raw error regardless
+      of whether its owner already dismissed it from their own view. See
+      [Design Decisions](#design-decisions), "Post-import review panel".
+- [x] Admin review tracking for failed imports, and the Account page's review panel scoped to the
+      viewer's own jobs: the Failed Imports page's **"Mark as reviewed"** button sets a new
+      `import_jobs.admin_reviewed_at`, hiding that job from the page's default view — completely
+      independent of the owner's own `dismissed_at`, so neither actor's action can clear the
+      other's. `GET /imports` gained an `admin_reviewed` filter for this. Separately, the Account
+      page's "Import problems" panel (`PendingImportsPanel`) is now scoped to the logged-in
+      viewer's own jobs regardless of admin status — `GET /imports` intentionally returns every
+      user's jobs for an admin caller (needed for backoffice moderation), which meant an admin's
+      own personal Account page was incidentally showing every other user's failures mixed in
+      before this; cross-user triage now lives exclusively on the dedicated Failed Imports page.
+      See [Design Decisions](#design-decisions), "Post-import review panel".
 
 ## Features
 
@@ -327,6 +367,11 @@ state:
 - **Owner-editable recipe category** — any user can re-categorize a recipe they own, manually-added
   or imported, from a dropdown on their Account page, without needing an admin to fix a category
   guessed wrong at import time.
+- **Post-import review, with friendly failure messages** — a finished import shows up in a
+  dismissible "Recently imported" card (with an Instagram play-button warning where relevant, and
+  an Edit link) until the owner clicks OK, instead of silently joining the recipe grid; a failed
+  import shows a plain-language reason instead of a technical error, with a link to add the recipe
+  by hand and an admin-only back office page listing every failure's full detail.
 
 ## Architecture
 
@@ -411,12 +456,19 @@ cookbook/
 │   │   │                            #   renders a "### "-prefixed ingredient/step line as a
 │   │   │                            #   sub-heading instead of a bullet/numbered item)
 │   │   ├── account/                 # AccountPage (profile, change password, favorites, "My
-│   │   │                            #   recipes" with a share/unshare toggle and a per-recipe
-│   │   │                            #   category selector (PATCH /recipes/{id}/category, manual
-│   │   │                            #   or imported alike) — renders ImportManager from
+│   │   │                            #   recipes" with a share/unshare toggle, an Edit link, and a
+│   │   │                            #   per-recipe category selector (PATCH /recipes/{id}/category,
+│   │   │                            #   manual or imported alike) — renders ImportManager from
 │   │   │                            #   backoffice/ too, since /imports is scoped per-caller),
-│   │   │                            #   RecipeSubmitForm ("Add a recipe", with a share-with-
-│   │   │                            #   community checkbox)
+│   │   │                            #   PendingImportsPanel (post-import review: an unreviewed
+│   │   │                            #   import's card w/ Instagram play-button warning + Edit link
+│   │   │                            #   + acknowledge button; an undismissed failed job's card w/
+│   │   │                            #   canned error-kind message + dismiss button — see Design
+│   │   │                            #   Decisions, "Post-import review panel"), RecipeEditPage
+│   │   │                            #   (/recipes/:id/edit — owner-or-admin full per-language edit,
+│   │   │                            #   the same field set as RecipeManager's inline form minus the
+│   │   │                            #   admin-only actions), RecipeSubmitForm ("Add a recipe", with
+│   │   │                            #   a share-with-community checkbox)
 │   │   ├── backoffice/              # CategoryManager, ImportManager (submit URL/Instagram link,
 │   │   │                            #   approve-to-trigger, polls while active — reused inside
 │   │   │                            #   AccountPage for non-admins; shows a non-admin's lifetime
@@ -426,6 +478,9 @@ cookbook/
 │   │   │                            #   processing-status badge, a Reparse button per imported
 │   │   │                            #   recipe + a "Reparse all imported" bulk action — nutrition/
 │   │   │                            #   translation sync is automatic, no button for those),
+│   │   │                            #   FailedImportsManager (/backoffice/failed-imports — every
+│   │   │                            #   failed import job, paginated, full raw error regardless of
+│   │   │                            #   whether the owner already dismissed it, Retry/Delete),
 │   │   │                            #   SettingsManager (view/edit app_settings incl. SMTP/
 │   │   │                            #   Turnstile/max_imports_per_user, Apply = live PATCH,
 │   │   │                            #   super-admin only), IngredientRefreshPanel ("Reparse all
@@ -434,8 +489,9 @@ cookbook/
 │   │   │                            #   table + a per-row expandable, paginated read-only recipe
 │   │   │                            #   list, GET /users), LoginForm — all gated behind
 │   │   │                            #   AuthContext. App.tsx's BackofficeLayout renders LoginForm
-│   │   │                            #   when unauthenticated, else a Recipes/Users/Settings
-│   │   │                            #   sub-nav + <Outlet /> across nested /backoffice routes
+│   │   │                            #   when unauthenticated, else a Recipes/Failed imports/Users/
+│   │   │                            #   Settings sub-nav + <Outlet /> across nested /backoffice
+│   │   │                            #   routes
 │   │   ├── ui/                      # buttonStyles.ts, nutritionIcons.tsx (hand-rolled inline SVGs:
 │   │   │                            #   flame/drumstick/wheat/sugar-cubes/droplet/servings),
 │   │   │                            #   Pagination.tsx (classic numbered pagination, shared by
@@ -760,12 +816,24 @@ was even fetched). See [Design Decisions](#design-decisions), "Owner-editable ca
 5. Worker downloads referenced images to local storage, compresses them, and resizes them down to
    a default max dimension/size (configurable in the admin settings).
 6. Worker inserts the recipe into PostgreSQL already `status = approved`, `owner_user_id` set to
-   whoever created the import job, and `is_shared = False` (imports are never shareable — see
-   [Design Decisions](#design-decisions)), with one `recipe_translations` row per language, and
-   `added_at`/`approved_at` timestamps. In the same transaction, the worker increments the owner's
-   lifetime `imported_recipes_count` by one — this is what workflow step 1's limit check reads.
-   Right after that commit, the worker automatically queues a nutrition job for the new recipe —
-   see workflow #6 below.
+   whoever created the import job, `is_shared = False` (imports are never shareable — see
+   [Design Decisions](#design-decisions)), and `import_reviewed_at = NULL`, with one
+   `recipe_translations` row per language, and `added_at`/`approved_at` timestamps. In the same
+   transaction, the worker increments the owner's lifetime `imported_recipes_count` by one — this
+   is what workflow step 1's limit check reads. Right after that commit, the worker automatically
+   queues a nutrition job for the new recipe — see workflow #6 below.
+7. The owner's Account page surfaces the finished recipe in a "Recently imported" card (filtered
+   client-side on `source_url IS NOT NULL AND import_reviewed_at IS NULL`) until they click **OK,
+   got it** (`POST /recipes/{id}/acknowledge-import`, owner-or-admin, 400 on a non-import), which
+   sets `import_reviewed_at`. On failure, the worker also sets `import_jobs.error_kind`
+   (`disallowed` for a `robots.txt` block, `technical` for everything else) alongside the existing
+   `error` text; the same card area shows a canned message keyed off `error_kind` — never the raw
+   `error`, which stays admin-only — until the owner clicks **OK** (`POST /imports/{id}/dismiss`,
+   400 unless the job is `failed`), which sets `import_jobs.dismissed_at`. Both flags only ever
+   affect the owner's own account view: an admin's `/backoffice/failed-imports` page (paginated,
+   `GET /imports?status=failed&limit=&offset=`) ignores `dismissed_at` entirely and always shows
+   the full history with the raw error. See [Design Decisions](#design-decisions), "Post-import
+   review panel".
 
 A URL already imported, or already sitting anywhere in the queue **for that same user**, is
 rejected with a `409` shown inline — scoped per owner, not globally, so two different users can
@@ -828,10 +896,15 @@ Still no reject action, but `/backoffice` and every mutating API route are now g
 per-user JWT auth — see [Design Decisions](#design-decisions).
 
 ### 5. Editing a recipe
-1. Any signed-in owner (or an admin, for anyone's recipe) edits a recipe's title/description/
-   ingredients/steps/tips/images from the back office (`RecipeManager`) or their account page
-   (`RecipeSubmitForm`'s edit path). `PUT /recipes/{id}` applies the change to whichever language
-   was being edited.
+1. An admin edits any recipe's title/description/ingredients/steps/tips/images from the back
+   office (`RecipeManager`'s inline form); a recipe's own owner edits it from their account page
+   (`RecipeEditPage`, `/recipes/{id}/edit` — linked from a "My recipes" card's **Edit**, or from
+   the post-import review panel for a just-finished import). Both paths call the same
+   `PUT /recipes/{id}`, open to the owner or an admin (a non-admin submitting a `status` change
+   through it is rejected with `400` — status changes stay admin-only, since they gate public
+   visibility) — see [Design Decisions](#design-decisions), "Post-import review panel", for why
+   this was opened up now rather than earlier. It applies the change to whichever language was
+   being edited.
 2. If any translation field changed, the API enqueues a `translation_sync_jobs` row for that
    recipe, sourced from the language just edited. The recipe's `processing_status` immediately
    reports `translating`.
@@ -945,16 +1018,19 @@ being re-imported as a duplicate.
   unique on (user_id, recipe_id)
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
   yet, see [Design Decisions](#design-decisions))
-- **recipes** — id, category_id (the only field a non-admin owner can change post-creation, via
-  `PATCH /recipes/{id}/category` — see [Design Decisions](#design-decisions), "Owner-editable
-  category"), images, source_url (nullable, set when imported), owner_user_id
-  (FK → users.id, not nullable — every recipe belongs to exactly one user), is_shared (bool,
-  default false — only ever meaningful when source_url is null; imports never set it), status
-  (`unapproved` \| `approved`), added_at, approved_at, estimated_servings (nullable — set by the
-  nutrition-enrichment job, not the original import) — language-independent fields only; text
-  content lives in **recipe_translations**. Visibility (see
-  [Design Decisions](#design-decisions)): an admin sees everything; the owner always sees their own
-  (any status); anyone else sees it only if `status=approved AND is_shared=true`
+- **recipes** — id, category_id (owner-or-admin editable via `PATCH /recipes/{id}/category` — see
+  [Design Decisions](#design-decisions), "Owner-editable category"), images, source_url (nullable,
+  set when imported), owner_user_id (FK → users.id, not nullable — every recipe belongs to exactly
+  one user), is_shared (bool, default false — only ever meaningful when source_url is null; imports
+  never set it), status (`unapproved` \| `approved`), added_at, approved_at, estimated_servings
+  (nullable — set by the nutrition-enrichment job, not the original import), import_reviewed_at
+  (nullable — null means the owner hasn't acknowledged this import yet on their Account page; only
+  ever set for an import, source_url not null; see [Design Decisions](#design-decisions),
+  "Post-import review panel") — language-independent fields only; text content lives in
+  **recipe_translations**. Visibility (see [Design Decisions](#design-decisions)): an admin sees
+  everything; the owner always sees their own (any status); anyone else sees it only if
+  `status=approved AND is_shared=true`. `PUT /recipes/{id}` (full edit) is owner-or-admin; a
+  non-admin changing `status` through it is rejected
 - **recipe_translations** — id, recipe_id (FK → recipes.id), language (e.g. `ro`, `en` — a plain
   string validated against `SUPPORTED_LANGUAGES`, not a DB enum, so a new language never needs a
   migration), title, description, ingredients, steps, tips; unique on (recipe_id, language). A
@@ -967,9 +1043,18 @@ being re-imported as a duplicate.
 - **import_jobs** — id, category_id (recipe lands here on success), created_by_user_id (FK →
   users.id — who created the request; the recipe it produces inherits this as `owner_user_id`),
   type (`single` \| `instagram` \| `bulk` \| `bookmark`), source, status
-  (`pending` \| `queued` \| `fetching` \| `processing` \| `done` \| `failed`), error, created_at.
-  For an admin, `pending` means created but not yet approved/published to RabbitMQ; for everyone
-  else it's queued immediately (see [Core Workflows](#core-workflows), workflow #2)
+  (`pending` \| `queued` \| `fetching` \| `processing` \| `done` \| `failed`), error, error_kind
+  (nullable — `disallowed` \| `technical`, set alongside `error` on failure; a non-admin caller
+  only ever receives this categorized kind, never the raw `error` text), created_at,
+  dismissed_at (nullable — set by `POST /imports/{id}/dismiss`, owner-or-admin, when the owner
+  clears a failed job from their Account page; ignored entirely by the admin failed-imports page,
+  so an owner's dismissal never erases the record — see [Design Decisions](#design-decisions),
+  "Post-import review panel"), admin_reviewed_at (nullable — set by `POST
+  /imports/{id}/mark-reviewed`, admin-only, when an admin marks a failure as handled on the Failed
+  Imports page; entirely independent of dismissed_at above — neither actor's action touches the
+  other's column). For an admin, `pending` means created but not yet approved/published to
+  RabbitMQ; for everyone else it's queued immediately (see [Core Workflows](#core-workflows),
+  workflow #2)
 - **translation_sync_jobs** — id, recipe_id (FK → recipes.id), source_language (which language was
   hand-edited — translated *from* this into every other supported language), status
   (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Created by `PUT
@@ -1130,9 +1215,9 @@ Operational/troubleshooting procedures for a running deployment — the "how", a
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 209 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". `test_recipe_visibility.py`: an anonymous/other user only sees a recipe if `approved` + `is_shared`, the owner always sees their own regardless of status, an admin sees everything, `GET /recipes/{id}` 404s (not 403s) on an invisible recipe, `PATCH /recipes/{id}/share` succeeds for the owner or an admin, 403s for anyone else, 400s on an imported recipe, and re-sets `status=unapproved` when a non-admin turns sharing on. Import jobs (`test_imports.py`): create stays `pending` for an admin and doesn't publish, queues and publishes immediately for a non-admin, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), duplicate-URL rejection is scoped per creator (409, two different users can import the same URL independently), a non-admin only sees/modifies their own jobs while an admin sees everyone's, `created_by_username` is populated. `test_auth.py`/`test_users.py`: signup requires a valid Turnstile token, rejects a taken username/verified email, resends instead of erroring on a duplicate unverified email, records the submitted `language` on the new user and falls back to `default_language` when it's missing or not in `supported_languages`, login rejects an unverified account with a specific message, `/verify-email` accepts a valid token once and rejects an expired/reused/unknown one, `/resend-verification` re-sends and is itself CAPTCHA-gated, `GET /users/me` and `PATCH /users/me/password` require a valid current password. Settings: `GET`/`PATCH /settings` require **super**-admin (a plain admin is rejected), secrets (including `calorie_ninjas_api_key`, `smtp_password`, `turnstile_secret_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields; `GET /settings/public` returns only the Turnstile site key, unauthenticated. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Recipe editing: `PUT /recipes/{id}` enqueues a `translation_sync_jobs` row only when a translation field actually changed, `processing_status` reflects whichever of nutrition/translation-sync is currently active for a recipe. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes. Import limit (`test_imports.py`): `POST /imports` 403s a non-admin at/over `max_imports_per_user` with the current/limit counts in the message, allows the request one under the limit, exempts admins even far over it, and the counter is untouched by an admin deleting the resulting recipe; `GET /users/me` exposes `imported_recipes_count`. Reparse (`test_recipes.py`): `POST /recipes/{id}/reparse` and `/reparse-all-imported` both require admin and 400 on a recipe with no `source_url`. Users page (`test_users.py`): `GET /users` requires super-admin (401 unauthenticated, 403 a plain admin), reports correct owned/shared/imported counts including a user with zero recipes, `POST /auth/login` stamps `last_login_at`. `GET /recipes`'s admin-only `owner` lookup (`test_recipe_visibility.py`): returns the target user's recipes in any status, 403s a non-admin or anonymous caller, 404s an unknown username. Owner-editable category (`test_recipe_visibility.py`): `PATCH /recipes/{id}/category` succeeds for the owner (manually-added or imported recipe alike) or an admin, 403s a non-owner non-admin, 401s an anonymous caller, 400s an unknown category id |
-| Worker              | `pytest`                           | 125 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation *after* HTML cleaning not before, strips script/style/nav/footer/header/aside/form/iframe/svg/comments and noisy attributes while preserving `<img src>` and real content, promotes `data-src`/`data-lazy-src`/`data-original`/`data-srcset` into a real `src` for lazy-loaded images without clobbering an already-real one, keeps a `<noscript>` image fallback intact, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client, runs on `EXTRACTION_MODEL`/Haiku), `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams + servings parsing, also Haiku), `claude_client.parse_recipe_from_text` (Haiku), and `claude_client.translate_recipe` (re-translates edited content into every other configured language, creating a missing language's translation the same way a fresh import would, stays on `MODEL`/Sonnet), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `test_instagram_client.py` (Playwright drives a headless page load and extracts caption/comments/preview image; a failed/blocked load is handled without crashing the job), `handlers.handle_import_job` (success inserts an already-`approved` recipe owned by the import job's creator with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it, *and* increments the owner's `imported_recipes_count` by exactly one; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` without leaving a half-inserted recipe, and does *not* increment the count), `reparse_handlers.handle_reparse_job` (updates existing `recipe_translations` rows in place rather than inserting a new `Recipe`, leaves slug/images/owner untouched, re-enqueues nutrition on success, fails cleanly on a scrape/extraction error), `translation_sync_handlers.handle_translation_sync_job` (translates the edited language into every other one, re-enqueues a `NutritionJob` on success, fails cleanly on an unknown recipe/job or an unexpected exception, still succeeds even if the nutrition re-enqueue itself raises), `email_handlers.handle_email_job` (sends a real SMTP message using the admin-configured host/port/credentials/TLS setting, builds the verification link from `public_site_url`, sends the user's own `language` copy — including the username in the greeting — and falls back to English for an unrecognized language, fails cleanly with no SMTP host configured), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if a handler raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache). `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` and sets `estimated_servings` on success, prefers a CalorieNinjas gram figure over Claude's own estimate when one matches, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id) |
-| Frontend            | Vitest + React Testing Library     | 113 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle, full per-language edit form incl. image upload. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, shows who created a job (`imported by {username}`), explains that imports are private to the importer, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled; lifetime import limit: an admin never fetches or shows usage, a non-admin sees "`used` / `limit` imports used", the Add button is blurred+disabled once the limit is reached (and `handleSubmit` itself also guards on it, not just the `disabled` attribute, verified via a direct form-submit event). `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token (and role flags) on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure, including the "not verified yet" case with a resend option. `SignupForm`: submits the current UI language alongside the form fields once terms are accepted. `SettingsManager`: loads and displays current settings including SMTP/Turnstile/`max_imports_per_user` fields, secret fields stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, saves a changed `max_imports_per_user`, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active. `UsersManager`: lists every user with their stats, shows an error when the list fails to load, expands/collapses a user's recipe list on toggle, paginates it 10-per-page independently per row, shows a message for a user with no recipes. `AccountPage`: shows a category selector on an owned recipe preselected to its current category, changing it calls the API and updates the selection, shows an error on failure |
+| API backend        | `pytest` + FastAPI `TestClient`    | 231 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". `test_recipe_visibility.py`: an anonymous/other user only sees a recipe if `approved` + `is_shared`, the owner always sees their own regardless of status, an admin sees everything, `GET /recipes/{id}` 404s (not 403s) on an invisible recipe, `PATCH /recipes/{id}/share` succeeds for the owner or an admin, 403s for anyone else, 400s on an imported recipe, and re-sets `status=unapproved` when a non-admin turns sharing on. Import jobs (`test_imports.py`): create stays `pending` for an admin and doesn't publish, queues and publishes immediately for a non-admin, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), duplicate-URL rejection is scoped per creator (409, two different users can import the same URL independently), a non-admin only sees/modifies their own jobs while an admin sees everyone's, `created_by_username` is populated. `test_auth.py`/`test_users.py`: signup requires a valid Turnstile token, rejects a taken username/verified email, resends instead of erroring on a duplicate unverified email, records the submitted `language` on the new user and falls back to `default_language` when it's missing or not in `supported_languages`, login rejects an unverified account with a specific message, `/verify-email` accepts a valid token once and rejects an expired/reused/unknown one, `/resend-verification` re-sends and is itself CAPTCHA-gated, `GET /users/me` and `PATCH /users/me/password` require a valid current password. Settings: `GET`/`PATCH /settings` require **super**-admin (a plain admin is rejected), secrets (including `calorie_ninjas_api_key`, `smtp_password`, `turnstile_secret_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields; `GET /settings/public` returns only the Turnstile site key, unauthenticated. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Recipe editing: `PUT /recipes/{id}` enqueues a `translation_sync_jobs` row only when a translation field actually changed, `processing_status` reflects whichever of nutrition/translation-sync is currently active for a recipe. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes. Import limit (`test_imports.py`): `POST /imports` 403s a non-admin at/over `max_imports_per_user` with the current/limit counts in the message, allows the request one under the limit, exempts admins even far over it, and the counter is untouched by an admin deleting the resulting recipe; `GET /users/me` exposes `imported_recipes_count`. Reparse (`test_recipes.py`): `POST /recipes/{id}/reparse` and `/reparse-all-imported` both require admin and 400 on a recipe with no `source_url`. Users page (`test_users.py`): `GET /users` requires super-admin (401 unauthenticated, 403 a plain admin), reports correct owned/shared/imported counts including a user with zero recipes, `POST /auth/login` stamps `last_login_at`. `GET /recipes`'s admin-only `owner` lookup (`test_recipe_visibility.py`): returns the target user's recipes in any status, 403s a non-admin or anonymous caller, 404s an unknown username. Owner-editable category (`test_recipe_visibility.py`): `PATCH /recipes/{id}/category` succeeds for the owner (manually-added or imported recipe alike) or an admin, 403s a non-owner non-admin, 401s an anonymous caller, 400s an unknown category id. Post-import review panel (`test_recipe_visibility.py`'s `TestUpdateEndpoint`/`TestAcknowledgeImportEndpoint`, `test_imports.py`): `PUT /recipes/{id}` now succeeds for the owner, 403s a non-owner non-admin, 400s a non-admin's `status` change, still 401s unauthenticated; `POST /recipes/{id}/acknowledge-import` succeeds for the owner or an admin, 403s a non-owner non-admin, 400s a non-imported recipe; `POST /imports/{id}/dismiss` succeeds for the owner or an admin and sets `dismissed_at`, 400s a non-`failed` job, 404s a non-owner non-admin; `GET /imports` with `limit`/`offset` paginates and sets `X-Total-Count`, filters by `status`, and omitting `limit` keeps returning the full unheadered list; a non-admin caller never receives the raw `error` text (only `error_kind`) even for their own job, while an admin sees both. Admin review tracking (`test_imports.py`): `POST /imports/{id}/mark-reviewed` requires admin (403 otherwise), sets `admin_reviewed_at` without touching `dismissed_at`, 400s a job that hasn't failed; the owner's own `/dismiss` afterward leaves `admin_reviewed_at` untouched (and vice versa); `GET /imports`'s `admin_reviewed` filter excludes/includes reviewed jobs correctly |
+| Worker              | `pytest`                           | 128 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation *after* HTML cleaning not before, strips script/style/nav/footer/header/aside/form/iframe/svg/comments and noisy attributes while preserving `<img src>` and real content, promotes `data-src`/`data-lazy-src`/`data-original`/`data-srcset` into a real `src` for lazy-loaded images without clobbering an already-real one, keeps a `<noscript>` image fallback intact, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client, runs on `EXTRACTION_MODEL`/Haiku, requests a high enough `max_tokens` for a long recipe in multiple languages), `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams + servings parsing, also Haiku), `claude_client.parse_recipe_from_text` (Haiku, same `max_tokens` floor), and `claude_client.translate_recipe` (re-translates edited content into every other configured language, creating a missing language's translation the same way a fresh import would, stays on `MODEL`/Sonnet, same `max_tokens` floor), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `test_instagram_client.py` (Playwright drives a headless page load and extracts caption/comments/preview image; a failed/blocked load is handled without crashing the job), `handlers.handle_import_job` (success inserts an already-`approved` recipe owned by the import job's creator with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it, *and* increments the owner's `imported_recipes_count` by exactly one; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` *and* the correct `error_kind` (`disallowed` only for a `robots.txt` block, `technical` for everything else, Instagram included) without leaving a half-inserted recipe, and does *not* increment the count), `reparse_handlers.handle_reparse_job` (updates existing `recipe_translations` rows in place rather than inserting a new `Recipe`, leaves slug/images/owner untouched, re-enqueues nutrition on success, fails cleanly on a scrape/extraction error), `translation_sync_handlers.handle_translation_sync_job` (translates the edited language into every other one, re-enqueues a `NutritionJob` on success, fails cleanly on an unknown recipe/job or an unexpected exception, still succeeds even if the nutrition re-enqueue itself raises), `email_handlers.handle_email_job` (sends a real SMTP message using the admin-configured host/port/credentials/TLS setting, builds the verification link from `public_site_url`, sends the user's own `language` copy — including the username in the greeting — and falls back to English for an unrecognized language, fails cleanly with no SMTP host configured), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if a handler raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache). `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` and sets `estimated_servings` on success, prefers a CalorieNinjas gram figure over Claude's own estimate when one matches, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id) |
+| Frontend            | Vitest + React Testing Library     | 138 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle, full per-language edit form incl. image upload. `ImportManager`: submits URL+category, approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, shows who created a job (`imported by {username}`), explains that imports are private to the importer, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled, calls `onJobCreated` after a successful create and after a successful approve; lifetime import limit: an admin never fetches or shows usage, a non-admin sees "`used` / `limit` imports used", the Add button is blurred+disabled once the limit is reached (and `handleSubmit` itself also guards on it, not just the `disabled` attribute, verified via a direct form-submit event). `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token (and role flags) on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure, including the "not verified yet" case with a resend option. `SignupForm`: submits the current UI language alongside the form fields once terms are accepted. `SettingsManager`: loads and displays current settings including SMTP/Turnstile/`max_imports_per_user` fields, secret fields stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, saves a changed `max_imports_per_user`, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active. `UsersManager`: lists every user with their stats, shows an error when the list fails to load, expands/collapses a user's recipe list on toggle, paginates it 10-per-page independently per row, shows a message for a user with no recipes. `AccountPage`: shows a category selector on an owned recipe preselected to its current category, changing it calls the API and updates the selection, shows an error on failure, links an owned recipe to its edit page, submitting a fresh import via the embedded `ImportManager` form makes the resulting recipe appear once created, with no navigation/reload (the full `ImportManager` → `AccountPage` → `PendingImportsPanel` hand-off, not a single component in isolation). `PendingImportsPanel`: renders nothing with nothing pending, shows a just-finished import's card with a working Edit link, shows the Instagram play-button warning only for an Instagram `source_url`, acknowledging calls the API and removes the card via the parent callback, shows the right canned message per `error_kind` (including the `technical`/unset fallback), dismissing a failed job calls the API and removes its card, ignores an already-dismissed job, calls the parent's `onImportsPolled` on every poll tick while a job is still active so a just-finished import's recipe shows up without a page reload, reloads immediately (jobs *and* submissions) when an external `reloadTrigger` bump signals a job was just created or approved elsewhere on the page, and never shows another user's failed job even when the viewer is an admin. `RecipeEditPage`: preloads a recipe's current fields, denies access to a non-owner non-admin, allows an admin editing someone else's recipe, saves and navigates back to the account page, shows an error on a failed save. `FailedImportsManager`: lists a failed job with its full raw error and `error_kind` badge, shows an empty state, Retry/Delete both call the right endpoint (Delete behind the shared confirm dialog), marking as reviewed calls the API and reloads, paginates via the shared `Pagination` component |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -1282,6 +1367,80 @@ Notes on the current setup:
   `PATCH /recipes/34/category` returned `200` and Postgres actually showed `category_id = 3`
   afterward (`SELECT category_id FROM recipes WHERE id = 34`), then changed it back to restore the
   original value.
+- The post-import review panel was verified end to end against the real dev stack: migration
+  `0028` applied cleanly (`\d recipes`/`\d import_jobs` showing the three new nullable columns),
+  and its backfill correctly marked all 20 pre-existing imports as already-reviewed
+  (`import_reviewed_at = added_at`, confirmed via `SELECT count(*) FILTER (WHERE
+  import_reviewed_at IS NOT NULL)`) so the panel didn't flood on first load. Two seed recipes
+  (one Instagram-sourced, one not) and two seed failed jobs (one `disallowed`, one `technical`)
+  were inserted directly for a real non-admin account, then driven through the actual browser UI:
+  the "Recently imported" panel showed both cards, the play-button warning appeared only on the
+  Instagram one, **Edit** opened `/recipes/{id}/edit` pre-filled with the recipe's real content and
+  a save round-tripped through `PUT /recipes/{id}` and reflected immediately back on the account
+  page, **OK, got it** removed a card without a full page refetch, and the "Import problems" cards
+  showed the correct canned copy per `error_kind` with **OK** removing just that one. Logging in as
+  an admin and opening `/backoffice/failed-imports` then showed **both** failed jobs — including
+  the one already dismissed from the non-admin's own account view — with their full raw error text,
+  confirming `dismissed_at` is correctly ignored there. (Caught and fixed along the way: raw `psql`
+  inserts for `ImportJobType`/`ImportJobStatus`/`ImportErrorKind` need the enum member's *name*,
+  e.g. `SINGLE`/`FAILED`/`DISALLOWED`, not its lowercase value — SQLAlchemy's `Enum(..., 
+  native_enum=False)` stores by name unless `values_callable` overrides it, a mismatch that first
+  surfaced as a `503` with a `LookupError` in the API logs before being traced to the seed data.)
+- **Real bug reported live, right after shipping the panel above: a finished import needed a
+  manual page refresh to appear.** A real Instagram/URL import
+  (`gustoase.net/rulada-de-dovlecei-cu-crema-de-branza`) completed successfully, but its card
+  never showed up in "Recently imported" until the page was manually reloaded. Root cause:
+  `PendingImportsPanel` derives its "unreviewed import" list entirely from the `submissions` prop
+  passed down by `AccountPage`, which only ever fetched `listMySubmissions()` once, on mount — the
+  panel's own 3s poll only ever refetched *import jobs*, never recipes, so a job settling from
+  `queued`/`processing` to `done` had nothing telling the parent a new recipe now existed. Fixed
+  by adding an `onImportsPolled` callback, invoked on every poll tick while a job is still active
+  (`frontend/src/account/PendingImportsPanel.tsx`), wired to a `reloadSubmissions` function in
+  `AccountPage` — so a finished import now appears within one poll interval (≤3s) instead of
+  needing a reload. Covered by a new fake-timer test asserting the callback fires on the tick where
+  polling would occur, and confirmed live against the same real recipe (already imported, so no
+  second paid import was triggered just to re-verify) — it appeared correctly in "Importate
+  recent" in Romanian with its real photo.
+- **Same symptom, reported again immediately after the fix above — this time from a genuinely new
+  import, exposing a second, deeper gap in the same mechanism.** A real import of
+  `gustoase.net/reteta-delicioasa-de-post-pate-de-ciuperci-si-caju` still needed a manual refresh.
+  Root cause: the previous fix only ever refreshes submissions *while `PendingImportsPanel`'s own
+  poll is already running* — and that poll only starts once its own `jobs` state already contains
+  an active job. `PendingImportsPanel` fetches that state completely independently of
+  `ImportManager` (the sibling component that actually owns the URL-submission form), so a job
+  created *after* the account page had already loaded with nothing in flight left the panel with
+  no active job to poll for, and therefore no poll, ever — not even after a delay; the only case
+  the previous fix actually covered was an import that was already active by the time the panel
+  first mounted. Fixed by adding an `onJobCreated` callback to `ImportManager`, fired right after
+  `createImportJob`/`approveImportJob` succeed, and a `reloadTrigger` prop on
+  `PendingImportsPanel` that both components are wired through in `AccountPage` — the instant a job
+  is created (or an admin's own pending job is approved), the panel now force-refetches its own
+  jobs list *and* submissions immediately, rather than waiting to notice on its own. Verified live,
+  for real this time: logged in as the actual non-admin owner with a fresh token (the first
+  verification attempt was accidentally run against a stale admin-flagged JWT left over from
+  testing the failed-imports page, which surfaced its own tell — the job landed `pending` instead
+  of auto-queuing, the admin-only behavior — and was itself a useful confirmation that JWT claims,
+  not the DB, are what a request is actually authorized against), submitted a real new URL
+  (`gustoase.net/chec-pufos-cu-suc-de-portocale`) via the account page's own form, and watched
+  its card appear in "Importate recent" entirely on its own within a few seconds, no reload at any
+  point. New coverage: `ImportManager.test.tsx` asserts `onJobCreated` fires after a successful
+  create and after a successful approve; `AccountPage.test.tsx` drives the actual form submission
+  end to end and asserts the new recipe renders, exercising the full `ImportManager` →
+  `AccountPage` → `PendingImportsPanel` hand-off rather than any single component in isolation.
+- Two follow-up gaps in the review panel above, both reported live by an actual admin using it —
+  see the "Post-import review panel, part 2" Design Decisions entry for the full diagnosis: (1)
+  the "Import problems" card was mixing every user's failures into whichever admin happened to be
+  looking at their own Account page, confirmed by logging in as `danionescu` and seeing
+  `testcook`'s failed job appear there — fixed, and reconfirmed live afterward that it no longer
+  does; (2) there was no real way for an admin to mark a failure as handled — the only visible
+  control (the Account page's "OK" button) actually set the *owner's* `dismissed_at`, which the
+  dedicated Failed Imports page deliberately ignores, so it achieved nothing from the admin's own
+  point of view. Verified the fix end to end with a real row: inserted a failed job for `testcook`,
+  confirmed it showed on `testcook`'s own Account page but not on `danionescu`'s (logged in as
+  each in turn), clicked **Marchează ca verificat** on the Failed Imports page and watched it
+  disappear from that list's default view, then confirmed directly in Postgres that
+  `admin_reviewed_at` was set while `dismissed_at` stayed `NULL` — the two columns really are
+  independent, not just in the code.
 
 Conventions:
 - Unit tests live next to the code they cover (`api/app/tests/test_*.py`, `worker/app/tests/test_*.py`,
@@ -1850,6 +2009,83 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   broader self-service edit surface is wanted later, the honest fix is auditing `PUT`'s owner case
   deliberately (a translation-sync job triggered by a non-admin edit needs the same review-on-share
   care already applied elsewhere), not quietly bolting more fields onto this endpoint.
+- **Post-import review panel: two independent flags instead of one, a real user reported the
+  underlying gap first.** The trigger was a plain product complaint: after a successful import the
+  recipe just disappeared into the "My recipes" grid with no confirmation, and (for an Instagram
+  import specifically) no chance to notice that the preview photo can still have Instagram's own
+  play-button icon baked directly into the pixels — already investigated and deliberately deferred
+  as a real-frame-extraction/inpainting problem in `TODO.MD`, so the fix here is a warning plus an
+  Edit link, not automatic image repair. Two separate nullable timestamp columns were used rather
+  than one shared "acknowledged" concept, because they track genuinely different things owned by
+  different tables: `recipes.import_reviewed_at` is the owner's acknowledgment of a *result*
+  (something now exists in their library), while `import_jobs.dismissed_at` is the owner's
+  acknowledgment of a *problem* (nothing was created). Collapsing them would have meant inventing a
+  fake recipe row for every failure just to have somewhere to hang a flag. `import_jobs.dismissed_at`
+  is deliberately **never** consulted by the new admin `/backoffice/failed-imports` page — the
+  requirement was explicit ("he needs to be ensured that an admin will take a look"), so an owner
+  clearing their own notification must not be able to make the admin's copy of the failure vanish
+  too; the two views are backed by the same rows but filtered independently.
+  `import_jobs.error_kind` exists for the same reason `RecipeRead`/`ImportJobRead` already gate
+  other fields by caller: the raw `error` string (`"unexpected error: <repr of some exception>"`)
+  is a debugging aid written for an admin, not customer-facing copy, so a non-admin — including the
+  job's own owner — now only ever receives the categorized kind and never the raw text, with the
+  frontend picking one of exactly two canned messages. This closes the gap the "Owner-editable
+  category" decision above deliberately left open: `PUT /recipes/{id}` is now owner-or-admin (with
+  a `status`-change guard, since status is what actually gates public visibility, not something a
+  private edit should touch), because it was audited deliberately this time — a non-admin's edit to
+  their own already-private recipe re-triggers the same `translation_sync_jobs`/nutrition
+  re-enrichment pipeline an admin's edit already does, and neither changes who can see the recipe,
+  so the review-on-share concern that blocked the wholesale relax back then doesn't apply here.
+  The migration backfills `import_reviewed_at = added_at` for every pre-existing import specifically
+  so shipping this doesn't retroactively flood every account's review panel with years of old
+  imports; `error_kind` is left `NULL` on old failed rows rather than reconstructed by
+  pattern-matching their stored `error` text, since a wrong guess there is worse than an honest
+  `NULL` (which the frontend already treats as the safe `technical` default).
+- **Extraction `max_tokens` was too low for a long, multi-language recipe — diagnosed from a real
+  `error_kind=technical` failure the new review panel above made visible for the first time.** A
+  real import (`savoriurbane.com/mancare-de-vinete-cu-pui-rosii-usturoi-ardei-si-naut-reteta-turceasca`)
+  failed with the generic `"Claude returned no translations"` message. Reproduced the exact call
+  directly against the real Anthropic API (same cleaned HTML, same tool schema) rather than
+  guessing: `response.stop_reason` was `"max_tokens"`, `usage.output_tokens` was exactly `4096` —
+  the old ceiling — and the returned tool-use `input` had only an `images` key; `translations` was
+  missing entirely, not just short. The schema's declared property order (`images` before
+  `translations`) meant Claude finished the image list first and then ran out of output budget
+  before writing a single translation, for a recipe long enough (24 images, ~26 steps once
+  extracted) that both a `ro` and an `en` translation didn't fit in 4096 output tokens. Re-running
+  the identical call with `max_tokens=8192` completed cleanly (`stop_reason: "tool_use"`) using
+  only 4563 of that budget — real headroom, not a coincidence — so this wasn't a pathological page,
+  just an underestimated ceiling. The fix applies the same higher `max_tokens` to
+  `extract_recipe`, `parse_recipe_from_text`, and `translate_recipe` — the three calls that share
+  this exact `translations`-array-per-language output shape — via one named constant
+  (`_TRANSLATIONS_MAX_TOKENS` in `claude_client.py`) rather than three independent magic numbers;
+  `parse_ingredients_for_nutrition` was deliberately left alone, since its output is bounded by
+  ingredient-line count rather than full recipe prose and has a structurally different (and much
+  smaller) risk profile. Retried the real failed job through the actual UI after the fix (not just
+  a script) and watched it succeed and appear in the review panel on its own — no reload, per the
+  hand-off fixed just above this decision.
+- **Post-import review panel, part 2: an admin's own Account page was leaking every user's
+  failures, and admin had no real way to mark one handled.** Both gaps were found the same way as
+  everything else in this feature so far: an admin actually using the page, not a spec review.
+  `GET /imports` returns every job for an admin caller by design — that's exactly what backoffice
+  moderation (`ImportManager`'s "In progress" list, and the dedicated Failed Imports page) needs.
+  But `PendingImportsPanel`'s failed-jobs card reuses that same unfiltered fetch on the *Account*
+  page, which is a personal review widget, not a moderation surface — so an admin looking at their
+  own account saw every other user's failures mixed into "Import problems," alongside their own
+  private "Recently imported" cards. Fixed by deriving a `myJobs` list scoped to
+  `created_by_username === user?.username` before rendering (and before deciding whether to poll)
+  — cross-user visibility now only ever happens on the Failed Imports page, where it belongs. The
+  second gap was subtler: an admin technically *could* already click "OK" on someone else's failed
+  job from their own Account page (the dismiss endpoint has always been owner-or-admin), and it
+  wouldn't error — but that sets `dismissed_at`, the *owner's* signal, and the dedicated Failed
+  Imports page deliberately ignores that column so an owner's dismissal can never erase the admin's
+  record (see the original decision above). So the one control an admin could reach did nothing
+  useful for them, silently. Rather than repurpose `dismissed_at` for a second meaning, added a
+  fully independent `admin_reviewed_at` column and a `POST /imports/{id}/mark-reviewed` endpoint
+  (admin-only, 400 unless the job is `failed`) — same reasoning as keeping `import_reviewed_at` and
+  `dismissed_at` separate in the original design: two different actors tracking "have I dealt with
+  this" must never be able to silently clear it for each other. The Failed Imports page's default
+  list now excludes reviewed jobs (`GET /imports?admin_reviewed=false`) rather than showing an
+  ever-growing history with no way to file anything away.
 
 ## Original Spec
 

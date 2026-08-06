@@ -59,6 +59,7 @@ function recipe(overrides: Partial<Recipe> = {}): Recipe {
     processing_status: null,
     owner_username: "alice",
     is_shared: false,
+    import_reviewed_at: null,
     ...overrides,
   };
 }

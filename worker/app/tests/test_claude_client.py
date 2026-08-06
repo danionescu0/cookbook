@@ -243,3 +243,44 @@ def test_translate_recipe_uses_sonnet_model(monkeypatch: pytest.MonkeyPatch) -> 
     claude_client.translate_recipe({"title": "Soup"}, ["en"], "test-key")
 
     assert fake_client.messages.received_kwargs["model"] == claude_client.MODEL
+
+
+# A real import (a long recipe, translated into two languages) hit `stop_reason: "max_tokens"` at
+# the old 4096 ceiling: Claude finished the `images` array but never got to `translations` at all,
+# which surfaced as a misleadingly generic "Claude returned no translations" failure rather than
+# anything mentioning truncation. These lock in the higher budget — see the "Extraction max_tokens
+# was too low for a long, multi-language recipe" Design Decisions entry.
+def test_extract_recipe_uses_a_high_enough_max_tokens_for_a_long_multilingual_recipe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key")
+
+    assert fake_client.messages.received_kwargs["max_tokens"] >= 8192
+
+
+def test_parse_recipe_from_text_uses_a_high_enough_max_tokens(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.parse_recipe_from_text("caption text", ["ro", "en"], "test-key")
+
+    assert fake_client.messages.received_kwargs["max_tokens"] >= 8192
+
+
+def test_translate_recipe_uses_a_high_enough_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+
+    claude_client.translate_recipe({"title": "Soup"}, ["en", "ro"], "test-key")
+
+    assert fake_client.messages.received_kwargs["max_tokens"] >= 8192

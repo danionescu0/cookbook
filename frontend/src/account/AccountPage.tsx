@@ -6,6 +6,7 @@ import { api, BASE_URL } from "../api/client";
 import { ImportManager } from "../backoffice/ImportManager";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
+import { PendingImportsPanel } from "./PendingImportsPanel";
 import type { Category, Recipe, UserProfile } from "../types";
 
 const inputClasses =
@@ -14,6 +15,9 @@ const inputClasses =
 interface RecipeListProps {
   recipes: Recipe[];
   showStatus?: boolean;
+  // Only meaningful for a list of recipes the viewer actually owns (e.g. not favorites, which can
+  // include other users' shared recipes) — gates the Edit link to /recipes/{id}/edit.
+  showEditLink?: boolean;
   onToggleShare?: (recipe: Recipe) => void;
   categories?: Category[];
   onChangeCategory?: (recipe: Recipe, categoryId: number) => void;
@@ -22,6 +26,7 @@ interface RecipeListProps {
 function RecipeList({
   recipes,
   showStatus,
+  showEditLink,
   onToggleShare,
   categories,
   onChangeCategory,
@@ -51,6 +56,14 @@ function RecipeList({
               <p className="text-xs text-ink/50">{t.account.importedBadge}</p>
             )}
           </Link>
+          {showEditLink && (
+            <Link
+              to={`/recipes/${recipe.id}/edit`}
+              className="mt-1 block text-xs text-terracotta hover:underline"
+            >
+              {t.account.editRecipeLink}
+            </Link>
+          )}
           {/* Imports (source_url set) never get a sharing control — always private. */}
           {onToggleShare && !recipe.source_url && (
             <button
@@ -88,6 +101,9 @@ export function AccountPage() {
   const [submissions, setSubmissions] = useState<Recipe[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [error, setError] = useState<string | null>(null);
+  // Bumped whenever ImportManager creates/approves a job — see PendingImportsPanel's
+  // reloadTrigger prop for why this hand-off is needed.
+  const [importTrigger, setImportTrigger] = useState(0);
 
   const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
@@ -95,11 +111,15 @@ export function AccountPage() {
   const [passwordSaved, setPasswordSaved] = useState(false);
   const [changingPassword, setChangingPassword] = useState(false);
 
+  const reloadSubmissions = () =>
+    api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
+
   useEffect(() => {
     api.me().then(setProfile).catch((e) => setError(String(e)));
     api.listFavorites().then(setFavorites).catch((e) => setError(String(e)));
-    api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
+    reloadSubmissions();
     api.listCategories().then(setCategories).catch((e) => setError(String(e)));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleToggleShare = async (recipe: Recipe) => {
@@ -110,6 +130,10 @@ export function AccountPage() {
     } catch (e) {
       setError(String(e));
     }
+  };
+
+  const handleAcknowledgeImport = (updated: Recipe) => {
+    setSubmissions((current) => current.map((r) => (r.id === updated.id ? updated : r)));
   };
 
   const handleChangeCategory = async (recipe: Recipe, categoryId: number) => {
@@ -221,13 +245,20 @@ export function AccountPage() {
             {t.account.addRecipeLink}
           </Link>
         </div>
-        <ImportManager />
+        <PendingImportsPanel
+          submissions={submissions}
+          onAcknowledged={handleAcknowledgeImport}
+          onImportsPolled={reloadSubmissions}
+          reloadTrigger={importTrigger}
+        />
+        <ImportManager onJobCreated={() => setImportTrigger((t) => t + 1)} />
         {submissions.length === 0 ? (
           <p className="mt-2 text-sm text-ink/60">{t.account.noRecipes}</p>
         ) : (
           <RecipeList
             recipes={submissions}
             showStatus
+            showEditLink
             onToggleShare={handleToggleShare}
             categories={categories}
             onChangeCategory={handleChangeCategory}

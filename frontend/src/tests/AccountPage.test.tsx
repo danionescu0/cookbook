@@ -23,6 +23,9 @@ vi.mock("../api/client", () => ({
     approveImportJob: vi.fn(),
     deleteImportJob: vi.fn(),
     getPublicSettings: vi.fn(),
+    // PendingImportsPanel (also rendered inside AccountPage).
+    acknowledgeImportedRecipe: vi.fn(),
+    dismissFailedImport: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
   setAuthToken: vi.fn(),
@@ -62,6 +65,7 @@ const importedRecipe: Recipe = {
   processing_status: null,
   owner_username: "someone",
   is_shared: false,
+  import_reviewed_at: "2026-08-04T00:00:00Z",
 };
 
 function renderPage() {
@@ -132,5 +136,55 @@ describe("AccountPage", () => {
     await user.selectOptions(select, "Main courses");
 
     expect(await screen.findByRole("alert")).toHaveTextContent("boom");
+  });
+
+  it("links an owned recipe to its edit page", async () => {
+    renderPage();
+
+    await findRecipeCategorySelect();
+    expect(screen.getByRole("link", { name: "Edit" })).toHaveAttribute(
+      "href",
+      "/recipes/5/edit"
+    );
+  });
+
+  it("shows a freshly-submitted import's recipe once it's created, without a page reload", async () => {
+    // Reproduces a real report: the review panel only ever polled while it already knew about an
+    // active job — a job submitted *after* the page loaded with nothing in flight was never
+    // picked up at all. ImportManager's onJobCreated callback is what closes that gap.
+    const user = userEvent.setup();
+    const newRecipe: Recipe = {
+      ...importedRecipe,
+      id: 42,
+      title: "Rulada de dovlecei",
+      import_reviewed_at: null,
+    };
+    mockedApi.createImportJob.mockResolvedValue({
+      id: 99,
+      category_id: 1,
+      type: "single",
+      source: "https://example.com/new",
+      status: "queued",
+      error: null,
+      error_kind: null,
+      created_at: "2026-08-06T00:00:00Z",
+      created_by_username: "someone",
+      dismissed_at: null,
+      admin_reviewed_at: null,
+    });
+    mockedApi.listMySubmissions
+      .mockResolvedValueOnce([importedRecipe])
+      .mockResolvedValue([importedRecipe, newRecipe]);
+
+    renderPage();
+    const urlInput = await screen.findByLabelText("Recipe URL");
+    const importForm = urlInput.closest("form")!;
+
+    await user.type(urlInput, "https://example.com/new");
+    await user.selectOptions(within(importForm).getByLabelText("Category"), "Desserts");
+    await user.click(within(importForm).getByRole("button", { name: "Add" }));
+
+    expect((await screen.findAllByText("Rulada de dovlecei"))[0]).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "OK, got it" })).toBeInTheDocument();
   });
 });

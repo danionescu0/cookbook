@@ -183,6 +183,7 @@ def _serialize(
         processing_status=processing_status,
         owner_username=recipe.owner.username,
         is_shared=recipe.is_shared,
+        import_reviewed_at=recipe.import_reviewed_at,
     )
 
 
@@ -329,19 +330,26 @@ def approve_recipe(
     return _serialize(recipe, language or default_language, default_language, processing_status)
 
 
-@router.put("/{recipe_id}", response_model=RecipeRead, dependencies=[Depends(require_admin)])
+@router.put("/{recipe_id}", response_model=RecipeRead)
 def update_recipe(
     recipe_id: int,
     payload: RecipeUpdate,
     language: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
 ) -> RecipeRead:
     default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
+    # Owner-or-admin, same as sharing/category above — this is what lets a non-admin fix their own
+    # recipe (e.g. after an import) rather than only ever viewing it.
+    if not current_user.is_admin and recipe.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner or an admin can edit this recipe")
     target_language = language or default_language
     previous_images = list(recipe.images)
 
     updates = payload.model_dump(exclude_unset=True, exclude={"translation"})
+    if not current_user.is_admin and "status" in updates:
+        raise HTTPException(status_code=400, detail="Only an admin can change a recipe's status")
     if "category_id" in updates:
         _ensure_category_exists(db, updates["category_id"])
 
@@ -434,6 +442,29 @@ def update_recipe_category(
     _ensure_category_exists(db, payload.category_id)
 
     recipe.category_id = payload.category_id
+    db.commit()
+    db.refresh(recipe)
+    processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
+    return _serialize(recipe, language or default_language, default_language, processing_status)
+
+
+@router.post("/{recipe_id}/acknowledge-import", response_model=RecipeRead)
+def acknowledge_import(
+    recipe_id: int,
+    language: str | None = Query(default=None),
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> RecipeRead:
+    # Clears the post-import review panel on the account page for this one recipe — see
+    # frontend's PendingImportsPanel. Owner-or-admin, same pattern as sharing/category/update.
+    default_language = get_settings(db).default_language
+    recipe = _get_or_404(db, recipe_id)
+    if not current_user.is_admin and recipe.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner or an admin can do this")
+    if recipe.source_url is None:
+        raise HTTPException(status_code=400, detail="This recipe wasn't imported — nothing to acknowledge")
+
+    recipe.import_reviewed_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)

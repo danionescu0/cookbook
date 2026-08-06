@@ -45,6 +45,7 @@ const cake: Recipe = {
   processing_status: null,
   owner_username: "admin",
   is_shared: false,
+  import_reviewed_at: null,
 };
 const pendingSoup: Recipe = {
   id: 2,
@@ -65,6 +66,7 @@ const pendingSoup: Recipe = {
   processing_status: null,
   owner_username: "admin",
   is_shared: false,
+  import_reviewed_at: "2026-07-23T00:00:00Z",
 };
 
 function page(items: Recipe[]): RecipesPage {

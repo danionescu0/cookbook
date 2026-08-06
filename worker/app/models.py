@@ -14,6 +14,13 @@ class ImportJobType(str, enum.Enum):
     INSTAGRAM = "instagram"
 
 
+class ImportErrorKind(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/import_job.py's ImportErrorKind — see the
+    # "Worker/API code sharing" design decision.
+    DISALLOWED = "disallowed"
+    TECHNICAL = "technical"
+
+
 class ImportJobStatus(str, enum.Enum):
     # Kept in sync by hand with api/app/models/import_job.py's ImportJobStatus — see the
     # "Worker/API code sharing" design decision. This drifted once already (missing PENDING
@@ -40,7 +47,12 @@ class ImportJob(Base):
         Enum(ImportJobStatus, native_enum=False), default=ImportJobStatus.QUEUED
     )
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    error_kind: Mapped[ImportErrorKind | None] = mapped_column(
+        Enum(ImportErrorKind, native_enum=False), nullable=True
+    )
     created_by_user_id: Mapped[int | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    dismissed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    admin_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
@@ -65,6 +77,7 @@ class Recipe(Base):
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    import_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     estimated_servings: Mapped[int | None] = mapped_column(nullable=True)
 
     translations: Mapped[list["RecipeTranslation"]] = relationship(

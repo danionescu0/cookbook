@@ -13,6 +13,7 @@ from app.database import Base
 from app.handlers import handle_import_job
 from app.instagram_client import InstagramFetchError, InstagramPost
 from app.models import (
+    ImportErrorKind,
     ImportJob,
     ImportJobStatus,
     ImportJobType,
@@ -251,6 +252,9 @@ def test_handle_import_job_fails_when_robots_disallow(
     db_session.refresh(job)
     assert job.status == ImportJobStatus.FAILED
     assert "disallows" in job.error
+    # The one error_kind that isn't TECHNICAL — retrying won't help, so a non-admin viewer gets a
+    # distinct, non-actionable message (see api's routers/imports.py _serialize).
+    assert job.error_kind == ImportErrorKind.DISALLOWED
     assert db_session.scalars(select(Recipe)).first() is None
 
 
@@ -269,6 +273,7 @@ def test_handle_import_job_fails_on_fetch_error(
     db_session.refresh(job)
     assert job.status == ImportJobStatus.FAILED
     assert "failed to fetch page" in job.error
+    assert job.error_kind == ImportErrorKind.TECHNICAL
 
 
 def test_handle_import_job_fails_on_extraction_error(
@@ -287,6 +292,7 @@ def test_handle_import_job_fails_on_extraction_error(
     db_session.refresh(job)
     assert job.status == ImportJobStatus.FAILED
     assert job.error == "Claude did not return a structured recipe"
+    assert job.error_kind == ImportErrorKind.TECHNICAL
     assert db_session.scalars(select(Recipe)).first() is None
 
 
@@ -386,6 +392,7 @@ def test_handle_import_job_instagram_fails_cleanly_when_fetch_raises(
     db_session.refresh(job)
     assert job.status == ImportJobStatus.FAILED
     assert job.error == "Instagram asked for a login on this post"
+    assert job.error_kind == ImportErrorKind.TECHNICAL
     assert db_session.scalars(select(Recipe)).first() is None
 
 

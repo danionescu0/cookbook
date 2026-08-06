@@ -83,3 +83,7 @@ class RecipeRead(BaseModel):
     # True only for a manually-added recipe (never an import) whose owner opted to make it
     # visible to everyone once approved — see routers/recipes.py's visibility rule.
     is_shared: bool
+    # Null until the owner acknowledges a just-finished import on the account page (see
+    # routers/recipes.py's acknowledge_import) — drives the post-import review panel. Always null
+    # for a manually-added recipe (source_url is None), which never shows that panel.
+    import_reviewed_at: datetime | None

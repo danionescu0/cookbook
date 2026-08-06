@@ -1,6 +1,7 @@
 import type {
   Category,
   ImportJob,
+  ImportJobsPage,
   IngredientRefreshJob,
   IngredientRefreshStatus,
   LoginResponse,
@@ -97,6 +98,25 @@ async function requestRecipesPage(params: URLSearchParams): Promise<RecipesPage>
   return { items, total: totalHeader !== null ? Number(totalHeader) : items.length };
 }
 
+// Same reasoning as requestRecipesPage above — only used by the admin failed-imports page, which
+// is the one caller that passes limit/offset (see routers/imports.py's list_import_jobs).
+async function requestImportJobsPage(params: URLSearchParams): Promise<ImportJobsPage> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+  const response = await fetch(`${BASE_URL}/imports?${params.toString()}`, { headers });
+
+  if (!response.ok) {
+    if (response.status === 401) onUnauthorized?.();
+    const body = await response.text();
+    throw new Error(extractErrorMessage(body) ?? `Request failed (${response.status})`);
+  }
+
+  const items = (await response.json()) as ImportJob[];
+  const totalHeader = response.headers.get("X-Total-Count");
+  return { items, total: totalHeader !== null ? Number(totalHeader) : items.length };
+}
+
 export const api = {
   login: (username: string, password: string) =>
     request<LoginResponse>("/auth/login", {
@@ -188,6 +208,8 @@ export const api = {
   unfavoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "DELETE" }),
   listFavorites: () => request<Recipe[]>("/users/me/favorites"),
   listMySubmissions: () => request<Recipe[]>("/users/me/submissions"),
+  acknowledgeImportedRecipe: (id: number) =>
+    request<Recipe>(`/recipes/${id}/acknowledge-import`, { method: "POST" }),
 
   // Multipart, not JSON — bypasses the `request` helper (which always sets
   // Content-Type: application/json) so the browser can set its own multipart boundary.
@@ -219,6 +241,20 @@ export const api = {
   approveImportJob: (id: number) =>
     request<ImportJob>(`/imports/${id}/approve`, { method: "POST" }),
   deleteImportJob: (id: number) => request<void>(`/imports/${id}`, { method: "DELETE" }),
+  dismissFailedImport: (id: number) =>
+    request<ImportJob>(`/imports/${id}/dismiss`, { method: "POST" }),
+  markImportReviewed: (id: number) =>
+    request<ImportJob>(`/imports/${id}/mark-reviewed`, { method: "POST" }),
+  listFailedImportsPage: (params: { limit: number; offset: number }): Promise<ImportJobsPage> => {
+    const query = new URLSearchParams();
+    query.set("status", "failed");
+    // Already-reviewed failures stay out of the default paginated view — see
+    // FailedImportsManager's "Mark as reviewed" action.
+    query.set("admin_reviewed", "false");
+    query.set("limit", String(params.limit));
+    query.set("offset", String(params.offset));
+    return requestImportJobsPage(query);
+  },
 
   getSettings: () => request<Settings>("/settings"),
   updateSettings: (patch: SettingsUpdate) =>

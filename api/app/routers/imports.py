@@ -1,13 +1,14 @@
+from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import select
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.auth import AuthUser, get_current_user
+from app.auth import AuthUser, get_current_user, require_admin
 from app.database import get_db
 from app.models.category import Category
-from app.models.import_job import ImportJob, ImportJobStatus, ImportJobType
+from app.models.import_job import ImportErrorKind, ImportJob, ImportJobStatus, ImportJobType
 from app.models.recipe import Recipe
 from app.models.user import User
 from app.queue import publish_import_job
@@ -102,6 +103,7 @@ def _queue_and_publish(db: Session, job: ImportJob) -> None:
     # any consumer before the message can possibly reach one.
     job.status = ImportJobStatus.QUEUED
     job.error = None
+    job.error_kind = None
     db.commit()
     db.refresh(job)
 
@@ -110,18 +112,68 @@ def _queue_and_publish(db: Session, job: ImportJob) -> None:
     except Exception as exc:
         job.status = ImportJobStatus.FAILED
         job.error = f"failed to publish to queue: {exc}"
+        job.error_kind = ImportErrorKind.TECHNICAL
         db.commit()
         db.refresh(job)
 
 
+def _serialize(job: ImportJob, current_user: AuthUser) -> ImportJobRead:
+    # A non-admin never sees the raw technical `error` text — only the categorized error_kind,
+    # which the frontend maps to a friendly canned message. Admins (and the admin-only
+    # failed-imports page) get the full thing.
+    return ImportJobRead(
+        id=job.id,
+        category_id=job.category_id,
+        type=job.type,
+        source=job.source,
+        status=job.status,
+        error=job.error if current_user.is_admin else None,
+        error_kind=job.error_kind,
+        created_at=job.created_at,
+        created_by_username=job.created_by_username,
+        dismissed_at=job.dismissed_at,
+        admin_reviewed_at=job.admin_reviewed_at,
+    )
+
+
 @router.get("", response_model=list[ImportJobRead])
 def list_import_jobs(
-    db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
-) -> list[ImportJob]:
+    response: Response,
+    status: ImportJobStatus | None = Query(default=None),
+    # Only meaningful alongside status=failed — lets the admin failed-imports page exclude jobs
+    # it's already marked reviewed (see POST /imports/{id}/mark-reviewed) without ever touching
+    # dismissed_at, which stays exclusively the owner's own signal.
+    admin_reviewed: bool | None = Query(default=None),
+    # Both optional and unused by ImportManager's existing calls, which keep getting the full,
+    # unpaginated list exactly as before — only the admin failed-imports page passes these.
+    limit: int | None = Query(default=None, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> list[ImportJobRead]:
     stmt = select(ImportJob).order_by(ImportJob.created_at.desc())
+    count_stmt = select(func.count()).select_from(ImportJob)
     if not current_user.is_admin:
         stmt = stmt.where(ImportJob.created_by_user_id == current_user.id)
-    return list(db.scalars(stmt))
+        count_stmt = count_stmt.where(ImportJob.created_by_user_id == current_user.id)
+    if status is not None:
+        stmt = stmt.where(ImportJob.status == status)
+        count_stmt = count_stmt.where(ImportJob.status == status)
+    if admin_reviewed is not None:
+        clause = (
+            ImportJob.admin_reviewed_at.is_not(None)
+            if admin_reviewed
+            else ImportJob.admin_reviewed_at.is_(None)
+        )
+        stmt = stmt.where(clause)
+        count_stmt = count_stmt.where(clause)
+
+    if limit is not None:
+        response.headers["X-Total-Count"] = str(db.scalar(count_stmt) or 0)
+        stmt = stmt.offset(offset).limit(limit)
+
+    jobs = list(db.scalars(stmt))
+    return [_serialize(job, current_user) for job in jobs]
 
 
 @router.post("", response_model=ImportJobRead, status_code=201)
@@ -129,7 +181,7 @@ def create_import_job(
     payload: ImportJobCreate,
     db: Session = Depends(get_db),
     current_user: AuthUser = Depends(get_current_user),
-) -> ImportJob:
+) -> ImportJobRead:
     user = db.get(User, current_user.id)
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
@@ -153,13 +205,13 @@ def create_import_job(
         # admin's own job keeps the existing pending -> approve step.
         _queue_and_publish(db, job)
 
-    return job
+    return _serialize(job, current_user)
 
 
 @router.post("/{job_id}/approve", response_model=ImportJobRead)
 def approve_import_job(
     job_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
-) -> ImportJob:
+) -> ImportJobRead:
     # Also doubles as "retry": a `failed` job (e.g. RabbitMQ was down) can be approved again — by
     # an admin, or by whoever created it.
     job = _get_owned_or_404(db, job_id, current_user)
@@ -168,14 +220,48 @@ def approve_import_job(
             status_code=400, detail=f"Cannot approve a job in status {job.status.value}"
         )
     _queue_and_publish(db, job)
-    return job
+    return _serialize(job, current_user)
 
 
 @router.get("/{job_id}", response_model=ImportJobRead)
 def get_import_job(
     job_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
-) -> ImportJob:
-    return _get_owned_or_404(db, job_id, current_user)
+) -> ImportJobRead:
+    job = _get_owned_or_404(db, job_id, current_user)
+    return _serialize(job, current_user)
+
+
+@router.post("/{job_id}/dismiss", response_model=ImportJobRead)
+def dismiss_import_job(
+    job_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
+) -> ImportJobRead:
+    # Clears the failed-import card from the owner's account page (see frontend's
+    # PendingImportsPanel) — never touches the admin failed-imports page, which ignores
+    # dismissed_at entirely so an owner dismissing their own notification can't erase the record.
+    job = _get_owned_or_404(db, job_id, current_user)
+    if job.status != ImportJobStatus.FAILED:
+        raise HTTPException(status_code=400, detail="Only a failed import can be dismissed")
+    job.dismissed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(job)
+    return _serialize(job, current_user)
+
+
+@router.post("/{job_id}/mark-reviewed", response_model=ImportJobRead, dependencies=[Depends(require_admin)])
+def mark_import_reviewed(
+    job_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
+) -> ImportJobRead:
+    # An admin's own "I've looked at this" signal on the Failed Imports back office page —
+    # deliberately a separate column from the owner's dismissed_at (see ImportJob.admin_reviewed_at):
+    # neither actor's action can silently clear the other's. Admin-only, and not scoped to jobs
+    # this admin created — the whole point is triaging every user's failures.
+    job = _get_or_404(db, job_id)
+    if job.status != ImportJobStatus.FAILED:
+        raise HTTPException(status_code=400, detail="Only a failed import can be marked reviewed")
+    job.admin_reviewed_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(job)
+    return _serialize(job, current_user)
 
 
 @router.delete("/{job_id}", status_code=204)

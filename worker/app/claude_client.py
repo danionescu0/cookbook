@@ -10,6 +10,17 @@ from app.recipe_sections import SECTION_HEADER_PREFIX
 EXTRACTION_MODEL = "claude-haiku-4-5"
 MODEL = "claude-sonnet-5"
 
+# Shared by extract_recipe/parse_recipe_from_text/translate_recipe — every call that produces a
+# full `translations` array (title/description/ingredients/steps/tips, once per configured
+# language). A real import hit `stop_reason: "max_tokens"` at the old value of 4096: a long,
+# detailed recipe translated into two languages needed ~4500 output tokens just for the content,
+# leaving no room to also emit `images` first — Claude ran out of budget mid-response with only
+# `images` written and never reached `translations` at all, which surfaced as a misleadingly
+# generic "Claude returned no translations" failure with no hint that it was actually a token
+# limit. See the "Extraction max_tokens was too low for a long, multi-language recipe" Design
+# Decisions entry.
+_TRANSLATIONS_MAX_TOKENS = 8192
+
 # Shared across every prompt that produces or preserves ingredients/steps — see
 # app.recipe_sections for why this is a plain string-list marker rather than a schema change.
 _SECTION_HEADER_INSTRUCTION = (
@@ -280,7 +291,7 @@ def extract_recipe(html: str, languages: list[str], api_key: str) -> dict:
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_EXTRACT_RECIPE_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe"},
         messages=[
@@ -337,7 +348,7 @@ def parse_recipe_from_text(text: str, languages: list[str], api_key: str) -> dic
     languages_str = ", ".join(languages)
     response = _client(api_key).messages.create(
         model=EXTRACTION_MODEL,
-        max_tokens=4096,
+        max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_PARSE_RECIPE_TEXT_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe_text"},
         messages=[
@@ -386,7 +397,7 @@ def translate_recipe(source: dict, target_languages: list[str], api_key: str) ->
     ]
     response = _client(api_key).messages.create(
         model=MODEL,
-        max_tokens=4096,
+        max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_TRANSLATE_RECIPE_TOOL],
         tool_choice={"type": "tool", "name": "translated_recipe"},
         messages=[{"role": "user", "content": "\n".join(prompt_lines)}],

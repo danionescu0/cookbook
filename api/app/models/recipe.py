@@ -37,6 +37,11 @@ class Recipe(Base):
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # Null means the owner hasn't seen/acknowledged this import yet — drives the account page's
+    # post-import review panel (see routers/recipes.py's acknowledge_import). Only ever set for an
+    # import (source_url is not None); stays null forever for a manually-added recipe, which never
+    # shows that panel, so there's no need for a DB constraint tying the two together.
+    import_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     category: Mapped["Category"] = relationship(back_populates="recipes")
     translations: Mapped[list["RecipeTranslation"]] = relationship(

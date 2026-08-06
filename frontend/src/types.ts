@@ -32,10 +32,18 @@ export interface Recipe {
   // Only ever true for a manually-added recipe (source_url is null) — imports are never
   // shareable. A shared recipe is only actually visible to everyone once status is "approved."
   is_shared: boolean;
+  // Null until the owner acknowledges a just-finished import on the account page — drives the
+  // post-import review panel. Always null for a manually-added recipe (source_url is null).
+  import_reviewed_at: string | null;
 }
 
 export interface RecipesPage {
   items: Recipe[];
+  total: number;
+}
+
+export interface ImportJobsPage {
+  items: ImportJob[];
   total: number;
 }
 
@@ -75,16 +83,27 @@ export type ImportJobStatus =
   | "done"
   | "failed";
 
+export type ImportErrorKind = "disallowed" | "technical";
+
 export interface ImportJob {
   id: number;
   category_id: number;
   type: "single" | "bulk" | "bookmark" | "instagram";
   source: string;
   status: ImportJobStatus;
+  // Raw technical text — null for a non-admin caller (see api's routers/imports.py _serialize);
+  // error_kind below is what a non-admin actually renders.
   error: string | null;
+  error_kind: ImportErrorKind | null;
   created_at: string;
   // Whoever ran the import — the resulting recipe is always private to them, never shareable.
   created_by_username: string | null;
+  // Set once the owner dismisses a failed job from their account page. Never populated/consulted
+  // by the admin failed-imports page.
+  dismissed_at: string | null;
+  // Set once an admin marks a failed job as handled on the Failed Imports back office page.
+  // Independent of dismissed_at — the owner's dismissal never sets this and vice versa.
+  admin_reviewed_at: string | null;
 }
 
 export interface Settings {

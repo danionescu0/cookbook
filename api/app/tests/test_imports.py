@@ -430,3 +430,209 @@ def test_admin_can_see_a_non_admins_import_job(
     response = client.get(f"/imports/{job.id}")
 
     assert response.status_code == 200
+
+
+def _fail_a_job(client: TestClient, monkeypatch: pytest.MonkeyPatch, category_id: int) -> dict:
+    monkeypatch.setattr(
+        imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    return client.post(
+        "/imports", json={"source": "https://example.com/fails", "category_id": category_id}
+    ).json()
+
+
+def test_dismiss_failed_import_job(
+    user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    assert failed["status"] == "failed"
+
+    response = user_client.post(f"/imports/{failed['id']}/dismiss")
+
+    assert response.status_code == 200
+    assert response.json()["dismissed_at"] is not None
+
+
+def test_dismiss_rejects_a_job_that_has_not_failed(client: TestClient) -> None:
+    category_id = _create_category(client)
+    pending = client.post(
+        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
+    ).json()
+    assert pending["status"] == "pending"
+
+    response = client.post(f"/imports/{pending['id']}/dismiss")
+
+    assert response.status_code == 400
+
+
+def test_non_owner_non_admin_cannot_dismiss(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An admin's own job doesn't auto-publish on creation (see create_import_job), so it has to
+    # fail via approve/retry instead of _fail_a_job's create-time failure.
+    category_id = _create_category(client)
+    created = client.post(
+        "/imports", json={"source": "https://example.com/admins-failure", "category_id": category_id}
+    ).json()
+    monkeypatch.setattr(
+        imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    failed = client.post(f"/imports/{created['id']}/approve").json()
+    assert failed["status"] == "failed"
+
+    response = user_client.post(f"/imports/{failed['id']}/dismiss")
+
+    # Same "don't confirm it exists" 404, not 403 — matches _get_owned_or_404 everywhere else.
+    assert response.status_code == 404
+
+
+def test_admin_dismissing_does_not_require_ownership(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+
+    response = client.post(f"/imports/{failed['id']}/dismiss")
+
+    assert response.status_code == 200
+
+
+def test_non_admin_never_sees_the_raw_error_only_error_kind(
+    user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+
+    assert failed["error"] is None
+    assert failed["error_kind"] == "technical"
+
+    response = user_client.get(f"/imports/{failed['id']}")
+    assert response.json()["error"] is None
+    assert response.json()["error_kind"] == "technical"
+
+
+def test_admin_sees_the_raw_error(
+    user_client: TestClient, client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+
+    response = client.get(f"/imports/{failed['id']}")
+
+    assert response.json()["error"] is not None
+    assert "boom" in response.json()["error"]
+
+
+def test_list_import_jobs_paginates_when_limit_is_given(client: TestClient) -> None:
+    category_id = _create_category(client)
+    for i in range(3):
+        client.post("/imports", json={"source": f"https://example.com/{i}", "category_id": category_id})
+
+    response = client.get("/imports", params={"limit": 2, "offset": 0})
+
+    assert response.status_code == 200
+    assert response.headers["X-Total-Count"] == "3"
+    assert len(response.json()) == 2
+
+    second_page = client.get("/imports", params={"limit": 2, "offset": 2})
+    assert len(second_page.json()) == 1
+
+
+def test_list_import_jobs_without_limit_returns_everything_unheadered(client: TestClient) -> None:
+    category_id = _create_category(client)
+    for i in range(3):
+        client.post("/imports", json={"source": f"https://example.com/{i}", "category_id": category_id})
+
+    response = client.get("/imports")
+
+    assert len(response.json()) == 3
+    assert "X-Total-Count" not in response.headers
+
+
+def test_list_import_jobs_filters_by_status(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    client.post(
+        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
+    )
+
+    response = client.get("/imports", params={"status": "failed", "limit": 10, "offset": 0})
+
+    assert response.headers["X-Total-Count"] == "1"
+    assert [job["id"] for job in response.json()] == [failed["id"]]
+
+
+def test_mark_reviewed_requires_admin(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+
+    response = user_client.post(f"/imports/{failed['id']}/mark-reviewed")
+
+    assert response.status_code == 403
+
+
+def test_mark_reviewed_sets_the_timestamp_and_does_not_touch_dismissed_at(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+
+    response = client.post(f"/imports/{failed['id']}/mark-reviewed")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["admin_reviewed_at"] is not None
+    assert body["dismissed_at"] is None
+
+
+def test_mark_reviewed_rejects_a_job_that_has_not_failed(client: TestClient) -> None:
+    category_id = _create_category(client)
+    pending = client.post(
+        "/imports", json={"source": "https://example.com/still-pending", "category_id": category_id}
+    ).json()
+
+    response = client.post(f"/imports/{pending['id']}/mark-reviewed")
+
+    assert response.status_code == 400
+
+
+def test_owner_dismissing_does_not_affect_admin_reviewed_at(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    failed = _fail_a_job(user_client, monkeypatch, category_id)
+    client.post(f"/imports/{failed['id']}/mark-reviewed")
+
+    response = user_client.post(f"/imports/{failed['id']}/dismiss")
+
+    assert response.status_code == 200
+    assert response.json()["dismissed_at"] is not None
+    # Reviewed-by-admin state survives the owner's own, independent dismissal.
+    admin_view = client.get(f"/imports/{failed['id']}")
+    assert admin_view.json()["admin_reviewed_at"] is not None
+
+
+def test_list_import_jobs_filters_by_admin_reviewed(
+    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    category_id = _create_category(client)
+    reviewed = _fail_a_job(user_client, monkeypatch, category_id)
+    client.post(f"/imports/{reviewed['id']}/mark-reviewed")
+    monkeypatch.setattr(
+        imports_router, "publish_import_job", lambda *args: (_ for _ in ()).throw(RuntimeError("boom"))
+    )
+    unreviewed = user_client.post(
+        "/imports", json={"source": "https://example.com/still-unreviewed", "category_id": category_id}
+    ).json()
+
+    response = client.get(
+        "/imports", params={"status": "failed", "admin_reviewed": "false", "limit": 10, "offset": 0}
+    )
+
+    assert response.headers["X-Total-Count"] == "1"
+    assert [job["id"] for job in response.json()] == [unreviewed["id"]]

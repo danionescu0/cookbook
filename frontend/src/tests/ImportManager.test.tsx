@@ -32,18 +32,21 @@ const pendingJob: ImportJob = {
   source: "https://example.com/recipe",
   status: "pending",
   error: null,
+  error_kind: null,
   created_at: "2026-07-24T00:00:00Z",
   created_by_username: "admin",
+  dismissed_at: null,
+  admin_reviewed_at: null,
 };
 const queuedJob: ImportJob = { ...pendingJob, id: 2, status: "queued" };
 const failedJob: ImportJob = { ...pendingJob, id: 3, status: "failed", error: "boom" };
 const doneJob: ImportJob = { ...pendingJob, id: 4, status: "done" };
 
-function renderManager() {
+function renderManager(onJobCreated?: () => void) {
   return render(
     <LanguageProvider>
       <AuthProvider>
-        <ImportManager />
+        <ImportManager onJobCreated={onJobCreated} />
       </AuthProvider>
     </LanguageProvider>
   );
@@ -126,6 +129,34 @@ describe("ImportManager", () => {
     await waitFor(() =>
       expect(mockedApi.createImportJob).toHaveBeenCalledWith("https://example.com/new", 1)
     );
+  });
+
+  it("calls onJobCreated after successfully submitting a new import", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const onJobCreated = vi.fn();
+    mockedApi.createImportJob.mockResolvedValue(pendingJob);
+
+    renderManager(onJobCreated);
+    await screen.findByText("https://example.com/recipe");
+
+    await user.type(screen.getByLabelText("Recipe URL"), "https://example.com/new");
+    await user.selectOptions(screen.getByLabelText("Category"), "Desserts");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(onJobCreated).toHaveBeenCalledTimes(1));
+  });
+
+  it("calls onJobCreated after approving a job", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    const onJobCreated = vi.fn();
+    mockedApi.approveImportJob.mockResolvedValue({ ...pendingJob, status: "queued" });
+
+    renderManager(onJobCreated);
+    await screen.findByText("https://example.com/recipe");
+
+    await user.click(screen.getByRole("button", { name: "Run import" }));
+
+    await waitFor(() => expect(onJobCreated).toHaveBeenCalledTimes(1));
   });
 
   it("shows a run-import button for a pending job and a retry button for a failed one", async () => {

@@ -47,6 +47,7 @@ const cake: Recipe = {
   processing_status: null,
   owner_username: "admin",
   is_shared: true,
+  import_reviewed_at: null,
 };
 
 const soup: Recipe = {
