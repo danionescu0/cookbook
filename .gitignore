@@ -15,6 +15,9 @@ __pycache__/
 api/data/
 worker/data/
 
+# local backup output (scripts/backup.sh) — DB dumps + images archives, never committed
+backups/
+
 # node
 node_modules/
 dist/

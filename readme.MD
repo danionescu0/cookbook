@@ -317,6 +317,11 @@ state:
       `app_settings.contact_recipient_email` (Settings page). An anonymous submitter must solve a
       Turnstile CAPTCHA (same widget as signup); a logged-in one skips it entirely. See
       [Design Decisions](#design-decisions), "Contact page".
+- [x] Local backups (`scripts/backup.sh`, cron-driven): Postgres + the `images_data` volume,
+      dated and compressed under `./backups/`, pruned to keep only backups aged 0/1/4/8 days.
+      Getting a copy off the VPS is left to an external tool the operator already has, not baked
+      into this repo. See [Deployment](#deployment) for setup + restore, and
+      [Design Decisions](#design-decisions), "Local backup strategy".
 
 ## Features
 
@@ -466,6 +471,9 @@ cookbook/
 ├── docker-compose.yml
 ├── docker-compose.override.yml     # local dev overrides (hot reload, exposed ports)
 ├── .env.example
+├── scripts/
+│   └── backup.sh                   # cron-driven: pg_dump + tar of images_data into ./backups/,
+│                                    #   pruned to backups aged 0/1/4/8 days — see Deployment
 ├── frontend/                       # React + TypeScript SPA (front office + back office)
 │   ├── src/
 │   │   ├── frontoffice/             # LandingPage (logged-out home + "From the community" section),
@@ -1229,6 +1237,50 @@ being re-imported as a duplicate.
   (`/account`, `/backoffice`, `/en/recipes/26-...`, ...) to survive a direct navigation or a
   browser refresh in production; see [Design Decisions](#design-decisions), "SPA fallback for
   direct navigation/refresh in production".
+
+### Backups
+
+`scripts/backup.sh` backs up the two things that actually hold durable state — Postgres (all
+structured data) and the `images_data` volume (recipe photos) — into dated, compressed files
+under `./backups/db/` and `./backups/images/` in the deployed repo checkout.
+`rabbitmq_data` is deliberately not backed up: it only ever holds transient in-flight job state,
+nothing that isn't already reconstructible.
+
+Set it up on the VPS with a daily cron entry (pick whichever hour; low-traffic is safest):
+
+```cron
+0 3 * * * /path/to/cookbook/scripts/backup.sh >> /var/log/cookbook-backup.log 2>&1
+```
+
+The script reads `POSTGRES_USER`/`POSTGRES_DB` from the already-running `db` container's own
+environment rather than parsing `.env` itself on the host — `.env` has unquoted values containing
+spaces/parens (`SCRAPE_USER_AGENT`) that aren't valid to `source` as a shell script. It streams
+`pg_dump` and a `tar` of `/data/images` straight out of the already-running `db`/`api` containers
+(`docker compose exec`), so no extra containers or knowledge of the volume's actual Docker-assigned
+name is needed.
+
+**Retention**: after each run, any backup not aged exactly 0, 1, 4, or 8 days old is deleted — so
+at most 4 backups of each kind exist at any time: today's, yesterday's, one from ~4 days ago, and
+one from ~8 days ago. This is a local-only, on-VPS backup; it does not protect against losing the
+VPS itself. Getting a copy safely off the server (e.g. an external tool pulling `./backups/` via
+`rsync`/`scp` on its own schedule) is intentionally left to whatever the operator already has
+for that, rather than baking a specific offsite destination/credential into this repo.
+
+**Restore**:
+
+```bash
+# Database — replaces everything currently in the DB, so stop api/worker first if restoring
+# into a live stack, not just a fresh one.
+gunzip -c backups/db/cookbook-db-YYYYMMDD.sql.gz \
+  | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T db \
+      sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB"'
+
+# Images — extracts on top of whatever's already in the volume; wipe /data/images first for a
+# clean restore instead of a merge.
+gunzip -c backups/images/cookbook-images-YYYYMMDD.tar.gz \
+  | docker compose -f docker-compose.yml -f docker-compose.prod.yml exec -T api \
+      tar xzf - -C /data/images
+```
 
 ## Debug
 
@@ -2209,6 +2261,37 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
 - **Manual hack: promoting an imported recipe to public** and **securely accessing the prod
   database from a local GUI client** — both moved to [Debug](#debug), which now collects
   operational/troubleshooting procedures separately from the "why" this section is for.
+- **Local backup strategy: Postgres + images only, a fixed {0,1,4,8}-day retention, and no
+  offsite destination baked in.** Scoped deliberately narrow rather than reaching for a generic
+  backup tool: the only durable state this app owns lives in two places — Postgres (everything
+  structured: recipes, users, jobs, settings, ...) and the `images_data` volume (recipe photos).
+  `rabbitmq_data` was explicitly left out — it only ever holds in-flight job messages, which are
+  either already reflected in Postgres (a job's own `status`/`error` row) or safely re-enqueueable;
+  backing it up would just be backing up noise. Retention is a fixed set of ages (0, 1, 4, 8 days)
+  rather than a simple "keep last N daily" count or a full grandfather-father-son scheme: it's the
+  minimum that still gives useful recovery granularity (yesterday, most of a week back, a bit
+  over a week back) while capping storage at exactly 4 backups of each kind forever, no separate
+  weekly/monthly job needed. The script deliberately does **not** push anywhere off the VPS — the
+  operator already has (or will set up) their own pull mechanism on their own schedule, and baking
+  in a specific offsite target (S3 bucket, rclone remote, ...) would mean a credential this repo
+  has to manage for a destination that's really the operator's choice, not this app's concern.
+  <br><br>
+  One real bug surfaced while testing the script against the actual dev stack rather than just
+  reading it: the first draft did `source .env` on the host to get `POSTGRES_USER`/`POSTGRES_DB`,
+  which broke immediately — `.env` has unquoted values containing spaces and parentheses
+  (`SCRAPE_USER_AGENT=Mozilla/5.0 (X11; Linux x86_64) ...`), which isn't valid shell syntax to
+  `source` directly, only to load via `docker compose`'s own `env_file:` parser (which is far more
+  lenient). Fixed by not touching `.env` on the host at all — `docker compose exec -T db sh -c
+  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"'` reads those two vars from the `db` container's
+  own environment instead, which docker-compose.yml already populated from `.env` when the stack
+  started. The images side follows the same "reuse what's already running" approach: `docker
+  compose exec -T api tar czf - -C /data/images .` streams the archive straight out of the `api`
+  container, which already has the volume mounted at that exact path — no throwaway container, and
+  no need to know the volume's actual Docker-assigned name (which depends on the compose project
+  name and isn't something worth hardcoding). Verified end to end against the real dev stack: a
+  full run produced a valid, `psql`-restorable dump and a tar containing every file actually in
+  the volume, and the retention logic was separately unit-tested against synthetic files aged 0
+  through 10 days to confirm it keeps exactly the {0,1,4,8} set and nothing else.
 - **Verification email personalized in the signup language, not live-synced afterward** — the
   original verification email was generic English boilerplate with just a link; a user reported
   receiving a working link with no indication of what the site even was or which account it was
