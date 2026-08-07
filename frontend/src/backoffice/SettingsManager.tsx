@@ -28,6 +28,7 @@ interface FormState {
   publicSiteUrl: string;
   backofficeRecipesPageSize: string;
   maxImportsPerUser: string;
+  contactRecipientEmail: string;
 }
 
 function toFormState(settings: Settings): FormState {
@@ -52,6 +53,7 @@ function toFormState(settings: Settings): FormState {
     publicSiteUrl: settings.public_site_url,
     backofficeRecipesPageSize: String(settings.backoffice_recipes_page_size),
     maxImportsPerUser: String(settings.max_imports_per_user),
+    contactRecipientEmail: settings.contact_recipient_email,
   };
 }
 
@@ -141,6 +143,7 @@ export function SettingsManager() {
         public_site_url: form.publicSiteUrl.trim(),
         backoffice_recipes_page_size: Number(form.backofficeRecipesPageSize),
         max_imports_per_user: Number(form.maxImportsPerUser),
+        contact_recipient_email: form.contactRecipientEmail.trim(),
       });
       setSettings(updated);
       setForm(toFormState(updated));
@@ -278,6 +281,14 @@ export function SettingsManager() {
           value={form.publicSiteUrl}
           placeholder="https://cookbook.example.com"
           onChange={(v) => update({ publicSiteUrl: v })}
+        />
+        <Field
+          id="settings-contact-recipient-email"
+          type="email"
+          label={t.settingsManager.contactRecipientEmailLabel}
+          help={t.settingsManager.contactRecipientEmailHelp}
+          value={form.contactRecipientEmail}
+          onChange={(v) => update({ contactRecipientEmail: v })}
         />
         <Field
           id="settings-smtp-host"

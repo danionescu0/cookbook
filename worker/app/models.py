@@ -157,6 +157,9 @@ class AppSettings(Base):
     turnstile_site_key: Mapped[str] = mapped_column(String(255), nullable=False)
     turnstile_secret_key: Mapped[str] = mapped_column(String(255), nullable=False)
     public_site_url: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Where handle_contact_message_job (contact_handlers.py) sends a submission notification —
+    # blank means not configured yet, handled as a clean job failure, not a crash.
+    contact_recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
 
 class Ingredient(Base):
@@ -304,5 +307,35 @@ class EmailVerificationToken(Base):
     token: Mapped[str] = mapped_column(String(64), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class ContactMessageStatus(str, enum.Enum):
+    # Kept in sync by hand with api/app/models/contact_message.py's ContactMessageStatus.
+    QUEUED = "queued"
+    PROCESSING = "processing"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class ContactMessage(Base):
+    # Kept in sync by hand with api/app/models/contact_message.py — the worker only reads this
+    # row (name/email/phone/message) to build the notification email and writes back
+    # status/error; the api owns creation.
+    __tablename__ = "contact_messages"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    message: Mapped[str] = mapped_column(Text, nullable=False)
+    submitted_by_user_id: Mapped[int | None] = mapped_column(
+        ForeignKey("users.id", ondelete="SET NULL"), nullable=True
+    )
+    status: Mapped[ContactMessageStatus] = mapped_column(
+        Enum(ContactMessageStatus, native_enum=False), default=ContactMessageStatus.QUEUED
+    )
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

@@ -24,6 +24,7 @@ import { UsersManager } from "./backoffice/UsersManager";
 import { SignupForm } from "./auth/SignupForm";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { useAuth } from "./auth/AuthContext";
+import { ContactPage } from "./contact/ContactPage";
 import { LandingPage } from "./frontoffice/LandingPage";
 import { PublicRecipeDetail } from "./frontoffice/PublicRecipeDetail";
 import { RecipeBrowser } from "./frontoffice/RecipeBrowser";
@@ -213,6 +214,9 @@ export function App() {
               <NavLink to="/recipes" className={navLinkClasses}>
                 {t.nav.recipes}
               </NavLink>
+              <NavLink to="/contact" className={navLinkClasses}>
+                {t.nav.contact}
+              </NavLink>
               {user?.is_admin && (
                 <NavLink to="/backoffice" className={navLinkClasses}>
                   {t.nav.backoffice}
@@ -257,6 +261,7 @@ export function App() {
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          <Route path="/contact" element={<ContactPage />} />
           <Route
             path="/account"
             element={

@@ -57,6 +57,12 @@ class AppSettings(Base):
     # Not secret, so it's readable via GET /settings/public alongside backoffice_recipes_page_size
     # — the Account page needs it to show usage before anything becomes public.
     max_imports_per_user: Mapped[int] = mapped_column(Integer, nullable=False, default=30)
+    # Where the worker sends a contact-form notification email (see
+    # worker/app/contact_handlers.py) — not secret (it's not a credential), but not exposed via
+    # GET /settings/public either, since it has no front-end use before a submission happens.
+    # Blank means "not configured yet": the worker fails a queued contact_messages job cleanly
+    # with an actionable error rather than sending nowhere.
+    contact_recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
     @property
     def supported_languages_list(self) -> list[str]:

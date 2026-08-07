@@ -6,6 +6,7 @@ const en = {
   },
   nav: {
     recipes: "Recipes",
+    contact: "Contact",
     backoffice: "Back office",
     logout: "Log out",
     backofficeRecipes: "Recipes",
@@ -55,6 +56,24 @@ const en = {
     success: "Your email is verified — you can log in now.",
     missingToken: "This link is missing its verification token.",
     loginLink: "Go to login",
+  },
+  contact: {
+    heading: "Contact us",
+    intro: "Have a question or feedback? Send us a message and we'll get back to you.",
+    nameLabel: "Name",
+    emailLabel: "Email",
+    phoneLabel: "Phone",
+    messageLabel: "Message",
+    messageHelp: "At least {min} characters.",
+    emailOrPhoneHelp: "Provide at least an email or a phone number.",
+    submit: "Send message",
+    successMessage: "Thanks — your message has been sent. We'll get back to you soon.",
+    nameRequiredError: "Please enter your name.",
+    emailInvalidError: "Please enter a valid email address.",
+    messageRequiredError: "Please enter a message.",
+    messageTooShortError: "Message must be at least 50 characters.",
+    emailOrPhoneRequiredError: "Provide at least an email or a phone number.",
+    captchaRequiredError: "Please complete the CAPTCHA.",
   },
   account: {
     heading: "My account",
@@ -284,6 +303,9 @@ const en = {
     publicSiteUrlLabel: "Public site URL",
     publicSiteUrlHelp:
       "The address visitors use to reach this site, e.g. https://cookbook.example.com — used to build the link inside account-verification emails.",
+    contactRecipientEmailLabel: "Contact form recipient email",
+    contactRecipientEmailHelp:
+      "Where a submission from the public Contact page is emailed — leave blank and submissions will fail until this is set.",
     backofficeRecipesPageSizeLabel: "Backoffice recipes per page",
     backofficeRecipesPageSizeHelp:
       "How many recipes the back office's recipe list shows per page.",

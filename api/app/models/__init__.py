@@ -1,5 +1,6 @@
 from app.models.app_settings import AppSettings
 from app.models.category import Category
+from app.models.contact_message import ContactMessage, ContactMessageStatus
 from app.models.email_job import EmailJob, EmailJobStatus
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.import_job import ImportJob, ImportJobStatus, ImportJobType
@@ -17,6 +18,8 @@ from app.models.user import User
 __all__ = [
     "AppSettings",
     "Category",
+    "ContactMessage",
+    "ContactMessageStatus",
     "EmailJob",
     "EmailJobStatus",
     "EmailVerificationToken",

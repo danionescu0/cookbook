@@ -131,6 +131,7 @@ export interface Settings {
   public_site_url: string;
   backoffice_recipes_page_size: number;
   max_imports_per_user: number;
+  contact_recipient_email: string;
 }
 
 export interface SettingsUpdate {
@@ -155,6 +156,18 @@ export interface SettingsUpdate {
   public_site_url?: string;
   backoffice_recipes_page_size?: number;
   max_imports_per_user?: number;
+  contact_recipient_email?: string;
+}
+
+export interface ContactMessageCreate {
+  name: string;
+  // Both optional individually, but at least one is required — enforced server-side
+  // (ContactMessageCreate's model_validator) and mirrored client-side in ContactPage.
+  email?: string;
+  phone?: string;
+  message: string;
+  // Only sent (and only required) for an anonymous submitter — see ContactPage.
+  turnstile_token?: string;
 }
 
 export interface PublicSettings {

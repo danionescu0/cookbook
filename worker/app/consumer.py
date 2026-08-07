@@ -7,11 +7,14 @@ from pika.adapters.blocking_connection import BlockingChannel
 from pika.spec import Basic, BasicProperties
 
 from app.config import settings
+from app.contact_handlers import handle_contact_message_job
 from app.database import SessionLocal
 from app.email_handlers import handle_email_job
 from app.handlers import handle_import_job
 from app.ingredient_refresh_handlers import handle_ingredient_refresh_job
 from app.models import (
+    ContactMessage,
+    ContactMessageStatus,
     EmailJob,
     EmailJobStatus,
     ImportJob,
@@ -37,6 +40,7 @@ INGREDIENT_REFRESH_JOBS_QUEUE = "ingredient_refresh_jobs"
 TRANSLATION_SYNC_JOBS_QUEUE = "translation_sync_jobs"
 EMAIL_JOBS_QUEUE = "email_jobs"
 RECIPE_REPARSE_JOBS_QUEUE = "recipe_reparse_jobs"
+CONTACT_MESSAGE_JOBS_QUEUE = "contact_message_jobs"
 
 
 def _on_message(
@@ -207,6 +211,33 @@ def _on_reparse_message(
     channel.basic_ack(delivery_tag=method.delivery_tag)
 
 
+def _on_contact_message(
+    channel: BlockingChannel,
+    method: Basic.Deliver,
+    properties: BasicProperties,
+    body: bytes,
+) -> None:
+    db = SessionLocal()
+    try:
+        handle_contact_message_job(body, db)
+    except Exception as exc:
+        # Same reasoning as the other callbacks above.
+        logger.exception("unhandled error processing contact message job")
+        db.rollback()
+        try:
+            payload = json.loads(body)
+            message = db.get(ContactMessage, payload.get("job_id"))
+            if message is not None:
+                message.status = ContactMessageStatus.FAILED
+                message.error = f"worker crashed while processing: {exc}"
+                db.commit()
+        except Exception:
+            logger.exception("failed to record contact message job failure after crash")
+    finally:
+        db.close()
+    channel.basic_ack(delivery_tag=method.delivery_tag)
+
+
 def connect_with_retry(
     max_attempts: int = 10, delay_seconds: float = 3.0
 ) -> pika.BlockingConnection:
@@ -232,6 +263,7 @@ def run() -> None:
     channel.queue_declare(queue=TRANSLATION_SYNC_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=EMAIL_JOBS_QUEUE, durable=True)
     channel.queue_declare(queue=RECIPE_REPARSE_JOBS_QUEUE, durable=True)
+    channel.queue_declare(queue=CONTACT_MESSAGE_JOBS_QUEUE, durable=True)
     channel.basic_qos(prefetch_count=1)
     channel.basic_consume(queue=IMPORT_JOBS_QUEUE, on_message_callback=_on_message)
     channel.basic_consume(queue=NUTRITION_JOBS_QUEUE, on_message_callback=_on_nutrition_message)
@@ -243,17 +275,19 @@ def run() -> None:
     )
     channel.basic_consume(queue=EMAIL_JOBS_QUEUE, on_message_callback=_on_email_message)
     channel.basic_consume(queue=RECIPE_REPARSE_JOBS_QUEUE, on_message_callback=_on_reparse_message)
+    channel.basic_consume(queue=CONTACT_MESSAGE_JOBS_QUEUE, on_message_callback=_on_contact_message)
 
-    # One worker process/container consumes all six queues on the same connection — see README
+    # One worker process/container consumes all seven queues on the same connection — see README
     # Design Decisions ("Ingredient nutrition") for why this wasn't split into a separate service.
     logger.info(
-        "worker started, waiting for jobs on %s, %s, %s, %s, %s, and %s",
+        "worker started, waiting for jobs on %s, %s, %s, %s, %s, %s, and %s",
         IMPORT_JOBS_QUEUE,
         NUTRITION_JOBS_QUEUE,
         INGREDIENT_REFRESH_JOBS_QUEUE,
         TRANSLATION_SYNC_JOBS_QUEUE,
         EMAIL_JOBS_QUEUE,
         RECIPE_REPARSE_JOBS_QUEUE,
+        CONTACT_MESSAGE_JOBS_QUEUE,
     )
     try:
         channel.start_consuming()

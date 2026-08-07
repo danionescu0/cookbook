@@ -25,6 +25,7 @@ class SettingsRead(BaseModel):
     public_site_url: str
     backoffice_recipes_page_size: int
     max_imports_per_user: int
+    contact_recipient_email: str
 
 
 class SettingsUpdate(BaseModel):
@@ -50,3 +51,4 @@ class SettingsUpdate(BaseModel):
     public_site_url: str | None = None
     backoffice_recipes_page_size: int | None = Field(default=None, gt=0)
     max_imports_per_user: int | None = Field(default=None, gt=0)
+    contact_recipient_email: str | None = None

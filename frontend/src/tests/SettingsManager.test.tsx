@@ -36,6 +36,7 @@ const baseSettings: Settings = {
   public_site_url: "",
   backoffice_recipes_page_size: 10,
   max_imports_per_user: 30,
+  contact_recipient_email: "",
 };
 
 beforeEach(() => {

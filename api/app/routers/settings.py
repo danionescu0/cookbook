@@ -35,6 +35,7 @@ def _serialize(row: AppSettings) -> SettingsRead:
         public_site_url=row.public_site_url,
         backoffice_recipes_page_size=row.backoffice_recipes_page_size,
         max_imports_per_user=row.max_imports_per_user,
+        contact_recipient_email=row.contact_recipient_email,
     )
 
 

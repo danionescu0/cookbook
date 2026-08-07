@@ -1,5 +1,6 @@
 import type {
   Category,
+  ContactMessageCreate,
   ImportJob,
   ImportJobsPage,
   IngredientRefreshJob,
@@ -144,6 +145,8 @@ export const api = {
     }),
   getPublicSettings: () => request<PublicSettings>("/settings/public"),
   getLanguages: () => request<PublicLanguages>("/languages"),
+  submitContactMessage: (payload: ContactMessageCreate) =>
+    request<{ id: number }>("/contact", { method: "POST", body: JSON.stringify(payload) }),
 
   listCategories: () => request<Category[]>("/categories"),
   createCategory: (name: string) =>

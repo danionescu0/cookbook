@@ -10,6 +10,7 @@ const ro: Translation = {
   },
   nav: {
     recipes: "Rețete",
+    contact: "Contact",
     backoffice: "Panou admin",
     logout: "Deconectare",
     backofficeRecipes: "Rețete",
@@ -59,6 +60,24 @@ const ro: Translation = {
     success: "Emailul a fost verificat — te poți conecta acum.",
     missingToken: "Acestui link îi lipsește tokenul de verificare.",
     loginLink: "Mergi la conectare",
+  },
+  contact: {
+    heading: "Contactează-ne",
+    intro: "Ai o întrebare sau un feedback? Trimite-ne un mesaj și îți vom răspunde.",
+    nameLabel: "Nume",
+    emailLabel: "Email",
+    phoneLabel: "Telefon",
+    messageLabel: "Mesaj",
+    messageHelp: "Cel puțin {min} de caractere.",
+    emailOrPhoneHelp: "Completează cel puțin un email sau un număr de telefon.",
+    submit: "Trimite mesajul",
+    successMessage: "Mulțumim — mesajul tău a fost trimis. Îți vom răspunde în curând.",
+    nameRequiredError: "Te rugăm să introduci numele.",
+    emailInvalidError: "Te rugăm să introduci o adresă de email validă.",
+    messageRequiredError: "Te rugăm să introduci un mesaj.",
+    messageTooShortError: "Mesajul trebuie să aibă cel puțin 50 de caractere.",
+    emailOrPhoneRequiredError: "Completează cel puțin un email sau un număr de telefon.",
+    captchaRequiredError: "Te rugăm să completezi CAPTCHA.",
   },
   account: {
     heading: "Contul meu",
@@ -289,6 +308,9 @@ const ro: Translation = {
     publicSiteUrlLabel: "URL public al site-ului",
     publicSiteUrlHelp:
       "Adresa folosită de vizitatori pentru a ajunge pe acest site, ex. https://cookbook.example.com — folosită pentru linkul din emailurile de verificare a contului.",
+    contactRecipientEmailLabel: "Email destinatar formular de contact",
+    contactRecipientEmailHelp:
+      "Adresa la care este trimis un mesaj din pagina publică de Contact — dacă e goală, mesajele vor eșua până când e completată.",
     backofficeRecipesPageSizeLabel: "Rețete pe pagină (panou admin)",
     backofficeRecipesPageSizeHelp:
       "Câte rețete afișează pe pagină lista de rețete din panoul de administrare.",

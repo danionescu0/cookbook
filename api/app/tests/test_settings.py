@@ -38,6 +38,7 @@ def test_get_settings_returns_defaults_and_masks_secrets(client: TestClient) -> 
     assert body["turnstile_secret_key_is_set"] is False
     assert body["smtp_use_tls"] is True
     assert body["smtp_port"] == 587
+    assert body["contact_recipient_email"] == ""
     # No raw secret value ever appears in the response body.
     assert "anthropic_api_key" not in body
     assert "calorie_ninjas_api_key" not in body
@@ -203,6 +204,13 @@ def test_patch_settings_rejects_non_positive_backoffice_recipes_page_size(client
     response = client.patch("/settings", json={"backoffice_recipes_page_size": 0})
 
     assert response.status_code == 422
+
+
+def test_patch_settings_updates_contact_recipient_email(client: TestClient) -> None:
+    response = client.patch("/settings", json={"contact_recipient_email": "owner@example.com"})
+
+    assert response.status_code == 200
+    assert response.json()["contact_recipient_email"] == "owner@example.com"
 
 
 def test_public_settings_exposes_turnstile_site_key_without_auth(

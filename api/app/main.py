@@ -8,6 +8,7 @@ from app.config import settings
 from app.routers import (
     auth,
     categories,
+    contact,
     images,
     imports,
     ingredients,
@@ -46,6 +47,7 @@ app.include_router(ingredients.router)
 app.include_router(settings_router.router)
 app.include_router(public_settings.router)
 app.include_router(sitemap.router)
+app.include_router(contact.router)
 
 Path(settings.images_dir).mkdir(parents=True, exist_ok=True)
 app.mount("/images", StaticFiles(directory=settings.images_dir), name="images")

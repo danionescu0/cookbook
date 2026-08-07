@@ -27,6 +27,7 @@ class SettingsSnapshot:
     smtp_from_address: str = ""
     smtp_use_tls: bool = True
     public_site_url: str = ""
+    contact_recipient_email: str = ""
 
     @property
     def supported_languages_list(self) -> list[str]:
@@ -61,6 +62,7 @@ def get_settings(db: Session) -> SettingsSnapshot:
             smtp_from_address="",
             smtp_use_tls=True,
             public_site_url="",
+            contact_recipient_email="",
         )
     return SettingsSnapshot(
         supported_languages=row.supported_languages,
@@ -79,4 +81,5 @@ def get_settings(db: Session) -> SettingsSnapshot:
         smtp_from_address=row.smtp_from_address,
         smtp_use_tls=row.smtp_use_tls,
         public_site_url=row.public_site_url,
+        contact_recipient_email=row.contact_recipient_email,
     )
