@@ -318,7 +318,8 @@ state:
       Turnstile CAPTCHA (same widget as signup); a logged-in one skips it entirely. See
       [Design Decisions](#design-decisions), "Contact page".
 - [x] Local backups (`scripts/backup.sh`, cron-driven): Postgres + the `images_data` volume,
-      dated and compressed under `./backups/`, pruned to keep only backups aged 0/1/4/8 days.
+      dated and compressed under `./backups/`, pruned to keep today's, yesterday's, and one
+      oldest-survivor each from a ~4-day and a ~8-day window (at most 4 backups of each kind).
       Getting a copy off the VPS is left to an external tool the operator already has, not baked
       into this repo. See [Deployment](#deployment) for setup + restore, and
       [Design Decisions](#design-decisions), "Local backup strategy".
@@ -473,7 +474,8 @@ cookbook/
 ├── .env.example
 ├── scripts/
 │   └── backup.sh                   # cron-driven: pg_dump + tar of images_data into ./backups/,
-│                                    #   pruned to backups aged 0/1/4/8 days — see Deployment
+│                                    #   kept-oldest-in-range retention (~4-day/~8-day slots,
+│                                    #   see Design Decisions) — see Deployment
 ├── frontend/                       # React + TypeScript SPA (front office + back office)
 │   ├── src/
 │   │   ├── frontoffice/             # LandingPage (logged-out home + "From the community" section),
@@ -1259,10 +1261,15 @@ spaces/parens (`SCRAPE_USER_AGENT`) that aren't valid to `source` as a shell scr
 (`docker compose exec`), so no extra containers or knowledge of the volume's actual Docker-assigned
 name is needed.
 
-**Retention**: after each run, any backup not aged exactly 0, 1, 4, or 8 days old is deleted — so
-at most 4 backups of each kind exist at any time: today's, yesterday's, one from ~4 days ago, and
-one from ~8 days ago. This is a local-only, on-VPS backup; it does not protect against losing the
-VPS itself. Getting a copy safely off the server (e.g. an external tool pulling `./backups/` via
+**Retention**: today's and yesterday's backups are always kept; on top of that, the single oldest
+survivor aged 2–5 days represents the "~4 days ago" slot and the single oldest survivor aged 6–9
+days represents the "~8 days ago" slot — so at most 4 backups of each kind exist at any time. Each
+older slot's occupant keeps winning against younger challengers (it stays the "oldest in range")
+until it ages out of its range, at which point the slot goes briefly empty and gets re-seeded by
+whatever next reaches that age — see [Design Decisions](#design-decisions), "Local backup
+strategy", for why this has to work by picking the oldest survivor in a range rather than matching
+an exact age. This is a local-only, on-VPS backup; it does not protect against losing the VPS
+itself. Getting a copy safely off the server (e.g. an external tool pulling `./backups/` via
 `rsync`/`scp` on its own schedule) is intentionally left to whatever the operator already has
 for that, rather than baking a specific offsite destination/credential into this repo.
 
@@ -2261,37 +2268,61 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
 - **Manual hack: promoting an imported recipe to public** and **securely accessing the prod
   database from a local GUI client** — both moved to [Debug](#debug), which now collects
   operational/troubleshooting procedures separately from the "why" this section is for.
-- **Local backup strategy: Postgres + images only, a fixed {0,1,4,8}-day retention, and no
+- **Local backup strategy: Postgres + images only, oldest-survivor-in-range retention, and no
   offsite destination baked in.** Scoped deliberately narrow rather than reaching for a generic
   backup tool: the only durable state this app owns lives in two places — Postgres (everything
   structured: recipes, users, jobs, settings, ...) and the `images_data` volume (recipe photos).
   `rabbitmq_data` was explicitly left out — it only ever holds in-flight job messages, which are
   either already reflected in Postgres (a job's own `status`/`error` row) or safely re-enqueueable;
-  backing it up would just be backing up noise. Retention is a fixed set of ages (0, 1, 4, 8 days)
-  rather than a simple "keep last N daily" count or a full grandfather-father-son scheme: it's the
-  minimum that still gives useful recovery granularity (yesterday, most of a week back, a bit
-  over a week back) while capping storage at exactly 4 backups of each kind forever, no separate
-  weekly/monthly job needed. The script deliberately does **not** push anywhere off the VPS — the
-  operator already has (or will set up) their own pull mechanism on their own schedule, and baking
-  in a specific offsite target (S3 bucket, rclone remote, ...) would mean a credential this repo
-  has to manage for a destination that's really the operator's choice, not this app's concern.
+  backing it up would just be backing up noise. The script deliberately does **not** push anywhere
+  off the VPS — the operator already has (or will set up) their own pull mechanism on their own
+  schedule, and baking in a specific offsite target (S3 bucket, rclone remote, ...) would mean a
+  credential this repo has to manage for a destination that's really the operator's choice, not
+  this app's concern.
   <br><br>
-  One real bug surfaced while testing the script against the actual dev stack rather than just
-  reading it: the first draft did `source .env` on the host to get `POSTGRES_USER`/`POSTGRES_DB`,
-  which broke immediately — `.env` has unquoted values containing spaces and parentheses
-  (`SCRAPE_USER_AGENT=Mozilla/5.0 (X11; Linux x86_64) ...`), which isn't valid shell syntax to
-  `source` directly, only to load via `docker compose`'s own `env_file:` parser (which is far more
-  lenient). Fixed by not touching `.env` on the host at all — `docker compose exec -T db sh -c
-  'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"'` reads those two vars from the `db` container's
-  own environment instead, which docker-compose.yml already populated from `.env` when the stack
-  started. The images side follows the same "reuse what's already running" approach: `docker
-  compose exec -T api tar czf - -C /data/images .` streams the archive straight out of the `api`
-  container, which already has the volume mounted at that exact path — no throwaway container, and
-  no need to know the volume's actual Docker-assigned name (which depends on the compose project
-  name and isn't something worth hardcoding). Verified end to end against the real dev stack: a
-  full run produced a valid, `psql`-restorable dump and a tar containing every file actually in
-  the volume, and the retention logic was separately unit-tested against synthetic files aged 0
-  through 10 days to confirm it keeps exactly the {0,1,4,8} set and nothing else.
+  Two real bugs surfaced from testing the script against the actual dev stack rather than just
+  reading it — both only found because the deployed version was actually exercised, not just
+  code-reviewed. First: the initial draft did `source .env` on the host to get
+  `POSTGRES_USER`/`POSTGRES_DB`, which broke immediately — `.env` has unquoted values containing
+  spaces and parentheses (`SCRAPE_USER_AGENT=Mozilla/5.0 (X11; Linux x86_64) ...`), which isn't
+  valid shell syntax to `source` directly, only to load via `docker compose`'s own `env_file:`
+  parser (far more lenient). Fixed by not touching `.env` on the host at all — `docker compose
+  exec -T db sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB"'` reads those two vars from the
+  `db` container's own environment instead, already populated from `.env` by docker-compose.yml
+  when the stack started. The images side follows the same "reuse what's already running"
+  approach: `docker compose exec -T api tar czf - -C /data/images .` streams the archive straight
+  out of the `api` container, which already has the volume mounted at that exact path — no
+  throwaway container, and no need to know the volume's actual Docker-assigned name.
+  <br><br>
+  Second, and more fundamental: the original retention rule deleted any backup whose age (in
+  days) wasn't *exactly* 0, 1, 4, or 8, re-evaluated fresh on every run. That rule was unit-tested
+  against a synthetic set of files pre-created at every age from 0 to 10 and looked correct — but
+  that test only proves the rule picks the right files out of a *complete* history handed to it
+  all at once. It doesn't reflect how the script actually runs: once a day, incrementally, on
+  whatever survived the *previous* day's prune. Simulating 10 consecutive daily runs (create
+  today's backup, then prune, repeat) showed the real behavior: a file that's 1 day old is kept,
+  but the moment it turns 2 days old — the very next run — it's deleted, because 2 isn't in
+  `{0,1,4,8}`. Nothing ever gets the chance to survive from 2 days old up to 4, so the "~4 day"
+  and "~8 day" backups the retention was supposed to produce never actually existed; only the
+  last 2 daily backups ever did. This surfaced not from a code review but from a user asking "how
+  does this work" after the script had already been running in production for a day — a question
+  worth taking literally enough to trace through, rather than just re-describing the intent.
+  <br><br>
+  Fixed by keeping the single **oldest** survivor within each target range (age 2–5 for the
+  "~4 days ago" slot, age 6–9 for "~8 days ago") instead of matching an exact age. This is what
+  makes a backup able to *persist* through the gap ages: once a file claims a range by being the
+  oldest thing in it, it keeps winning against younger challengers (which get deleted immediately,
+  since they lose the "oldest in range" comparison) every day until it ages out of the range
+  entirely — at which point the range goes briefly empty and gets re-seeded by whatever next
+  reaches its lower bound. Picking the *newest* survivor, or the one *closest* to the target age,
+  were both considered and rejected: newest-in-range reduces to the same "instant eviction" bug
+  the exact-match rule had, and closest-to-target has its own failure mode — once a backup becomes
+  the incumbent, every younger challenger is by definition *further* from the target age than an
+  aging incumbent that already passed through it, so the incumbent would win forever and just keep
+  drifting older with no eventual rotation. Verified by simulating 25 consecutive daily runs
+  against the actual functions extracted from the deployed script (not a hand-copied
+  approximation): the kept set stabilizes at 3–4 files, both older slots rotate to a fresh backup
+  every few days instead of freezing on one, and nothing is ever kept past 9 days old.
 - **Verification email personalized in the signup language, not live-synced afterward** — the
   original verification email was generic English boilerplate with just a link; a user reported
   receiving a working link with no indication of what the site even was or which account it was
