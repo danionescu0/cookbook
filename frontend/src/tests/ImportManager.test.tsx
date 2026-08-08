@@ -39,11 +39,11 @@ const queuedJob: ImportJob = { ...pendingJob, id: 2, status: "queued" };
 const failedJob: ImportJob = { ...pendingJob, id: 3, status: "failed", error: "boom" };
 const doneJob: ImportJob = { ...pendingJob, id: 4, status: "done" };
 
-function renderManager(onJobCreated?: () => void) {
+function renderManager(onJobCreated?: () => void, reloadTrigger?: number) {
   return render(
     <LanguageProvider>
       <AuthProvider>
-        <ImportManager onJobCreated={onJobCreated} />
+        <ImportManager onJobCreated={onJobCreated} reloadTrigger={reloadTrigger} />
       </AuthProvider>
     </LanguageProvider>
   );
@@ -151,6 +151,24 @@ describe("ImportManager", () => {
     await user.click(screen.getByRole("button", { name: "Run import" }));
 
     await waitFor(() => expect(onJobCreated).toHaveBeenCalledTimes(1));
+  });
+
+  it("reloads the job list when reloadTrigger changes, picking up a job created elsewhere", async () => {
+    const bookmarkJob: ImportJob = { ...pendingJob, id: 5, source: "https://example.com/bookmarked" };
+    const { rerender } = renderManager(undefined, 0);
+    await screen.findByText("https://example.com/recipe");
+    expect(mockedApi.listImportJobs).toHaveBeenCalledTimes(1);
+
+    mockedApi.listImportJobs.mockResolvedValue([pendingJob, bookmarkJob]);
+    rerender(
+      <LanguageProvider>
+        <AuthProvider>
+          <ImportManager reloadTrigger={1} />
+        </AuthProvider>
+      </LanguageProvider>
+    );
+
+    expect(await screen.findByText("https://example.com/bookmarked")).toBeInTheDocument();
   });
 
   it("shows a run-import button for a pending job and a retry button for a failed one", async () => {

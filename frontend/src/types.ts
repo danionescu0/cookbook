@@ -110,6 +110,26 @@ export interface ImportJob {
   admin_reviewed_at: string | null;
 }
 
+export interface BookmarkLink {
+  title: string;
+  url: string;
+  // True when this URL is already a recipe the user owns, or already sitting in their import
+  // queue — the panel renders it as non-selectable rather than letting it burn a quota slot.
+  already_imported: boolean;
+}
+
+export interface BookmarkParseResponse {
+  links: BookmarkLink[];
+  // null means unlimited (admin). For a non-admin, how many more of the links above they may
+  // select — see api's routers/imports.py's _remaining_quota.
+  remaining_quota: number | null;
+}
+
+export interface BookmarkImportResult {
+  created: ImportJob[];
+  skipped_duplicate: string[];
+}
+
 export type AiProvider = "claude" | "deepseek";
 
 export interface Settings {

@@ -26,6 +26,9 @@ vi.mock("../api/client", () => ({
     // PendingImportsPanel (also rendered inside AccountPage).
     acknowledgeImportedRecipe: vi.fn(),
     dismissFailedImport: vi.fn(),
+    // BookmarkImportPanel (also rendered inside AccountPage).
+    parseBookmarkFile: vi.fn(),
+    importBookmarkSelection: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
   setAuthToken: vi.fn(),

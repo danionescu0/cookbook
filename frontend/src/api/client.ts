@@ -1,4 +1,6 @@
 import type {
+  BookmarkImportResult,
+  BookmarkParseResponse,
   Category,
   ContactMessageCreate,
   ImportJob,
@@ -258,6 +260,31 @@ export const api = {
     query.set("offset", String(params.offset));
     return requestImportJobsPage(query);
   },
+
+  // Multipart, not JSON — same reasoning as uploadImage above.
+  parseBookmarkFile: async (file: File): Promise<BookmarkParseResponse> => {
+    const formData = new FormData();
+    formData.append("file", file);
+    const headers: Record<string, string> = {};
+    if (authToken) headers.Authorization = `Bearer ${authToken}`;
+
+    const response = await fetch(`${BASE_URL}/imports/bookmark/parse`, {
+      method: "POST",
+      headers,
+      body: formData,
+    });
+    if (!response.ok) {
+      if (response.status === 401) onUnauthorized?.();
+      const body = await response.text();
+      throw new Error(extractErrorMessage(body) ?? `Request failed (${response.status})`);
+    }
+    return (await response.json()) as BookmarkParseResponse;
+  },
+  importBookmarkSelection: (urls: string[]) =>
+    request<BookmarkImportResult>("/imports/bookmark", {
+      method: "POST",
+      body: JSON.stringify({ urls }),
+    }),
 
   getSettings: () => request<Settings>("/settings"),
   updateSettings: (patch: SettingsUpdate) =>

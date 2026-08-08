@@ -536,3 +536,244 @@ def test_list_import_jobs_filters_by_admin_reviewed(
 
     assert response.headers["X-Total-Count"] == "1"
     assert [job["id"] for job in response.json()] == [unreviewed["id"]]
+
+
+_BOOKMARK_HTML = """
+<!DOCTYPE NETSCAPE-Bookmark-file-1>
+<DL><p>
+    <DT><A HREF="https://example.com/cake">Chocolate Cake</A>
+    <DT><A HREF="https://example.com/soup">Soup</A>
+    <DT><A HREF="javascript:void(0)">Not a real link</A>
+</DL><p>
+"""
+
+
+def _upload_bookmarks(client: TestClient, html: str = _BOOKMARK_HTML):
+    return client.post(
+        "/imports/bookmark/parse",
+        files={"file": ("bookmarks.html", html.encode("utf-8"), "text/html")},
+    )
+
+
+def test_parse_bookmark_file_returns_candidate_links(client: TestClient) -> None:
+    response = _upload_bookmarks(client)
+
+    assert response.status_code == 200
+    body = response.json()
+    urls = [link["url"] for link in body["links"]]
+    assert "https://example.com/cake" in urls
+    assert "https://example.com/soup" in urls
+    assert not any(url.startswith("javascript:") for url in urls)
+
+
+def test_parse_bookmark_file_reports_unlimited_quota_for_admin(client: TestClient) -> None:
+    response = _upload_bookmarks(client)
+
+    assert response.json()["remaining_quota"] is None
+
+
+def test_parse_bookmark_file_reports_remaining_quota_for_non_admin(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    client.patch("/settings", json={"max_imports_per_user": 10})
+    regular_user.imported_recipes_count = 7
+    db_session.commit()
+
+    response = _upload_bookmarks(user_client)
+
+    assert response.json()["remaining_quota"] == 3
+
+
+def test_parse_bookmark_file_flags_a_link_already_imported_as_a_recipe(
+    client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    category_id = _create_category(client)
+    recipe = Recipe(
+        category_id=category_id, source_url="https://example.com/cake", owner_user_id=admin_user.id
+    )
+    recipe.translations.append(RecipeTranslation(language="en", title="Cake", slug="cake"))
+    db_session.add(recipe)
+    db_session.commit()
+
+    response = _upload_bookmarks(client)
+
+    by_url = {link["url"]: link for link in response.json()["links"]}
+    assert by_url["https://example.com/cake"]["already_imported"] is True
+    assert by_url["https://example.com/soup"]["already_imported"] is False
+
+
+def test_parse_bookmark_file_flags_a_link_already_queued(client: TestClient) -> None:
+    client.post("/imports", json={"source": "https://example.com/soup"})
+
+    response = _upload_bookmarks(client)
+
+    by_url = {link["url"]: link for link in response.json()["links"]}
+    assert by_url["https://example.com/soup"]["already_imported"] is True
+
+
+def test_parse_bookmark_file_requires_auth(unauthenticated_client: TestClient) -> None:
+    response = _upload_bookmarks(unauthenticated_client)
+
+    assert response.status_code == 401
+
+
+def test_import_bookmark_selection_creates_a_job_per_url(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
+
+    response = client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/cake", "https://example.com/soup"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert {job["source"] for job in body["created"]} == {
+        "https://example.com/cake",
+        "https://example.com/soup",
+    }
+    assert all(job["type"] == "bookmark" for job in body["created"])
+    assert body["skipped_duplicate"] == []
+
+
+def test_import_bookmark_selection_admin_jobs_stay_pending(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = []
+    monkeypatch.setattr(
+        imports_router,
+        "publish_import_job",
+        lambda job_id, job_type, source: published.append((job_id, job_type, source)),
+    )
+
+    response = client.post("/imports/bookmark", json={"urls": ["https://example.com/cake"]})
+
+    assert response.json()["created"][0]["status"] == "pending"
+    assert published == []
+
+
+def test_import_bookmark_selection_non_admin_queues_and_publishes_immediately(
+    user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = []
+    monkeypatch.setattr(
+        imports_router,
+        "publish_import_job",
+        lambda job_id, job_type, source: published.append((job_id, job_type, source)),
+    )
+
+    response = user_client.post("/imports/bookmark", json={"urls": ["https://example.com/cake"]})
+
+    assert response.json()["created"][0]["status"] == "queued"
+    assert published == [(response.json()["created"][0]["id"], "bookmark", "https://example.com/cake")]
+
+
+def test_import_bookmark_selection_rejects_selection_over_remaining_quota(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    client.patch("/settings", json={"max_imports_per_user": 10})
+    regular_user.imported_recipes_count = 8
+    db_session.commit()
+
+    response = user_client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/a", "https://example.com/b", "https://example.com/c"]},
+    )
+
+    assert response.status_code == 400
+    assert "2" in response.json()["detail"]  # only 2 of the 3 selected fit the remaining quota
+
+
+def test_import_bookmark_selection_allows_exactly_the_remaining_quota(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    client.patch("/settings", json={"max_imports_per_user": 10})
+    regular_user.imported_recipes_count = 8
+    db_session.commit()
+
+    response = user_client.post(
+        "/imports/bookmark", json={"urls": ["https://example.com/a", "https://example.com/b"]}
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["created"]) == 2
+
+
+def test_import_bookmark_selection_exempts_admin_from_the_quota(
+    client: TestClient, admin_user: User, db_session: Session
+) -> None:
+    client.patch("/settings", json={"max_imports_per_user": 1})
+    admin_user.imported_recipes_count = 50
+    db_session.commit()
+
+    response = client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/a", "https://example.com/b", "https://example.com/c"]},
+    )
+
+    assert response.status_code == 200
+    assert len(response.json()["created"]) == 3
+
+
+def test_import_bookmark_selection_skips_already_imported_urls_without_erroring(
+    client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    category_id = _create_category(client)
+    recipe = Recipe(
+        category_id=category_id, source_url="https://example.com/cake", owner_user_id=admin_user.id
+    )
+    recipe.translations.append(RecipeTranslation(language="en", title="Cake", slug="cake"))
+    db_session.add(recipe)
+    db_session.commit()
+
+    response = client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/cake", "https://example.com/soup"]},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["skipped_duplicate"] == ["https://example.com/cake"]
+    assert [job["source"] for job in body["created"]] == ["https://example.com/soup"]
+
+
+def test_import_bookmark_selection_skipped_duplicates_do_not_count_against_quota(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    # Already-imported/queued URLs are filtered out before the quota check, not after — otherwise
+    # a duplicate in the selection would needlessly eat into (or block) a slot it doesn't need.
+    client.patch("/settings", json={"max_imports_per_user": 10})
+    regular_user.imported_recipes_count = 9
+    db_session.commit()
+    user_client.post("/imports", json={"source": "https://example.com/already-queued"})
+
+    response = user_client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/already-queued", "https://example.com/new-one"]},
+    )
+
+    assert response.status_code == 200
+    assert response.json()["skipped_duplicate"] == ["https://example.com/already-queued"]
+    assert [job["source"] for job in response.json()["created"]] == ["https://example.com/new-one"]
+
+
+def test_import_bookmark_selection_dedupes_repeated_urls_within_the_request(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
+
+    response = client.post(
+        "/imports/bookmark",
+        json={"urls": ["https://example.com/cake", "https://example.com/cake"]},
+    )
+
+    assert len(response.json()["created"]) == 1
+
+
+def test_import_bookmark_selection_requires_auth(unauthenticated_client: TestClient) -> None:
+    response = unauthenticated_client.post(
+        "/imports/bookmark", json={"urls": ["https://example.com/cake"]}
+    )
+
+    assert response.status_code == 401

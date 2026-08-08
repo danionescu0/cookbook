@@ -129,9 +129,9 @@ export function PendingImportsPanel({
           <h3 className="font-serif text-lg font-semibold text-ink">
             {t.account.pendingImportsHeading}
           </h3>
-          <ul className="mt-3 flex flex-wrap gap-4">
+          <ul className="mt-3 flex flex-wrap items-stretch gap-4">
             {pendingRecipes.map((recipe) => (
-              <li key={recipe.id} className="w-48 rounded-md bg-cream-card p-3 shadow-sm">
+              <li key={recipe.id} className="flex w-48 flex-col rounded-md bg-cream-card p-3 shadow-sm">
                 {recipe.images[0] ? (
                   <img
                     src={`${BASE_URL}${recipe.images[0]}`}
@@ -143,7 +143,7 @@ export function PendingImportsPanel({
                     {recipe.title}
                   </div>
                 )}
-                <p className="mt-2 text-sm font-medium text-ink">{recipe.title}</p>
+                <p className="mt-2 line-clamp-2 text-sm font-medium text-ink">{recipe.title}</p>
                 {categoryName(recipe.category_id) && (
                   <p className="mt-0.5 text-xs text-ink/50">
                     {t.account.aiCategoryLabel.replace(
@@ -157,7 +157,10 @@ export function PendingImportsPanel({
                     {t.account.instagramPlayButtonWarning}
                   </p>
                 )}
-                <div className="mt-2 flex flex-wrap items-center gap-3">
+                {/* Pinned to the card's bottom edge, same reasoning as the "My recipes" grid
+                    (frontend/src/account/AccountPage.tsx) — a longer title or category label
+                    would otherwise push this card's controls lower than its neighbors'. */}
+                <div className="mt-auto flex flex-wrap items-center gap-3 pt-2">
                   <Link
                     to={`/recipes/${recipe.id}/edit`}
                     className="text-xs text-terracotta hover:underline"

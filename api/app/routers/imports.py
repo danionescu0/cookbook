@@ -1,16 +1,23 @@
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Depends, File, HTTPException, Query, Response, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.auth import AuthUser, get_current_user, require_admin
+from app.bookmark_parser import parse_bookmark_links
 from app.database import get_db
 from app.models.import_job import ImportErrorKind, ImportJob, ImportJobStatus, ImportJobType
 from app.models.recipe import Recipe
 from app.models.user import User
 from app.queue import publish_import_job
+from app.schemas.bookmark import (
+    BookmarkImportRequest,
+    BookmarkImportResult,
+    BookmarkLinkRead,
+    BookmarkParseResponse,
+)
 from app.schemas.import_job import ImportJobCreate, ImportJobRead
 from app.settings_service import get_settings
 
@@ -88,6 +95,35 @@ def _ensure_import_limit_not_reached(db: Session, user: User) -> None:
                 "imported. Deleting a recipe does not free up quota."
             ),
         )
+
+
+def _remaining_quota(db: Session, user: User) -> int | None:
+    # None means unlimited (admin) — mirrors _ensure_import_limit_not_reached's own admin
+    # exemption. Used by the bookmark endpoints below to tell the frontend how many more links a
+    # non-admin may select, and to enforce that same number server-side on the actual import.
+    if user.is_admin:
+        return None
+    limit = get_settings(db).max_imports_per_user
+    return max(0, limit - user.imported_recipes_count)
+
+
+def _already_imported_urls(db: Session, urls: list[str], owner_id: int) -> set[str]:
+    # Single bulk query per table rather than one _ensure_source_not_already_imported() call per
+    # URL — a bookmark file can carry dozens of links, and this only ever runs against this one
+    # user's own rows (recipes/import_jobs are both private-per-owner, see the module docstring).
+    if not urls:
+        return set()
+    from_recipes = db.scalars(
+        select(Recipe.source_url).where(
+            Recipe.source_url.in_(urls), Recipe.owner_user_id == owner_id
+        )
+    )
+    from_jobs = db.scalars(
+        select(ImportJob.source).where(
+            ImportJob.source.in_(urls), ImportJob.created_by_user_id == owner_id
+        )
+    )
+    return {url for url in from_recipes if url is not None} | set(from_jobs)
 
 
 def _queue_and_publish(db: Session, job: ImportJob) -> None:
@@ -201,6 +237,87 @@ def create_import_job(
         _queue_and_publish(db, job)
 
     return _serialize(job, current_user)
+
+
+@router.post("/bookmark/parse", response_model=BookmarkParseResponse)
+def parse_bookmark_file(
+    file: UploadFile = File(...),
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> BookmarkParseResponse:
+    # Read-only: no ImportJob rows are created here. The user picks which of these to actually
+    # import in a second step (POST /imports/bookmark) — see README Design Decisions, "Bookmark
+    # import".
+    content = file.file.read()
+    try:
+        html = content.decode("utf-8")
+    except UnicodeDecodeError:
+        html = content.decode("latin-1")
+    links = parse_bookmark_links(html)
+
+    user = db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    already_imported = _already_imported_urls(db, [link.url for link in links], current_user.id)
+
+    return BookmarkParseResponse(
+        links=[
+            BookmarkLinkRead(
+                title=link.title, url=link.url, already_imported=link.url in already_imported
+            )
+            for link in links
+        ],
+        remaining_quota=_remaining_quota(db, user),
+    )
+
+
+@router.post("/bookmark", response_model=BookmarkImportResult)
+def import_bookmark_selection(
+    payload: BookmarkImportRequest,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> BookmarkImportResult:
+    user = db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    # De-duplicated first so the quota check below counts only genuinely new imports — a link
+    # that's already a Recipe/ImportJob of this user's shouldn't cost them a slot of their
+    # remaining quota just because it happened to be selected again.
+    requested = list(dict.fromkeys(payload.urls))  # de-dupe within the request, preserve order
+    already_imported = _already_imported_urls(db, requested, current_user.id)
+    to_create = [url for url in requested if url not in already_imported]
+
+    remaining = _remaining_quota(db, user)
+    if remaining is not None and len(to_create) > remaining:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"You selected {len(to_create)} new recipes to import, but only {remaining} "
+                "of your import quota remain. Deleting a recipe does not free up quota."
+            ),
+        )
+
+    created: list[ImportJob] = []
+    for url in to_create:
+        job = ImportJob(
+            source=url, type=ImportJobType.BOOKMARK, created_by_user_id=current_user.id
+        )
+        db.add(job)
+        db.commit()
+        db.refresh(job)
+        if not current_user.is_admin:
+            # Same immediate-queue behavior as a regular single-URL import for a non-admin (see
+            # create_import_job) — an admin's own bookmark-derived jobs stay `pending`, requiring
+            # the same explicit approval click as any other admin-created import.
+            _queue_and_publish(db, job)
+        created.append(job)
+
+    return BookmarkImportResult(
+        created=[_serialize(job, current_user) for job in created],
+        skipped_duplicate=[url for url in requested if url in already_imported],
+    )
 
 
 @router.post("/{job_id}/approve", response_model=ImportJobRead)

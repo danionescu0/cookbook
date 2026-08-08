@@ -15,9 +15,16 @@ interface ImportManagerProps {
   // own state already contains an active job, so without this, a fresh import submitted after the
   // panel mounted with nothing in flight would never be picked up at all, not even after a delay.
   onJobCreated?: () => void;
+  // The reverse hand-off: a job created *outside* this component (BookmarkImportPanel's bulk
+  // import can start several at once) needs to show up in this list too, not just in
+  // PendingImportsPanel — same "bump a counter, effect reloads on change" shape as that
+  // component's own reloadTrigger prop, since this list's own poll effect only starts once it
+  // already has an active job in state, so an externally-created job would otherwise sit
+  // invisible until an unrelated action happened to call reload().
+  reloadTrigger?: number;
 }
 
-export function ImportManager({ onJobCreated }: ImportManagerProps) {
+export function ImportManager({ onJobCreated, reloadTrigger }: ImportManagerProps) {
   const { t } = useLanguage();
   const { user } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
@@ -45,6 +52,15 @@ export function ImportManager({ onJobCreated }: ImportManagerProps) {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Mirrors PendingImportsPanel's own reloadTrigger effect — a job created elsewhere (bulk
+  // bookmark import) needs to appear here immediately, not wait for this component's own next
+  // action, since the poll effect below only starts once a job is already active in state.
+  useEffect(() => {
+    if (!reloadTrigger) return;
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reloadTrigger]);
 
   // Poll while any job is mid-flight — jobs only progress via the worker in the background, not
   // through any action here, so this is the only way the list picks up done/failed transitions.

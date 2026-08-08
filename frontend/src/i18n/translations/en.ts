@@ -263,6 +263,60 @@ const en = {
       failed: "Failed",
     },
   },
+  bookmarkImport: {
+    heading: "Import from bookmarks",
+    description:
+      "Upload a bookmark file exported from your browser, then pick which of the links found in it to import.",
+    howToImportLink: "How do I export my bookmarks?",
+    loadFileButton: "Load bookmark file",
+    parsing: "Reading your bookmark file…",
+    noLinksFound: "No links were found in that file.",
+    linksFoundHeading: "Found {count} links — select the ones to import",
+    alreadyImportedBadge: "Already imported",
+    selectionCount: "{selected} / {limit} selected",
+    importSelectedButton: "Import selected",
+    importing: "Starting imports…",
+    resultSummary: "Started {created} imports. {skipped} were already imported and skipped.",
+    resultSummaryNoSkipped: "Started {created} imports.",
+    chooseAnotherFileButton: "Choose another file",
+  },
+  howToImportBookmarks: {
+    title: "How to export your bookmarks",
+    closeButton: "OK",
+    sections: [
+      {
+        heading: "Google Chrome",
+        body: [
+          "Click the three-dot menu in the top-right corner, then “Bookmarks and lists” → “Bookmark Manager” (or press Ctrl+Shift+O, Cmd+Option+B on Mac).",
+          "In the Bookmark Manager, click the three-dot menu near the top and choose “Export bookmarks”.",
+          "Save the file — that's the file to load here.",
+        ],
+      },
+      {
+        heading: "Mozilla Firefox",
+        body: [
+          "Click the Bookmarks/Library icon, then “Manage Bookmarks” (or press Ctrl+Shift+O).",
+          "In the Library window, click “Import and Backup”, then “Export Bookmarks to HTML…”.",
+          "Save the file — that's the file to load here.",
+        ],
+      },
+      {
+        heading: "Safari",
+        body: [
+          "Open the File menu and choose “Export Bookmarks…”.",
+          "Save the file — that's the file to load here.",
+        ],
+      },
+      {
+        heading: "Internet Explorer",
+        body: [
+          "Click the star (Favorites) icon, then the arrow next to “Add to favorites” and choose “Import and export”.",
+          "Choose “Export to a file”, check “Favorites”, and pick a folder to save to.",
+          "Save the file — that's the file to load here. (Internet Explorer has been retired in favor of Microsoft Edge, which offers the same export option under its Favorites settings.)",
+        ],
+      },
+    ],
+  },
   failedImportsManager: {
     heading: "Failed imports",
     empty: "No failed imports.",

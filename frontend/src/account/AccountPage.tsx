@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { api, BASE_URL } from "../api/client";
 // Shared with the back office — the API already scopes /imports to "my own jobs" for a non-admin
 // caller (and "everyone's" for an admin), so the same component works unmodified in both places.
+import { BookmarkImportPanel } from "../backoffice/BookmarkImportPanel";
 import { ImportManager } from "../backoffice/ImportManager";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
@@ -258,7 +259,11 @@ export function AccountPage() {
           onImportsPolled={reloadSubmissions}
           reloadTrigger={importTrigger}
         />
-        <ImportManager onJobCreated={() => setImportTrigger((t) => t + 1)} />
+        <ImportManager
+          onJobCreated={() => setImportTrigger((t) => t + 1)}
+          reloadTrigger={importTrigger}
+        />
+        <BookmarkImportPanel onJobCreated={() => setImportTrigger((t) => t + 1)} />
         {submissions.length === 0 ? (
           <p className="mt-2 text-sm text-ink/60">{t.account.noRecipes}</p>
         ) : (

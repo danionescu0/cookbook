@@ -267,6 +267,60 @@ const ro: Translation = {
       failed: "Eșuat",
     },
   },
+  bookmarkImport: {
+    heading: "Import din marcaje (bookmarks)",
+    description:
+      "Încarcă un fișier de marcaje exportat din browser, apoi alege ce linkuri găsite în el vrei să imporți.",
+    howToImportLink: "Cum export marcajele mele?",
+    loadFileButton: "Încarcă fișierul de marcaje",
+    parsing: "Se citește fișierul de marcaje…",
+    noLinksFound: "Nu s-a găsit niciun link în acel fișier.",
+    linksFoundHeading: "S-au găsit {count} linkuri — selectează-le pe cele de importat",
+    alreadyImportedBadge: "Deja importat",
+    selectionCount: "{selected} / {limit} selectate",
+    importSelectedButton: "Importă selecția",
+    importing: "Se pornesc importurile…",
+    resultSummary: "Au pornit {created} importuri. {skipped} erau deja importate și au fost omise.",
+    resultSummaryNoSkipped: "Au pornit {created} importuri.",
+    chooseAnotherFileButton: "Alege alt fișier",
+  },
+  howToImportBookmarks: {
+    title: "Cum îți exporți marcajele (bookmarks)",
+    closeButton: "OK",
+    sections: [
+      {
+        heading: "Google Chrome",
+        body: [
+          "Apasă meniul cu trei puncte din colțul dreapta-sus, apoi „Marcaje și liste” → „Gestionar de marcaje” (sau apasă Ctrl+Shift+O, respectiv Cmd+Option+B pe Mac).",
+          "În Gestionarul de marcaje, apasă meniul cu trei puncte de sus și alege „Exportă marcaje”.",
+          "Salvează fișierul — acesta este fișierul de încărcat aici.",
+        ],
+      },
+      {
+        heading: "Mozilla Firefox",
+        body: [
+          "Apasă pictograma Marcaje/Bibliotecă, apoi „Gestionează marcajele” (sau Ctrl+Shift+O).",
+          "În fereastra Bibliotecă, apasă „Import și backup”, apoi „Exportă marcaje în HTML…”.",
+          "Salvează fișierul — acesta este fișierul de încărcat aici.",
+        ],
+      },
+      {
+        heading: "Safari",
+        body: [
+          "Deschide meniul File și alege „Export Bookmarks…”.",
+          "Salvează fișierul — acesta este fișierul de încărcat aici.",
+        ],
+      },
+      {
+        heading: "Internet Explorer",
+        body: [
+          "Apasă pictograma stea (Favorite), apoi săgeata de lângă „Add to favorites” și alege „Import and export”.",
+          "Alege „Export to a file”, bifează „Favorites” și alege un folder unde să salvezi.",
+          "Salvează fișierul — acesta este fișierul de încărcat aici. (Internet Explorer a fost retras în favoarea Microsoft Edge, care oferă aceeași opțiune de export în setările sale pentru Favorite.)",
+        ],
+      },
+    ],
+  },
   failedImportsManager: {
     heading: "Importuri eșuate",
     empty: "Niciun import eșuat.",
