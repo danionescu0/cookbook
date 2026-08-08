@@ -33,9 +33,9 @@ function RecipeList({
 }: RecipeListProps) {
   const { t } = useLanguage();
   return (
-    <ul className="mt-3 flex flex-wrap gap-4">
+    <ul className="mt-3 flex flex-wrap items-stretch gap-4">
       {recipes.map((recipe) => (
-        <li key={recipe.id} className="w-40">
+        <li key={recipe.id} className="flex w-40 flex-col">
           <Link to={`/recipes/${recipe.id}`} className="block">
             {recipe.images[0] ? (
               <img
@@ -48,7 +48,7 @@ function RecipeList({
                 {recipe.title}
               </div>
             )}
-            <p className="mt-1 text-sm text-ink">
+            <p className="mt-1 line-clamp-2 text-sm text-ink">
               {recipe.title}
               {showStatus && <em className="ml-1 text-xs text-ink/50 not-italic">({recipe.status})</em>}
             </p>
@@ -56,38 +56,44 @@ function RecipeList({
               <p className="text-xs text-ink/50">{t.account.importedBadge}</p>
             )}
           </Link>
-          {showEditLink && (
-            <Link
-              to={`/recipes/${recipe.id}/edit`}
-              className="mt-1 block text-xs text-terracotta hover:underline"
-            >
-              {t.account.editRecipeLink}
-            </Link>
-          )}
-          {/* Imports (source_url set) never get a sharing control — always private. */}
-          {onToggleShare && !recipe.source_url && (
-            <button
-              type="button"
-              onClick={() => onToggleShare(recipe)}
-              className="mt-1 text-xs text-terracotta hover:underline"
-            >
-              {recipe.is_shared ? t.account.unshareAction : t.account.shareAction}
-            </button>
-          )}
-          {onChangeCategory && categories && (
-            <select
-              aria-label={t.recipeManager.categoryLabel}
-              value={recipe.category_id}
-              onChange={(e) => onChangeCategory(recipe, Number(e.target.value))}
-              className="mt-1 w-full rounded-md border border-olive/30 bg-white px-1.5 py-1 text-xs text-ink focus:border-terracotta focus:outline-none"
-            >
-              {categories.map((category) => (
-                <option key={category.id} value={category.id}>
-                  {category.name}
-                </option>
-              ))}
-            </select>
-          )}
+          {/* Pinned to the card's bottom edge (not just after the text above) so a short title
+              and a title that wraps to two lines still land the edit link/share button/category
+              select at the same height across a row — otherwise a longer title pushes its own
+              card's controls further down than its neighbors', a non-uniform "jagged" grid. */}
+          <div className="mt-auto pt-1">
+            {showEditLink && (
+              <Link
+                to={`/recipes/${recipe.id}/edit`}
+                className="block text-xs text-terracotta hover:underline"
+              >
+                {t.account.editRecipeLink}
+              </Link>
+            )}
+            {/* Imports (source_url set) never get a sharing control — always private. */}
+            {onToggleShare && !recipe.source_url && (
+              <button
+                type="button"
+                onClick={() => onToggleShare(recipe)}
+                className="text-xs text-terracotta hover:underline"
+              >
+                {recipe.is_shared ? t.account.unshareAction : t.account.shareAction}
+              </button>
+            )}
+            {onChangeCategory && categories && (
+              <select
+                aria-label={t.recipeManager.categoryLabel}
+                value={recipe.category_id}
+                onChange={(e) => onChangeCategory(recipe, Number(e.target.value))}
+                className="mt-1 w-full rounded-md border border-olive/30 bg-white px-1.5 py-1 text-xs text-ink focus:border-terracotta focus:outline-none"
+              >
+                {categories.map((category) => (
+                  <option key={category.id} value={category.id}>
+                    {category.name}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         </li>
       ))}
     </ul>
