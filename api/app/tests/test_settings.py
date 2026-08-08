@@ -39,11 +39,14 @@ def test_get_settings_returns_defaults_and_masks_secrets(client: TestClient) -> 
     assert body["smtp_use_tls"] is True
     assert body["smtp_port"] == 587
     assert body["contact_recipient_email"] == ""
+    assert body["preferred_ai_provider"] == "claude"
+    assert body["deepseek_api_key_is_set"] is False
     # No raw secret value ever appears in the response body.
     assert "anthropic_api_key" not in body
     assert "calorie_ninjas_api_key" not in body
     assert "smtp_password" not in body
     assert "turnstile_secret_key" not in body
+    assert "deepseek_api_key" not in body
 
 
 def test_patch_settings_requires_admin(unauthenticated_client: TestClient) -> None:
@@ -211,6 +214,41 @@ def test_patch_settings_updates_contact_recipient_email(client: TestClient) -> N
 
     assert response.status_code == 200
     assert response.json()["contact_recipient_email"] == "owner@example.com"
+
+
+def test_patch_settings_updates_preferred_ai_provider_and_deepseek_api_key(
+    client: TestClient,
+) -> None:
+    before = client.get("/settings").json()
+    assert before["deepseek_api_key_is_set"] is False
+
+    response = client.patch(
+        "/settings",
+        json={"preferred_ai_provider": "deepseek", "deepseek_api_key": "sk-deepseek-test-key"},
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["preferred_ai_provider"] == "deepseek"
+    assert body["deepseek_api_key_is_set"] is True
+    assert "deepseek_api_key" not in body
+
+
+def test_patch_settings_rejects_unknown_ai_provider(client: TestClient) -> None:
+    response = client.patch("/settings", json={"preferred_ai_provider": "openai"})
+
+    assert response.status_code == 422
+
+
+def test_patch_settings_blank_deepseek_api_key_leaves_current_value_unchanged(
+    client: TestClient,
+) -> None:
+    client.patch("/settings", json={"deepseek_api_key": "sk-deepseek-test-key"})
+
+    response = client.patch("/settings", json={"deepseek_api_key": ""})
+
+    assert response.status_code == 200
+    assert response.json()["deepseek_api_key_is_set"] is True
 
 
 def test_public_settings_exposes_turnstile_site_key_without_auth(

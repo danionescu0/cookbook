@@ -160,6 +160,10 @@ class AppSettings(Base):
     # Where handle_contact_message_job (contact_handlers.py) sends a submission notification —
     # blank means not configured yet, handled as a clean job failure, not a crash.
     contact_recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Which LLM provider claude_client.py's calls use ("claude" or "deepseek") — see that
+    # module's docstring.
+    preferred_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="claude")
+    deepseek_api_key: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
 
 class Ingredient(Base):

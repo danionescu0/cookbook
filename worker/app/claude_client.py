@@ -10,6 +10,35 @@ from app.recipe_sections import SECTION_HEADER_PREFIX
 EXTRACTION_MODEL = "claude-haiku-4-5"
 MODEL = "claude-sonnet-5"
 
+# DeepSeek, an alternate provider an admin can opt into via Settings (app_settings.
+# preferred_ai_provider), is reached through DeepSeek's own Anthropic-API-compatible endpoint —
+# same Messages API wire format, including forced tool_choice, so every function below needs no
+# request-shape change at all, just a different base_url/api_key/model per call. Mirrors the
+# existing Haiku/Sonnet cost split onto DeepSeek's own cheap/quality tiers. See README Design
+# Decisions ("DeepSeek as an alternate AI provider").
+_DEEPSEEK_BASE_URL = "https://api.deepseek.com/anthropic"
+DEEPSEEK_EXTRACTION_MODEL = "deepseek-v4-flash"
+DEEPSEEK_MODEL = "deepseek-v4-pro"
+
+_PROVIDER_MODELS = {
+    "claude": {"extraction": EXTRACTION_MODEL, "translate": MODEL},
+    "deepseek": {"extraction": DEEPSEEK_EXTRACTION_MODEL, "translate": DEEPSEEK_MODEL},
+}
+
+
+def _thinking_kwargs(provider: str) -> dict:
+    # DeepSeek's Anthropic-compatible endpoint runs deepseek-v4-flash/-pro in "thinking mode" by
+    # default, and rejects forced tool_choice outright while thinking is active — "Thinking mode
+    # does not support this tool_choice" (400) — discovered via a real failed import
+    # (chefi.ro/reteta-de-ciocolata-neagra..., 2026-08-08). Every function below forces tool_choice
+    # to a specific tool because it needs guaranteed structured output, never freeform reasoning,
+    # so thinking is explicitly turned off for DeepSeek. Real Claude models don't hit this — the
+    # same forced-tool_choice calls have always worked against them without a `thinking` param —
+    # so this is scoped to the "deepseek" provider only, not applied globally.
+    if provider == "deepseek":
+        return {"thinking": {"type": "disabled"}}
+    return {}
+
 # Shared by extract_recipe/parse_recipe_from_text/translate_recipe — every call that produces a
 # full `translations` array (title/description/ingredients/steps/tips, once per configured
 # language). A real import hit `stop_reason: "max_tokens"` at the old value of 4096: a long,
@@ -23,13 +52,27 @@ _TRANSLATIONS_MAX_TOKENS = 8192
 
 # Shared across every prompt that produces or preserves ingredients/steps — see
 # app.recipe_sections for why this is a plain string-list marker rather than a schema change.
+# Tightened after a live DeepSeek/Claude accuracy comparison (2026-08-08, see README Design
+# Decisions, "DeepSeek as an alternate AI provider") found DeepSeek treating a page's own generic
+# "Ingredients"/"Method" heading — labeling the *entire* list, not a real sub-recipe — as if it
+# were a sub-group marker, and copying the page's own literal step numbers ("1. ...", "2. ...")
+# into step text, which double-numbers once the app's own frontend numbers steps. Both new
+# sentences below are aimed squarely at that failure mode; the original sub-group behavior
+# (verified against real Claude extractions) is unchanged.
 _SECTION_HEADER_INSTRUCTION = (
     "Some recipes split their ingredients and/or steps into labeled sub-groups (e.g. 'For the "
-    "cake:', 'For the frosting:'). When that happens, include each group's label as its own "
-    f"entry in the ingredients/steps array, prefixed with {SECTION_HEADER_PREFIX!r} (e.g. "
+    "cake:', 'For the frosting:') — genuinely distinct components, each with its own ingredients "
+    "and/or steps. When that happens, include each group's label as its own entry in the "
+    f"ingredients/steps array, prefixed with {SECTION_HEADER_PREFIX!r} (e.g. "
     f"{SECTION_HEADER_PREFIX + 'For the cake'!r}), placed immediately before that group's lines. "
     "Do not fold the label into the wording of another line — it must be its own array entry. "
-    "If the recipe has no sub-groups, don't add any."
+    "Do not add a label that merely names the whole list, like 'Ingredients' or 'Method'/'Mod de "
+    "preparare' — even if the source page prints one — since that is not a sub-group, it is just "
+    "the section itself; it must never become its own array entry. If the recipe has no genuine "
+    "sub-groups, don't add any label at all. Separately: never prefix a step with your own number "
+    "(no '1.', '2.', etc.) even if the source page numbers its steps that way — return each step "
+    "as plain instruction text only, since the app numbers steps itself and a number baked into "
+    "the text would be shown twice."
 )
 
 _EXTRACT_RECIPE_TOOL = {
@@ -290,8 +333,14 @@ class IngredientParseError(Exception):
     pass
 
 
-def _client(api_key: str) -> anthropic.Anthropic:
+def _client(provider: str, api_key: str) -> anthropic.Anthropic:
+    if provider == "deepseek":
+        return anthropic.Anthropic(api_key=api_key, base_url=_DEEPSEEK_BASE_URL)
     return anthropic.Anthropic(api_key=api_key)
+
+
+def _model_for(provider: str, task: str) -> str:
+    return _PROVIDER_MODELS.get(provider, _PROVIDER_MODELS["claude"])[task]
 
 
 def _category_instruction(category_names: list[str]) -> str:
@@ -306,13 +355,20 @@ def _category_instruction(category_names: list[str]) -> str:
     )
 
 
-def extract_recipe(html: str, languages: list[str], api_key: str, category_names: list[str]) -> dict:
+def extract_recipe(
+    html: str,
+    languages: list[str],
+    api_key: str,
+    category_names: list[str],
+    provider: str = "claude",
+) -> dict:
     languages_str = ", ".join(languages)
-    response = _client(api_key).messages.create(
-        model=EXTRACTION_MODEL,
+    response = _client(provider, api_key).messages.create(
+        model=_model_for(provider, "extraction"),
         max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_EXTRACT_RECIPE_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe"},
+        **_thinking_kwargs(provider),
         messages=[
             {
                 "role": "user",
@@ -335,13 +391,16 @@ def extract_recipe(html: str, languages: list[str], api_key: str, category_names
     raise RecipeExtractionError("Claude did not return a structured recipe")
 
 
-def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -> dict:
+def parse_ingredients_for_nutrition(
+    ingredient_lines: list[str], api_key: str, provider: str = "claude"
+) -> dict:
     numbered = "\n".join(f"{i}: {line}" for i, line in enumerate(ingredient_lines))
-    response = _client(api_key).messages.create(
-        model=EXTRACTION_MODEL,
+    response = _client(provider, api_key).messages.create(
+        model=_model_for(provider, "extraction"),
         max_tokens=2048,
         tools=[_PARSE_INGREDIENTS_TOOL],
         tool_choice={"type": "tool", "name": "parsed_ingredients"},
+        **_thinking_kwargs(provider),
         messages=[
             {
                 "role": "user",
@@ -364,14 +423,19 @@ def parse_ingredients_for_nutrition(ingredient_lines: list[str], api_key: str) -
 
 
 def parse_recipe_from_text(
-    text: str, languages: list[str], api_key: str, category_names: list[str]
+    text: str,
+    languages: list[str],
+    api_key: str,
+    category_names: list[str],
+    provider: str = "claude",
 ) -> dict:
     languages_str = ", ".join(languages)
-    response = _client(api_key).messages.create(
-        model=EXTRACTION_MODEL,
+    response = _client(provider, api_key).messages.create(
+        model=_model_for(provider, "extraction"),
         max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_PARSE_RECIPE_TEXT_TOOL],
         tool_choice={"type": "tool", "name": "extracted_recipe_text"},
+        **_thinking_kwargs(provider),
         messages=[
             {
                 "role": "user",
@@ -396,7 +460,9 @@ def parse_recipe_from_text(
     raise RecipeExtractionError("Claude did not return a structured recipe")
 
 
-def translate_recipe(source: dict, target_languages: list[str], api_key: str) -> dict:
+def translate_recipe(
+    source: dict, target_languages: list[str], api_key: str, provider: str = "claude"
+) -> dict:
     languages_str = ", ".join(target_languages)
     prompt_lines = [
         "Translate this recipe faithfully into each of these language codes: "
@@ -417,11 +483,12 @@ def translate_recipe(source: dict, target_languages: list[str], api_key: str) ->
         "Tips:",
         *source.get("tips", []),
     ]
-    response = _client(api_key).messages.create(
-        model=MODEL,
+    response = _client(provider, api_key).messages.create(
+        model=_model_for(provider, "translate"),
         max_tokens=_TRANSLATIONS_MAX_TOKENS,
         tools=[_TRANSLATE_RECIPE_TOOL],
         tool_choice={"type": "tool", "name": "translated_recipe"},
+        **_thinking_kwargs(provider),
         messages=[{"role": "user", "content": "\n".join(prompt_lines)}],
     )
 

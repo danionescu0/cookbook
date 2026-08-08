@@ -99,16 +99,18 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
             extracted = parse_recipe_from_text(
                 source_text,
                 app_settings.supported_languages_list,
-                app_settings.anthropic_api_key,
+                app_settings.ai_api_key,
                 category_names,
+                provider=app_settings.preferred_ai_provider,
             )
         else:
             html = fetch_page(recipe.source_url, app_settings)
             extracted = extract_recipe(
                 html,
                 app_settings.supported_languages_list,
-                app_settings.anthropic_api_key,
+                app_settings.ai_api_key,
                 category_names,
+                provider=app_settings.preferred_ai_provider,
             )
 
         translations_data = extracted.get("translations", [])

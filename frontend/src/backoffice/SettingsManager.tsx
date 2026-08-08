@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
-import type { Settings } from "../types";
+import type { AiProvider, Settings } from "../types";
 
 const inputClasses =
   "rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none";
@@ -29,6 +29,8 @@ interface FormState {
   backofficeRecipesPageSize: string;
   maxImportsPerUser: string;
   contactRecipientEmail: string;
+  preferredAiProvider: AiProvider;
+  deepseekApiKey: string;
 }
 
 function toFormState(settings: Settings): FormState {
@@ -54,6 +56,8 @@ function toFormState(settings: Settings): FormState {
     backofficeRecipesPageSize: String(settings.backoffice_recipes_page_size),
     maxImportsPerUser: String(settings.max_imports_per_user),
     contactRecipientEmail: settings.contact_recipient_email,
+    preferredAiProvider: settings.preferred_ai_provider,
+    deepseekApiKey: "",
   };
 }
 
@@ -144,6 +148,8 @@ export function SettingsManager() {
         backoffice_recipes_page_size: Number(form.backofficeRecipesPageSize),
         max_imports_per_user: Number(form.maxImportsPerUser),
         contact_recipient_email: form.contactRecipientEmail.trim(),
+        preferred_ai_provider: form.preferredAiProvider,
+        ...(form.deepseekApiKey ? { deepseek_api_key: form.deepseekApiKey } : {}),
       });
       setSettings(updated);
       setForm(toFormState(updated));
@@ -200,6 +206,21 @@ export function SettingsManager() {
           value={form.defaultLanguage}
           onChange={(v) => update({ defaultLanguage: v })}
         />
+        <div className="flex flex-col gap-1">
+          <label htmlFor="settings-preferred-ai-provider" className="text-sm font-medium text-ink/70">
+            {t.settingsManager.preferredAiProviderLabel}
+          </label>
+          <select
+            id="settings-preferred-ai-provider"
+            value={form.preferredAiProvider}
+            onChange={(e) => update({ preferredAiProvider: e.target.value as AiProvider })}
+            className={inputClasses}
+          >
+            <option value="claude">{t.settingsManager.preferredAiProviderClaude}</option>
+            <option value="deepseek">{t.settingsManager.preferredAiProviderDeepseek}</option>
+          </select>
+          <p className="text-xs text-ink/60">{t.settingsManager.preferredAiProviderHelp}</p>
+        </div>
         <Field
           id="settings-anthropic-api-key"
           type="password"
@@ -208,6 +229,15 @@ export function SettingsManager() {
           value={form.anthropicApiKey}
           placeholder={secretPlaceholder(settings.anthropic_api_key_is_set)}
           onChange={(v) => update({ anthropicApiKey: v })}
+        />
+        <Field
+          id="settings-deepseek-api-key"
+          type="password"
+          label={t.settingsManager.deepseekApiKeyLabel}
+          help={t.settingsManager.deepseekApiKeyHelp}
+          value={form.deepseekApiKey}
+          placeholder={secretPlaceholder(settings.deepseek_api_key_is_set)}
+          onChange={(v) => update({ deepseekApiKey: v })}
         />
         <Field
           id="settings-calorie-ninjas-api-key"

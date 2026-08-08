@@ -282,9 +282,17 @@ const ro: Translation = {
     defaultLanguageLabel: "Limbă implicită",
     defaultLanguageHelp:
       "Afișată atunci când limba vizitatorului nu este disponibilă pentru o rețetă. Trebuie să fie una dintre limbile disponibile de mai sus.",
+    preferredAiProviderLabel: "Furnizor AI",
+    preferredAiProviderHelp:
+      "Ce furnizor folosește worker-ul de import pentru extragerea și traducerea rețetelor. DeepSeek este accesat prin propriul API compatibil cu Claude, deci schimbarea are efect la următorul job — fără restart.",
+    preferredAiProviderClaude: "Claude (Anthropic)",
+    preferredAiProviderDeepseek: "DeepSeek",
     anthropicApiKeyLabel: "Cheie API Anthropic",
     anthropicApiKeyHelp:
       "Folosită de worker-ul de import pentru a cere lui Claude extragerea și traducerea rețetelor dintr-un URL.",
+    deepseekApiKeyLabel: "Cheie API DeepSeek",
+    deepseekApiKeyHelp:
+      "Folosită în locul cheii Anthropic când Furnizor AI de mai sus este setat pe DeepSeek. Obține una pe platform.deepseek.com.",
     calorieNinjasApiKeyLabel: "Cheie API CalorieNinjas",
     calorieNinjasApiKeyHelp:
       "Folosită pentru a căuta valorile nutriționale ale ingredientelor. Cheie gratuită: calorieninjas.com/api.",

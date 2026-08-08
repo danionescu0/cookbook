@@ -153,7 +153,9 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
         if not ingredient_lines:
             raise IngredientParseError("recipe has no ingredients to parse")
 
-        parsed = parse_ingredients_for_nutrition(ingredient_lines, app_settings.anthropic_api_key)
+        parsed = parse_ingredients_for_nutrition(
+            ingredient_lines, app_settings.ai_api_key, provider=app_settings.preferred_ai_provider
+        )
         items = parsed.get("items", [])
         if not items:
             raise IngredientParseError("Claude returned no parsed ingredients")

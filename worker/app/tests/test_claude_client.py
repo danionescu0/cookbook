@@ -50,7 +50,7 @@ def test_extract_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> N
     fake_response = SimpleNamespace(
         content=[FakeBlock("tool_use", "extracted_recipe", expected)]
     )
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     result = claude_client.extract_recipe(
         "<html></html>", ["ro", "en"], "test-key", ["Desserts", "Main"]
@@ -61,7 +61,7 @@ def test_extract_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_extract_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("text")])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
         claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key", ["Desserts"])
@@ -75,7 +75,7 @@ def test_extract_recipe_uses_the_given_api_key(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         claude_client,
         "_client",
-        lambda api_key: received_keys.append(api_key) or FakeClient(fake_response),
+        lambda provider, api_key: received_keys.append(api_key) or FakeClient(fake_response),
     )
 
     claude_client.extract_recipe("<html></html>", ["ro"], "sk-ant-live-key", ["Desserts"])
@@ -98,7 +98,7 @@ def test_parse_ingredients_for_nutrition_returns_tool_input(
         ],
     }
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "parsed_ingredients", expected)])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     result = claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
 
@@ -109,7 +109,7 @@ def test_parse_ingredients_for_nutrition_raises_when_no_tool_use_block(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("text")])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.IngredientParseError):
         claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
@@ -131,7 +131,7 @@ def test_parse_recipe_from_text_returns_tool_input(monkeypatch: pytest.MonkeyPat
     fake_response = SimpleNamespace(
         content=[FakeBlock("tool_use", "extracted_recipe_text", expected)]
     )
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     result = claude_client.parse_recipe_from_text(
         "caption text here", ["ro"], "test-key", ["Desserts"]
@@ -144,7 +144,7 @@ def test_parse_recipe_from_text_raises_when_no_tool_use_block(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("text")])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
         claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key", ["Desserts"])
@@ -164,7 +164,7 @@ def test_translate_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) ->
         ]
     }
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", expected)])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     source = {
         "title": "Prăjitură",
@@ -180,7 +180,7 @@ def test_translate_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) ->
 
 def test_translate_recipe_raises_when_no_tool_use_block(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("text")])
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: FakeClient(fake_response))
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
 
     with pytest.raises(claude_client.RecipeExtractionError):
         claude_client.translate_recipe({"title": "Soup"}, ["ro"], "test-key")
@@ -207,7 +207,7 @@ class RecordingFakeClient:
 def test_extract_recipe_uses_extraction_model(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts"])
 
@@ -219,7 +219,7 @@ def test_parse_ingredients_for_nutrition_uses_extraction_model(
 ) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "parsed_ingredients", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.parse_ingredients_for_nutrition(["1 medium onion"], "test-key")
 
@@ -231,7 +231,7 @@ def test_parse_recipe_from_text_uses_extraction_model(monkeypatch: pytest.Monkey
         content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
     )
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.parse_recipe_from_text("caption text", ["ro"], "test-key", ["Desserts"])
 
@@ -241,7 +241,7 @@ def test_parse_recipe_from_text_uses_extraction_model(monkeypatch: pytest.Monkey
 def test_translate_recipe_uses_sonnet_model(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.translate_recipe({"title": "Soup"}, ["en"], "test-key")
 
@@ -258,7 +258,7 @@ def test_extract_recipe_uses_a_high_enough_max_tokens_for_a_long_multilingual_re
 ) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.extract_recipe("<html></html>", ["ro", "en"], "test-key", ["Desserts"])
 
@@ -272,7 +272,7 @@ def test_parse_recipe_from_text_uses_a_high_enough_max_tokens(
         content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
     )
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.parse_recipe_from_text("caption text", ["ro", "en"], "test-key", ["Desserts"])
 
@@ -288,7 +288,7 @@ def test_extract_recipe_includes_the_category_list_in_the_prompt(
 ) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts", "Main course"])
 
@@ -304,7 +304,7 @@ def test_parse_recipe_from_text_includes_the_category_list_in_the_prompt(
         content=[FakeBlock("tool_use", "extracted_recipe_text", {})]
     )
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.parse_recipe_from_text(
         "caption text", ["ro"], "test-key", ["Desserts", "Main course"]
@@ -315,11 +315,168 @@ def test_parse_recipe_from_text_includes_the_category_list_in_the_prompt(
     assert "Main course" in prompt
 
 
+# Locks in the tightened section-header instruction — see the module-level comment above
+# _SECTION_HEADER_INSTRUCTION for the live DeepSeek/Claude comparison (2026-08-08) that found
+# DeepSeek turning a page's own whole-list heading ("Ingredients"/"Method") into a spurious
+# sub-group marker, and copying the page's own literal step numbers into step text.
+def test_extract_recipe_prompt_forbids_whole_list_headers_and_step_numbers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts"])
+
+    prompt = fake_client.messages.received_kwargs["messages"][0]["content"]
+    assert "merely names the whole list" in prompt
+    assert "never prefix a step with your own number" in prompt
+
+
 def test_translate_recipe_uses_a_high_enough_max_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
     fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
     fake_client = RecordingFakeClient(fake_response)
-    monkeypatch.setattr(claude_client, "_client", lambda api_key: fake_client)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
 
     claude_client.translate_recipe({"title": "Soup"}, ["en", "ro"], "test-key")
 
     assert fake_client.messages.received_kwargs["max_tokens"] >= 8192
+
+
+# DeepSeek, an alternate provider selectable via app_settings.preferred_ai_provider, is reached
+# through DeepSeek's own Anthropic-API-compatible endpoint — same anthropic.Anthropic() client,
+# just a different base_url/api_key/model. See the module docstring for _DEEPSEEK_BASE_URL.
+class RecordingFakeAnthropicClient:
+    last_kwargs: dict[str, object] | None = None
+
+    def __init__(self, **kwargs: object) -> None:
+        RecordingFakeAnthropicClient.last_kwargs = kwargs
+        self.messages = FakeMessages(
+            SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+        )
+
+
+def test_client_uses_deepseeks_anthropic_compatible_base_url_for_deepseek_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(claude_client.anthropic, "Anthropic", RecordingFakeAnthropicClient)
+
+    claude_client._client("deepseek", "sk-deepseek-test")
+
+    assert RecordingFakeAnthropicClient.last_kwargs == {
+        "api_key": "sk-deepseek-test",
+        "base_url": claude_client._DEEPSEEK_BASE_URL,
+    }
+
+
+def test_client_does_not_set_a_base_url_for_the_default_claude_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(claude_client.anthropic, "Anthropic", RecordingFakeAnthropicClient)
+
+    claude_client._client("claude", "sk-ant-test")
+
+    assert RecordingFakeAnthropicClient.last_kwargs == {"api_key": "sk-ant-test"}
+
+
+def test_extract_recipe_uses_deepseeks_extraction_model_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.extract_recipe(
+        "<html></html>", ["ro"], "test-key", ["Desserts"], provider="deepseek"
+    )
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.DEEPSEEK_EXTRACTION_MODEL
+
+
+def test_translate_recipe_uses_deepseeks_translate_model_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.translate_recipe({"title": "Soup"}, ["en"], "test-key", provider="deepseek")
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.DEEPSEEK_MODEL
+
+
+def test_extract_recipe_forwards_provider_to_client_construction_not_just_model_selection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Regression guard: a DeepSeek call must use both the right model AND the right host — a bug
+    # threading provider through model selection only would silently send DeepSeek's model name
+    # to api.anthropic.com and fail there instead.
+    received_providers = []
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    monkeypatch.setattr(
+        claude_client,
+        "_client",
+        lambda provider, api_key: received_providers.append(provider) or FakeClient(fake_response),
+    )
+
+    claude_client.extract_recipe(
+        "<html></html>", ["ro"], "test-key", ["Desserts"], provider="deepseek"
+    )
+
+    assert received_providers == ["deepseek"]
+
+
+def test_extract_recipe_defaults_to_claude_provider_when_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts"])
+
+    assert fake_client.messages.received_kwargs["model"] == claude_client.EXTRACTION_MODEL
+
+
+# Regression test for a real failed import (chefi.ro/reteta-de-ciocolata-neagra..., 2026-08-08):
+# DeepSeek's compat endpoint runs its v4 models in thinking mode by default and rejects forced
+# tool_choice outright while thinking is active ("Thinking mode does not support this
+# tool_choice", 400). Every function here forces tool_choice, so DeepSeek calls must explicitly
+# disable thinking; Claude calls must NOT gain a `thinking` param they never had before, since
+# their existing forced-tool_choice behavior against real Anthropic already works without one.
+def test_extract_recipe_disables_thinking_for_deepseek_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.extract_recipe(
+        "<html></html>", ["ro"], "test-key", ["Desserts"], provider="deepseek"
+    )
+
+    assert fake_client.messages.received_kwargs["thinking"] == {"type": "disabled"}
+
+
+def test_translate_recipe_disables_thinking_for_deepseek_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "translated_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.translate_recipe({"title": "Soup"}, ["en"], "test-key", provider="deepseek")
+
+    assert fake_client.messages.received_kwargs["thinking"] == {"type": "disabled"}
+
+
+def test_extract_recipe_does_not_set_a_thinking_param_for_claude_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("tool_use", "extracted_recipe", {})])
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.extract_recipe("<html></html>", ["ro"], "test-key", ["Desserts"])
+
+    assert "thinking" not in fake_client.messages.received_kwargs

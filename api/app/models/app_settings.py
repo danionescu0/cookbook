@@ -63,6 +63,13 @@ class AppSettings(Base):
     # Blank means "not configured yet": the worker fails a queued contact_messages job cleanly
     # with an actionable error rather than sending nowhere.
     contact_recipient_email: Mapped[str] = mapped_column(String(255), nullable=False, default="")
+    # Which LLM provider extraction/translation calls use — see worker/app/claude_client.py.
+    # DeepSeek is reached through its own Anthropic-API-compatible endpoint (same Messages API
+    # wire format, including forced tool_choice), so switching providers is just this flag plus
+    # deepseek_api_key below, no worker code change. See README Design Decisions ("DeepSeek as an
+    # alternate AI provider").
+    preferred_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="claude")
+    deepseek_api_key: Mapped[str] = mapped_column(String(200), nullable=False, default="")
 
     @property
     def supported_languages_list(self) -> list[str]:

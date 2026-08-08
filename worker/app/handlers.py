@@ -173,8 +173,9 @@ def handle_import_job(body: bytes, db: Session) -> None:
             extracted = parse_recipe_from_text(
                 source_text,
                 app_settings.supported_languages_list,
-                app_settings.anthropic_api_key,
+                app_settings.ai_api_key,
                 category_names,
+                provider=app_settings.preferred_ai_provider,
             )
             # Already resolved by fetch_instagram_post — nothing for Claude to find here, unlike
             # the HTML path where image URLs come out of the extraction itself.
@@ -187,8 +188,9 @@ def handle_import_job(body: bytes, db: Session) -> None:
             extracted = extract_recipe(
                 html,
                 app_settings.supported_languages_list,
-                app_settings.anthropic_api_key,
+                app_settings.ai_api_key,
                 category_names,
+                provider=app_settings.preferred_ai_provider,
             )
             image_urls = [urljoin(job.source, image) for image in extracted.get("images", [])]
 

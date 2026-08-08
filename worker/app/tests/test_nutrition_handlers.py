@@ -150,7 +150,7 @@ def test_handle_nutrition_job_rounds_decimal_quantity_before_the_grams_lookup(
         ],
     }
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
     )
 
     queries_seen: list[str] = []
@@ -244,7 +244,7 @@ def test_estimated_servings_is_computed_from_total_resolved_grams(
         ]
     }
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
     )
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 
@@ -265,7 +265,7 @@ def test_estimated_servings_is_never_zero_for_a_small_recipe(
         ]
     }
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
     )
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 
@@ -296,7 +296,7 @@ def test_handle_nutrition_job_discards_implausible_ml_grams_and_uses_claude_esti
         ],
     }
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parse_result
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
     )
 
     def _fake_lookup(query: str, key: str) -> dict | None:
@@ -322,7 +322,7 @@ def test_handle_nutrition_job_success_creates_ingredient_and_link(
     recipe = _create_recipe(db_session, ["1 medium onion"])
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: _ONE_ITEM_PARSE
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: _ONE_ITEM_PARSE
     )
 
     def _fake_lookup(query: str, key: str) -> dict | None:
@@ -386,7 +386,7 @@ def test_handle_nutrition_job_skips_a_section_header_line_even_if_claude_returns
             },
         ],
     }
-    monkeypatch.setattr(nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: parsed)
+    monkeypatch.setattr(nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parsed)
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 
     handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
@@ -404,7 +404,7 @@ def test_handle_nutrition_job_falls_back_to_claude_estimate_without_api_match(
     recipe = _create_recipe(db_session, ["1 medium onion"])
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: _ONE_ITEM_PARSE
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: _ONE_ITEM_PARSE
     )
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 
@@ -436,7 +436,7 @@ def test_handle_nutrition_job_reuses_existing_ingredient_by_name(
     recipe = _create_recipe(db_session, ["1 medium onion"])
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: _ONE_ITEM_PARSE
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: _ONE_ITEM_PARSE
     )
 
     queries_seen: list[str] = []
@@ -479,7 +479,7 @@ def test_handle_nutrition_job_skips_one_bad_item_without_failing_the_rest(
     recipe = _create_recipe(db_session, ["1 medium onion", "2 cloves garlic"])
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: malformed_parse
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: malformed_parse
     )
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 
@@ -513,7 +513,7 @@ def test_handle_nutrition_job_fails_when_claude_returns_no_items(
     monkeypatch.setattr(
         nutrition_handlers,
         "parse_ingredients_for_nutrition",
-        lambda lines, key: {"items": []},
+        lambda lines, key, **kwargs: {"items": []},
     )
 
     handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
@@ -529,7 +529,7 @@ def test_handle_nutrition_job_fails_on_unexpected_error(
     recipe = _create_recipe(db_session, ["1 medium onion"])
     job = _create_job(db_session, recipe.id)
 
-    def _raise(lines: list[str], key: str) -> dict:
+    def _raise(lines: list[str], key: str, **kwargs: object) -> dict:
         raise RuntimeError("boom")
 
     monkeypatch.setattr(nutrition_handlers, "parse_ingredients_for_nutrition", _raise)
@@ -586,7 +586,7 @@ def test_handle_nutrition_job_replaces_links_from_a_previous_run(
 
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key: _ONE_ITEM_PARSE
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: _ONE_ITEM_PARSE
     )
     monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
 

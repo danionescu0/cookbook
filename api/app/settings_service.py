@@ -43,6 +43,8 @@ def get_settings(db: Session) -> AppSettings:
         backoffice_recipes_page_size=10,
         max_imports_per_user=30,
         contact_recipient_email="",
+        preferred_ai_provider="claude",
+        deepseek_api_key="",
     )
     db.add(row)
     db.commit()
@@ -85,7 +87,13 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         )
 
     # Blank/omitted secret means "leave unchanged" — the UI never has the real value to send back.
-    for field in ("anthropic_api_key", "calorie_ninjas_api_key", "smtp_password", "turnstile_secret_key"):
+    for field in (
+        "anthropic_api_key",
+        "calorie_ninjas_api_key",
+        "smtp_password",
+        "turnstile_secret_key",
+        "deepseek_api_key",
+    ):
         if updates.get(field):
             setattr(row, field, updates[field])
 
@@ -105,6 +113,7 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         "backoffice_recipes_page_size",
         "max_imports_per_user",
         "contact_recipient_email",
+        "preferred_ai_provider",
     ):
         if field in updates:
             setattr(row, field, updates[field])

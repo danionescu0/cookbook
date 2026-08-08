@@ -110,6 +110,8 @@ export interface ImportJob {
   admin_reviewed_at: string | null;
 }
 
+export type AiProvider = "claude" | "deepseek";
+
 export interface Settings {
   supported_languages: string;
   default_language: string;
@@ -132,6 +134,8 @@ export interface Settings {
   backoffice_recipes_page_size: number;
   max_imports_per_user: number;
   contact_recipient_email: string;
+  preferred_ai_provider: AiProvider;
+  deepseek_api_key_is_set: boolean;
 }
 
 export interface SettingsUpdate {
@@ -157,6 +161,9 @@ export interface SettingsUpdate {
   backoffice_recipes_page_size?: number;
   max_imports_per_user?: number;
   contact_recipient_email?: string;
+  preferred_ai_provider?: AiProvider;
+  // Omit or send "" to leave the current secret unchanged — same as smtp_password above.
+  deepseek_api_key?: string;
 }
 
 export interface ContactMessageCreate {

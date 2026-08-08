@@ -37,6 +37,8 @@ const baseSettings: Settings = {
   backoffice_recipes_page_size: 10,
   max_imports_per_user: 30,
   contact_recipient_email: "",
+  preferred_ai_provider: "claude",
+  deepseek_api_key_is_set: false,
 };
 
 beforeEach(() => {
@@ -91,6 +93,25 @@ describe("SettingsManager", () => {
       "Leave blank to keep the current value"
     );
     expect(screen.getByLabelText("Anthropic API key")).toHaveAttribute("placeholder", "Not set");
+    expect(screen.getByLabelText("DeepSeek API key")).toHaveAttribute("placeholder", "Not set");
+  });
+
+  it("defaults the AI provider select to the current setting and saves a change", async () => {
+    const user = userEvent.setup();
+    mockedApi.updateSettings.mockResolvedValue({ ...baseSettings, preferred_ai_provider: "deepseek" });
+
+    renderManager();
+    const select = await screen.findByLabelText("AI provider");
+    expect(select).toHaveValue("claude");
+
+    await user.selectOptions(select, "deepseek");
+    await user.click(screen.getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(mockedApi.updateSettings).toHaveBeenCalledWith(
+        expect.objectContaining({ preferred_ai_provider: "deepseek" })
+      )
+    );
   });
 
   it("applies changes without secrets when they're left blank", async () => {

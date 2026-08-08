@@ -1,4 +1,8 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
+
+AiProvider = Literal["claude", "deepseek"]
 
 
 class SettingsRead(BaseModel):
@@ -26,6 +30,8 @@ class SettingsRead(BaseModel):
     backoffice_recipes_page_size: int
     max_imports_per_user: int
     contact_recipient_email: str
+    preferred_ai_provider: AiProvider
+    deepseek_api_key_is_set: bool
 
 
 class SettingsUpdate(BaseModel):
@@ -52,3 +58,6 @@ class SettingsUpdate(BaseModel):
     backoffice_recipes_page_size: int | None = Field(default=None, gt=0)
     max_imports_per_user: int | None = Field(default=None, gt=0)
     contact_recipient_email: str | None = None
+    preferred_ai_provider: AiProvider | None = None
+    # Secret: same "blank/omitted means keep current value" semantics as anthropic_api_key above.
+    deepseek_api_key: str | None = None

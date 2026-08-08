@@ -100,7 +100,7 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
-        lambda html, languages, api_key, category_names: _TWO_LANGUAGE_EXTRACTION,
+        lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION,
     )
     process_images_calls = []
     monkeypatch.setattr(
@@ -160,7 +160,7 @@ def test_handle_import_job_increments_owners_lifetime_import_count(
     _seed_category(db_session)
     monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
     monkeypatch.setattr(
-        handlers, "extract_recipe", lambda html, languages, api_key, category_names: _TWO_LANGUAGE_EXTRACTION
+        handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
     monkeypatch.setattr(
         handlers, "process_images", lambda urls, app_settings: ["/images/stored.jpg"]
@@ -188,7 +188,7 @@ def test_handle_import_job_does_not_increment_count_on_failure(
     _seed_category(db_session)
     monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
 
-    def _raise(html: str, languages: list[str], api_key: str, category_names: list[str]) -> dict:
+    def _raise(html: str, languages: list[str], api_key: str, category_names: list[str], **kwargs: object) -> dict:
         raise RecipeExtractionError("boom")
 
     monkeypatch.setattr(handlers, "extract_recipe", _raise)
@@ -210,7 +210,7 @@ def test_handle_import_job_marks_nutrition_job_failed_when_publish_fails(
     _seed_category(db_session)
     monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
     monkeypatch.setattr(
-        handlers, "extract_recipe", lambda html, languages, api_key, category_names: _TWO_LANGUAGE_EXTRACTION
+        handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
     monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
 
@@ -237,7 +237,7 @@ def test_handle_import_job_still_succeeds_when_nutrition_enqueue_itself_raises(
     _seed_category(db_session)
     monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
     monkeypatch.setattr(
-        handlers, "extract_recipe", lambda html, languages, api_key, category_names: _TWO_LANGUAGE_EXTRACTION
+        handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
     monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
 
@@ -302,7 +302,7 @@ def test_handle_import_job_fails_on_extraction_error(
     _seed_category(db_session)
     monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
 
-    def _raise(html: str, languages: list[str], api_key: str, category_names: list[str]) -> dict:
+    def _raise(html: str, languages: list[str], api_key: str, category_names: list[str], **kwargs: object) -> dict:
         raise RecipeExtractionError("Claude did not return a structured recipe")
 
     monkeypatch.setattr(handlers, "extract_recipe", _raise)
@@ -325,7 +325,7 @@ def test_handle_import_job_fails_when_translations_empty(
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
-        lambda html, languages, api_key, category_names: {"images": [], "translations": []},
+        lambda html, languages, api_key, category_names, **kwargs: {"images": [], "translations": []},
     )
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
@@ -367,7 +367,7 @@ def test_handle_import_job_resolves_claudes_suggested_category_by_name(
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
-        lambda html, languages, api_key, category_names: {
+        lambda html, languages, api_key, category_names, **kwargs: {
             **_TWO_LANGUAGE_EXTRACTION,
             # A case mismatch against the real "Main course" name — still expected to resolve,
             # since _resolve_category_id compares case-insensitively.
@@ -396,7 +396,7 @@ def test_handle_import_job_falls_back_to_first_category_when_claudes_suggestion_
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
-        lambda html, languages, api_key, category_names: {
+        lambda html, languages, api_key, category_names, **kwargs: {
             **_TWO_LANGUAGE_EXTRACTION,
             "category": "Something Claude made up",
         },
@@ -442,7 +442,7 @@ def test_handle_import_job_instagram_inserts_recipe_from_caption_text(
     monkeypatch.setattr(
         handlers,
         "parse_recipe_from_text",
-        lambda text, languages, api_key, category_names: _ONE_LANGUAGE_TEXT_EXTRACTION,
+        lambda text, languages, api_key, category_names, **kwargs: _ONE_LANGUAGE_TEXT_EXTRACTION,
     )
     process_images_calls = []
     monkeypatch.setattr(
@@ -503,7 +503,7 @@ def test_handle_import_job_instagram_fails_when_no_recipe_in_text(
         lambda url, timeout_seconds: InstagramPost(text="just a selfie, no recipe", image_url=None),
     )
     monkeypatch.setattr(
-        handlers, "parse_recipe_from_text", lambda text, languages, api_key, category_names: {"translations": []}
+        handlers, "parse_recipe_from_text", lambda text, languages, api_key, category_names, **kwargs: {"translations": []}
     )
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)

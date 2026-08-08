@@ -278,9 +278,17 @@ const en = {
     defaultLanguageLabel: "Default language",
     defaultLanguageHelp:
       "Shown when a visitor's language isn't available for a recipe. Must be one of the supported languages above.",
+    preferredAiProviderLabel: "AI provider",
+    preferredAiProviderHelp:
+      "Which provider the import worker uses to extract and translate recipes. DeepSeek is reached through its own Claude-compatible API, so switching takes effect on the next job — no restart needed.",
+    preferredAiProviderClaude: "Claude (Anthropic)",
+    preferredAiProviderDeepseek: "DeepSeek",
     anthropicApiKeyLabel: "Anthropic API key",
     anthropicApiKeyHelp:
       "Used by the import worker to ask Claude to extract and translate recipes from a URL.",
+    deepseekApiKeyLabel: "DeepSeek API key",
+    deepseekApiKeyHelp:
+      "Used instead of the Anthropic key when AI provider above is set to DeepSeek. Get one at platform.deepseek.com.",
     calorieNinjasApiKeyLabel: "CalorieNinjas API key",
     calorieNinjasApiKeyHelp:
       "Used to look up ingredient nutrition facts when enriching a recipe. Free key: calorieninjas.com/api.",

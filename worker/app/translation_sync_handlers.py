@@ -58,7 +58,10 @@ def handle_translation_sync_job(body: bytes, db: Session) -> None:
         ]
         if target_languages:
             translated = translate_recipe(
-                _translation_dict(source), target_languages, app_settings.anthropic_api_key
+                _translation_dict(source),
+                target_languages,
+                app_settings.ai_api_key,
+                provider=app_settings.preferred_ai_provider,
             )
             for t in translated.get("translations", []):
                 translation = by_language.get(t["language"])

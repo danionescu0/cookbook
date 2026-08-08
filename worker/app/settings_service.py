@@ -28,10 +28,21 @@ class SettingsSnapshot:
     smtp_use_tls: bool = True
     public_site_url: str = ""
     contact_recipient_email: str = ""
+    preferred_ai_provider: str = "claude"
+    deepseek_api_key: str = ""
 
     @property
     def supported_languages_list(self) -> list[str]:
         return [lang.strip() for lang in self.supported_languages.split(",") if lang.strip()]
+
+    @property
+    def ai_api_key(self) -> str:
+        # The key claude_client.py should actually use, resolved by preferred_ai_provider — so
+        # every call site can pass (preferred_ai_provider, ai_api_key) without re-deriving this
+        # itself.
+        if self.preferred_ai_provider == "deepseek":
+            return self.deepseek_api_key
+        return self.anthropic_api_key
 
 
 def get_settings(db: Session) -> SettingsSnapshot:
@@ -63,6 +74,8 @@ def get_settings(db: Session) -> SettingsSnapshot:
             smtp_use_tls=True,
             public_site_url="",
             contact_recipient_email="",
+            preferred_ai_provider="claude",
+            deepseek_api_key="",
         )
     return SettingsSnapshot(
         supported_languages=row.supported_languages,
@@ -82,4 +95,6 @@ def get_settings(db: Session) -> SettingsSnapshot:
         smtp_use_tls=row.smtp_use_tls,
         public_site_url=row.public_site_url,
         contact_recipient_email=row.contact_recipient_email,
+        preferred_ai_provider=row.preferred_ai_provider,
+        deepseek_api_key=row.deepseek_api_key,
     )

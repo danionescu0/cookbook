@@ -112,7 +112,7 @@ def test_handle_translation_sync_job_translates_to_other_languages(
     monkeypatch.setattr(
         translation_sync_handlers,
         "translate_recipe",
-        lambda source, targets, api_key: received.append((source, targets, api_key))
+        lambda source, targets, api_key, **kwargs: received.append((source, targets, api_key))
         or _EN_TRANSLATION,
     )
     monkeypatch.setattr(
@@ -148,7 +148,7 @@ def test_handle_translation_sync_job_creates_missing_target_language(
     recipe = _create_recipe(db_session)  # only "ro" exists yet
     job = _create_job(db_session, recipe.id, source_language="ro")
     monkeypatch.setattr(
-        translation_sync_handlers, "translate_recipe", lambda s, t, k: _EN_TRANSLATION
+        translation_sync_handlers, "translate_recipe", lambda s, t, k, **kwargs: _EN_TRANSLATION
     )
     monkeypatch.setattr(
         translation_sync_handlers, "_enqueue_nutrition_job", lambda db, recipe_id: None
@@ -169,7 +169,7 @@ def test_handle_translation_sync_job_enqueues_nutrition_job_after_sync(
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        translation_sync_handlers, "translate_recipe", lambda s, t, k: _EN_TRANSLATION
+        translation_sync_handlers, "translate_recipe", lambda s, t, k, **kwargs: _EN_TRANSLATION
     )
     enqueued = []
     monkeypatch.setattr(
@@ -256,7 +256,7 @@ def test_handle_translation_sync_job_still_succeeds_when_nutrition_enqueue_raise
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
     monkeypatch.setattr(
-        translation_sync_handlers, "translate_recipe", lambda s, t, k: _EN_TRANSLATION
+        translation_sync_handlers, "translate_recipe", lambda s, t, k, **kwargs: _EN_TRANSLATION
     )
 
     def _raise(db: object, recipe_id: int) -> None:
