@@ -379,6 +379,11 @@ state:
   the Turnstile key pair, and the import pipeline's rate limit/timeout/image tuning can all be
   changed from a super-admin-only back office Settings page, with each change taking effect
   immediately (no restart).
+- **Support link** — a small, low-key note at the bottom of the logged-out landing page
+  (`frontoffice/LandingPage.tsx`) links to a Buy Me a Coffee page, with a line explaining that it
+  covers the VPS, domain, and AI subscription costs. Deliberately the quietest element on the page
+  (muted color, small type, last thing before the footer) so it's discoverable without competing
+  with the signup/browse CTAs.
 - **Estimated nutrition per recipe** — automatically resolved right after import (no admin action
   needed) against the CalorieNinjas API (nutrients + a real per-line gram estimate, with an
   LLM-parsed gram guess as fallback), and the front office shows calories/protein/carbs/sugars/fat

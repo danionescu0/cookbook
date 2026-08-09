@@ -156,6 +156,9 @@ const en = {
     communityHeading: "From the community",
     finalCtaHeading: "Hungry for more?",
     finalCtaBody: "Create an account to save favorites and add your own recipes to the shelf.",
+    supportText:
+      "This site runs on a real server, a domain, and an AI subscription that powers every recipe import. If it's been useful to you, you can help keep it running.",
+    supportCta: "Buy me a coffee ☕",
   },
   browser: {
     heading: "Recipes",

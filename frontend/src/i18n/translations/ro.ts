@@ -160,6 +160,9 @@ const ro: Translation = {
     communityHeading: "Din comunitate",
     finalCtaHeading: "Mai vrei?",
     finalCtaBody: "Creează-ți un cont ca să salvezi favorite și să adaugi propriile rețete pe raft.",
+    supportText:
+      "Acest site rulează pe un server real, un domeniu și un abonament AI care alimentează fiecare rețetă importată. Dacă ți-a fost de folos, poți ajuta să rămână activ.",
+    supportCta: "Cumpără-mi o cafea ☕",
   },
   browser: {
     heading: "Rețete",

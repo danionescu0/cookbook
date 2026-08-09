@@ -120,6 +120,21 @@ export function LandingPage() {
           </Link>
         </div>
       </section>
+
+      {/* Last element on the page, so it's discoverable without competing with the signup/browse
+          CTAs above — but sized to match the feature headings (e.g. "Translated, not guessed")
+          rather than fading into fine print. */}
+      <div className="mx-auto max-w-md space-y-4 text-center">
+        <p className="font-serif text-lg font-semibold text-ink">{t.landing.supportText}</p>
+        <a
+          href="https://www.buymeacoffee.com/danionescu"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 rounded-md bg-[#FFDD00] px-5 py-2.5 text-sm font-semibold text-black shadow-sm transition-transform hover:scale-105"
+        >
+          {t.landing.supportCta}
+        </a>
+      </div>
     </div>
   );
 }
