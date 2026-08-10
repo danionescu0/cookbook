@@ -85,6 +85,7 @@ beforeEach(() => {
   mockedApi.listCategories.mockResolvedValue([desserts]);
   mockedApi.getPublicSettings.mockResolvedValue({
     turnstile_site_key: "",
+    google_client_id: "",
     backoffice_recipes_page_size: 10,
     max_imports_per_user: 30,
   });
@@ -339,6 +340,7 @@ describe("RecipeManager", () => {
     const user = userEvent.setup();
     mockedApi.getPublicSettings.mockResolvedValue({
       turnstile_site_key: "",
+      google_client_id: "",
       backoffice_recipes_page_size: 1,
       max_imports_per_user: 30,
     });

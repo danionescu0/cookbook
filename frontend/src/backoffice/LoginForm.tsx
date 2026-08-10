@@ -2,17 +2,19 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api/client";
 import { useAuth } from "../auth/AuthContext";
+import { GoogleSignInButton } from "../auth/GoogleSignInButton";
 import { TurnstileWidget } from "../auth/TurnstileWidget";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton, secondaryButton } from "../ui/buttonStyles";
 
 export function LoginForm() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState("");
 
   // Shown only after a login attempt reports "not verified" — resending needs its own CAPTCHA
   // solve (a fresh token), since it triggers an email send just like signup does.
@@ -22,6 +24,13 @@ export function LoginForm() {
   const [resendMessage, setResendMessage] = useState<string | null>(null);
   const [resendError, setResendError] = useState<string | null>(null);
   const [siteKey, setSiteKey] = useState<string | null>(null);
+
+  useEffect(() => {
+    api
+      .getPublicSettings()
+      .then((settings) => setGoogleClientId(settings.google_client_id))
+      .catch(() => setGoogleClientId(""));
+  }, []);
 
   useEffect(() => {
     if (!showResend || siteKey !== null) return;
@@ -109,6 +118,12 @@ export function LoginForm() {
           {t.login.submit}
         </button>
       </form>
+
+      {googleClientId && (
+        <div className="mt-3 flex justify-center">
+          <GoogleSignInButton clientId={googleClientId} language={language} onError={setError} />
+        </div>
+      )}
 
       {showResend && (
         <div className="mt-3 flex flex-col gap-2 rounded-md bg-olive-light p-3">

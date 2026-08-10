@@ -408,6 +408,9 @@ const en = {
       "Cloudflare Turnstile site key, shown on the signup page's CAPTCHA widget. Not secret — get one (or a public test key) at the Cloudflare dashboard.",
     turnstileSecretKeyLabel: "Turnstile secret key",
     turnstileSecretKeyHelp: "Used server-side to verify a solved CAPTCHA. Keep this one secret.",
+    googleClientIdLabel: "Google OAuth Client ID",
+    googleClientIdHelp:
+      "From a Google Cloud OAuth Client ID (Web application type), shown on the login/signup buttons. Not secret — no client secret is needed or stored, sign-in is verified against Google's own public keys.",
     apply: "Apply",
     applying: "Applying…",
     applied: "Settings applied.",

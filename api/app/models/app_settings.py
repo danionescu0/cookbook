@@ -70,6 +70,11 @@ class AppSettings(Base):
     # alternate AI provider").
     preferred_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="claude")
     deepseek_api_key: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    # Google OAuth Web Client ID, gating "Sign in with Google" — not secret (it's embedded in the
+    # signup/login pages' HTML), same reasoning as turnstile_site_key. No client secret is stored
+    # anywhere: the sign-in flow verifies the ID token's signature against Google's own public
+    # keys rather than a server-to-server code exchange, so no secret is ever needed.
+    google_client_id: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
     @property
     def supported_languages_list(self) -> list[str]:

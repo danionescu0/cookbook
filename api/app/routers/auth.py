@@ -3,6 +3,9 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
+from google.auth.exceptions import GoogleAuthError
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
 from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -78,6 +81,14 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=8)
 
 
+class GoogleSignInRequest(BaseModel):
+    id_token: str
+    # Only consulted when this call actually creates a brand-new account (see google_signin()) —
+    # a login, or a link/claim of an existing row, needs no fresh consent.
+    terms_accepted: bool = False
+    language: str | None = None
+
+
 def _enqueue_email_job(db: Session, user_id: int, kind: str) -> None:
     job = EmailJob(user_id=user_id, kind=kind, status=EmailJobStatus.QUEUED)
     db.add(job)
@@ -90,6 +101,24 @@ def _enqueue_email_job(db: Session, user_id: int, kind: str) -> None:
         job.status = EmailJobStatus.FAILED
         job.error = f"failed to publish to queue: {exc}"
         db.commit()
+
+
+def _build_login_response(user: User) -> LoginResponse:
+    return LoginResponse(
+        access_token=create_access_token(user),
+        user=UserRead(
+            id=user.id, email=user.email, is_admin=user.is_admin, is_super_admin=user.is_super_admin
+        ),
+    )
+
+
+def _random_unusable_password_hash() -> str:
+    # For a Google-only account: a real bcrypt hash of an unguessable random value, rather than a
+    # nullable password_hash column. Every other password-related code path (login,
+    # PATCH /users/me/password) stays untouched — and if this user later runs "forgot password",
+    # that flow overwrites this hash with a real one, no extra code needed to let a Google-only
+    # account bolt on password login too. See Design Decisions ("Sign in with Google").
+    return bcrypt.hashpw(secrets.token_urlsafe(32).encode(), bcrypt.gensalt()).decode("ascii")
 
 
 def _resend_verification_email(db: Session, user: User) -> None:
@@ -210,12 +239,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
 
-    return LoginResponse(
-        access_token=create_access_token(user),
-        user=UserRead(
-            id=user.id, email=user.email, is_admin=user.is_admin, is_super_admin=user.is_super_admin
-        ),
-    )
+    return _build_login_response(user)
 
 
 @router.post("/forgot-password")
@@ -269,3 +293,74 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
     db.commit()
 
     return {"detail": "Password reset — you can log in now."}
+
+
+# Frontend matches on the substring "Terms and Conditions" to distinguish this from any other
+# 400 and show the Terms overlay before resubmitting with terms_accepted=True — same
+# substring-matching convention SignupForm/LoginForm already use for their own error branches.
+_TERMS_REQUIRED_DETAIL = "Please accept the Terms and Conditions to continue"
+
+
+@router.post("/google", response_model=LoginResponse)
+def google_signin(payload: GoogleSignInRequest, db: Session = Depends(get_db)) -> LoginResponse:
+    app_settings = get_settings(db)
+    if not app_settings.google_client_id:
+        raise HTTPException(status_code=400, detail="Google sign-in is not configured")
+
+    try:
+        id_info = google_id_token.verify_oauth2_token(
+            payload.id_token, google_requests.Request(), audience=app_settings.google_client_id
+        )
+    except (ValueError, GoogleAuthError):
+        raise HTTPException(status_code=401, detail="Invalid Google sign-in token")
+
+    if not id_info.get("email_verified"):
+        raise HTTPException(status_code=401, detail="Google reported this email as unverified")
+
+    sub: str = id_info["sub"]
+    email: str = id_info["email"]
+
+    user = db.scalar(select(User).where(User.google_sub == sub))
+    if user is None:
+        user = db.scalar(select(User).where(User.email == email))
+
+        if user is None:
+            # Brand-new account — needs an explicit Terms acceptance, same as manual signup.
+            # Nothing is created until then; the frontend resubmits the same id_token with
+            # terms_accepted=True once the visitor agrees.
+            if not payload.terms_accepted:
+                raise HTTPException(status_code=400, detail=_TERMS_REQUIRED_DETAIL)
+
+            language = (
+                payload.language
+                if payload.language in app_settings.supported_languages_list
+                else app_settings.default_language
+            )
+            user = User(
+                email=email,
+                google_sub=sub,
+                password_hash=_random_unusable_password_hash(),
+                is_verified=True,
+                terms_accepted_at=datetime.now(timezone.utc),
+                terms_version=TERMS_VERSION,
+                language=language,
+            )
+            db.add(user)
+        elif user.is_verified:
+            # Auto-link: this account already proved its own email once (via the verification
+            # link); linking it to the same, Google-proven email needs no fresh consent.
+            user.google_sub = sub
+        else:
+            # Claims an unconfirmed password signup on this email — proven Google ownership
+            # outranks a password nobody ever verified. Invalidates whatever password was set on
+            # it (see Design Decisions, "Sign in with Google"); the original terms_accepted_at/
+            # version already recorded at that signup stands.
+            user.google_sub = sub
+            user.is_verified = True
+            user.password_hash = _random_unusable_password_hash()
+
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    return _build_login_response(user)

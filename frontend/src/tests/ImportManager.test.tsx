@@ -74,6 +74,7 @@ function logInAsRegularUser(importedRecipesCount: number, maxImportsPerUser: num
   });
   mockedApi.getPublicSettings.mockResolvedValue({
     turnstile_site_key: "",
+    google_client_id: "",
     backoffice_recipes_page_size: 10,
     max_imports_per_user: maxImportsPerUser,
   });

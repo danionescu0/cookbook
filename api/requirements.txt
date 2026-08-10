@@ -14,3 +14,5 @@ bcrypt==4.3.0
 httpx==0.28.1
 email-validator==2.2.0
 beautifulsoup4==4.14.2
+google-auth==2.56.3
+requests==2.34.2

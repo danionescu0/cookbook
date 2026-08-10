@@ -21,4 +21,7 @@ def public_settings(db: Session = Depends(get_db)) -> dict[str, object]:
         # Not secret either — the Account page needs it to show import usage before the button
         # is disabled, and every visitor (logged in or not) can reach this endpoint.
         "max_imports_per_user": row.max_imports_per_user,
+        # Not secret — the login/signup pages need this before the visitor has any account, same
+        # reasoning as turnstile_site_key above.
+        "google_client_id": row.google_client_id,
     }

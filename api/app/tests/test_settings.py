@@ -176,6 +176,13 @@ def test_patch_settings_updates_turnstile_and_public_site_url(client: TestClient
     assert "turnstile_secret_key" not in body
 
 
+def test_patch_settings_updates_google_client_id(client: TestClient) -> None:
+    response = client.patch("/settings", json={"google_client_id": "abc.apps.googleusercontent.com"})
+
+    assert response.status_code == 200
+    assert response.json()["google_client_id"] == "abc.apps.googleusercontent.com"
+
+
 def test_patch_settings_blank_secret_leaves_current_value_unchanged(client: TestClient) -> None:
     client.patch("/settings", json={"anthropic_api_key": "sk-ant-test-key"})
 
@@ -263,4 +270,5 @@ def test_public_settings_exposes_turnstile_site_key_without_auth(
         "turnstile_site_key": "site-key",
         "backoffice_recipes_page_size": 10,
         "max_imports_per_user": 30,
+        "google_client_id": "",
     }

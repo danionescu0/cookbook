@@ -38,6 +38,7 @@ def _serialize(row: AppSettings) -> SettingsRead:
         contact_recipient_email=row.contact_recipient_email,
         preferred_ai_provider=row.preferred_ai_provider,
         deepseek_api_key_is_set=bool(row.deepseek_api_key),
+        google_client_id=row.google_client_id,
     )
 
 

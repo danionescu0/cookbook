@@ -163,6 +163,7 @@ export interface Settings {
   contact_recipient_email: string;
   preferred_ai_provider: AiProvider;
   deepseek_api_key_is_set: boolean;
+  google_client_id: string;
 }
 
 export interface SettingsUpdate {
@@ -191,6 +192,7 @@ export interface SettingsUpdate {
   preferred_ai_provider?: AiProvider;
   // Omit or send "" to leave the current secret unchanged — same as smtp_password above.
   deepseek_api_key?: string;
+  google_client_id?: string;
 }
 
 export interface ContactMessageCreate {
@@ -208,6 +210,9 @@ export interface PublicSettings {
   turnstile_site_key: string;
   backoffice_recipes_page_size: number;
   max_imports_per_user: number;
+  // Blank means Google sign-in isn't configured yet — GoogleSignInButton renders nothing in that
+  // case, same pattern as TurnstileWidget with a blank site key.
+  google_client_id: string;
 }
 
 export interface PublicLanguages {

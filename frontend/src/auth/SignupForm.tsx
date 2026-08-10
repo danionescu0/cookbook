@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useLanguage } from "../i18n/LanguageContext";
 import { TermsOverlay } from "../legal/TermsOverlay";
 import { primaryButton } from "../ui/buttonStyles";
+import { GoogleSignInButton } from "./GoogleSignInButton";
 import { TurnstileWidget } from "./TurnstileWidget";
 
 const inputClasses =
@@ -21,6 +22,8 @@ export function SignupForm() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [siteKey, setSiteKey] = useState<string | null>(null);
+  const [googleClientId, setGoogleClientId] = useState("");
+  const [googleError, setGoogleError] = useState<string | null>(null);
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,8 +64,14 @@ export function SignupForm() {
   useEffect(() => {
     api
       .getPublicSettings()
-      .then((settings) => setSiteKey(settings.turnstile_site_key))
-      .catch(() => setSiteKey(""));
+      .then((settings) => {
+        setSiteKey(settings.turnstile_site_key);
+        setGoogleClientId(settings.google_client_id);
+      })
+      .catch(() => {
+        setSiteKey("");
+        setGoogleClientId("");
+      });
   }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -252,6 +261,21 @@ export function SignupForm() {
           {t.signup.submit}
         </button>
       </form>
+
+      {googleClientId && (
+        <div className="mt-3 flex justify-center">
+          <GoogleSignInButton
+            clientId={googleClientId}
+            language={language}
+            onError={setGoogleError}
+          />
+        </div>
+      )}
+      {googleError && (
+        <p role="alert" className="mt-3 rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+          {googleError}
+        </p>
+      )}
 
       <p className="mt-4 text-sm text-ink/70">
         {t.signup.loginPrompt}{" "}

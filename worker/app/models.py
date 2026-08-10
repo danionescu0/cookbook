@@ -164,6 +164,7 @@ class AppSettings(Base):
     # module's docstring.
     preferred_ai_provider: Mapped[str] = mapped_column(String(20), nullable=False, default="claude")
     deepseek_api_key: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    google_client_id: Mapped[str] = mapped_column(String(255), nullable=False, default="")
 
 
 class Ingredient(Base):

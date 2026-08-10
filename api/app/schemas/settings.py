@@ -32,6 +32,8 @@ class SettingsRead(BaseModel):
     contact_recipient_email: str
     preferred_ai_provider: AiProvider
     deepseek_api_key_is_set: bool
+    # Not secret — see app_settings.py's google_client_id docstring.
+    google_client_id: str
 
 
 class SettingsUpdate(BaseModel):
@@ -61,3 +63,4 @@ class SettingsUpdate(BaseModel):
     preferred_ai_provider: AiProvider | None = None
     # Secret: same "blank/omitted means keep current value" semantics as anthropic_api_key above.
     deepseek_api_key: str | None = None
+    google_client_id: str | None = None

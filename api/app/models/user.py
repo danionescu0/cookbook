@@ -22,6 +22,14 @@ class User(Base):
     is_super_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
+    # Google's stable per-account subject id, set once this account signs in (or is created) via
+    # "Sign in with Google" — see routers/auth.py's POST /auth/google. Nullable/unique: most
+    # accounts never set it, and Postgres allows any number of NULLs in a unique index. A
+    # Google-linked account still has a password_hash (a random, never-shared value it can't log
+    # in with) rather than a nullable column, so every other password-related code path (login,
+    # change-password) stays untouched — see Design Decisions.
+    google_sub: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+
     # The UI language active at signup (see frontend/src/i18n) — used to send the verification
     # email (and any future account emails) in a language the user actually reads, rather than
     # whatever `default_language` happens to be configured. Not synced afterward if the user

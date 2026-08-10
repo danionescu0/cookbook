@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 import { api, setAuthToken, setUnauthorizedHandler } from "../api/client";
-import type { User } from "../types";
+import type { LoginResponse, User } from "../types";
 
 export const AUTH_STORAGE_KEY = "cookbook-auth-token";
 
@@ -9,6 +9,9 @@ interface AuthContextValue {
   isAuthenticated: boolean;
   user: User | null;
   login: (email: string, password: string) => Promise<void>;
+  // termsAccepted only matters the one time this actually creates a brand-new account — see
+  // api/client.ts's signInWithGoogle.
+  loginWithGoogle: (idToken: string, termsAccepted: boolean, language: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -58,15 +61,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsRehydrating(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
-    const response = await api.login(email, password);
+  const applyLoginResponse = (response: LoginResponse) => {
     setAuthToken(response.access_token);
     window.localStorage.setItem(AUTH_STORAGE_KEY, response.access_token);
     setUser(response.user);
   };
 
+  const login = async (email: string, password: string) => {
+    applyLoginResponse(await api.login(email, password));
+  };
+
+  const loginWithGoogle = async (idToken: string, termsAccepted: boolean, language: string) => {
+    applyLoginResponse(await api.signInWithGoogle(idToken, termsAccepted, language));
+  };
+
   return (
-    <AuthContext.Provider value={{ isAuthenticated: user !== null, user, login, logout }}>
+    <AuthContext.Provider
+      value={{ isAuthenticated: user !== null, user, login, loginWithGoogle, logout }}
+    >
       {!isRehydrating && children}
     </AuthContext.Provider>
   );

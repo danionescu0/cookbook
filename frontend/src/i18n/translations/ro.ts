@@ -413,6 +413,9 @@ const ro: Translation = {
       "Cheia de site Cloudflare Turnstile, afișată pe widget-ul CAPTCHA al paginii de înregistrare. Nu este secretă — obține una (sau o cheie de test publică) din panoul Cloudflare.",
     turnstileSecretKeyLabel: "Cheie secretă Turnstile",
     turnstileSecretKeyHelp: "Folosită pe server pentru a verifica un CAPTCHA rezolvat. Păstreaz-o secretă.",
+    googleClientIdLabel: "Google OAuth Client ID",
+    googleClientIdHelp:
+      "Dintr-un Google Cloud OAuth Client ID (tip Web application), afișat pe butoanele de conectare/înregistrare. Nu este secret — nu este nevoie de un client secret, autentificarea este verificată cu cheile publice ale Google.",
     apply: "Aplică",
     applying: "Se aplică…",
     applied: "Setările au fost aplicate.",

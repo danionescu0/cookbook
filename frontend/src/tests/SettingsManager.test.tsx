@@ -33,6 +33,7 @@ const baseSettings: Settings = {
   smtp_use_tls: true,
   turnstile_site_key: "",
   turnstile_secret_key_is_set: false,
+  google_client_id: "",
   public_site_url: "",
   backoffice_recipes_page_size: 10,
   max_imports_per_user: 30,

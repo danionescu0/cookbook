@@ -64,6 +64,7 @@ beforeEach(() => {
   window.localStorage.removeItem(AUTH_STORAGE_KEY);
   mockedApi.getPublicSettings.mockResolvedValue({
     turnstile_site_key: "site-key",
+    google_client_id: "",
     backoffice_recipes_page_size: 10,
     max_imports_per_user: 30,
   });

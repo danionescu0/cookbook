@@ -45,6 +45,7 @@ beforeEach(() => {
   vi.resetAllMocks();
   mockedApi.getPublicSettings.mockResolvedValue({
     turnstile_site_key: "site-key",
+    google_client_id: "",
     backoffice_recipes_page_size: 10,
     max_imports_per_user: 30,
   });
@@ -53,7 +54,13 @@ beforeEach(() => {
 describe("LoginForm", () => {
   it("submits the entered credentials", async () => {
     const login = vi.fn().mockResolvedValue(undefined);
-    mockedUseAuth.mockReturnValue({ isAuthenticated: false, user: null, login, logout: vi.fn() });
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      login,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+    });
     const user = userEvent.setup();
 
     renderForm();
@@ -66,7 +73,13 @@ describe("LoginForm", () => {
 
   it("shows an error message when login fails", async () => {
     const login = vi.fn().mockRejectedValue(new Error("nope"));
-    mockedUseAuth.mockReturnValue({ isAuthenticated: false, user: null, login, logout: vi.fn() });
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      login,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+    });
     const user = userEvent.setup();
 
     renderForm();
@@ -81,7 +94,13 @@ describe("LoginForm", () => {
 
   it("shows a distinct message and a resend option when the account isn't verified yet", async () => {
     const login = vi.fn().mockRejectedValue(new Error("Account not verified yet"));
-    mockedUseAuth.mockReturnValue({ isAuthenticated: false, user: null, login, logout: vi.fn() });
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      login,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+    });
     const user = userEvent.setup();
 
     renderForm();
@@ -97,7 +116,13 @@ describe("LoginForm", () => {
 
   it("resends the verification email once the CAPTCHA is solved", async () => {
     const login = vi.fn().mockRejectedValue(new Error("Account not verified yet"));
-    mockedUseAuth.mockReturnValue({ isAuthenticated: false, user: null, login, logout: vi.fn() });
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      login,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+    });
     mockedApi.resendVerification.mockResolvedValue({
       detail: "A new verification email has been sent.",
     });
@@ -125,7 +150,13 @@ describe("LoginForm", () => {
 
   it("shows an error if resending the verification email fails", async () => {
     const login = vi.fn().mockRejectedValue(new Error("Account not verified yet"));
-    mockedUseAuth.mockReturnValue({ isAuthenticated: false, user: null, login, logout: vi.fn() });
+    mockedUseAuth.mockReturnValue({
+      isAuthenticated: false,
+      user: null,
+      login,
+      loginWithGoogle: vi.fn(),
+      logout: vi.fn(),
+    });
     mockedApi.resendVerification.mockRejectedValue(new Error("CAPTCHA verification failed"));
     const user = userEvent.setup();
 

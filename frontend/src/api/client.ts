@@ -148,6 +148,14 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token, new_password: newPassword }),
     }),
+  // termsAccepted only matters the one time this call actually creates a brand-new account (see
+  // api/app/routers/auth.py's google_signin) — a login, or linking/claiming an existing row,
+  // ignores it.
+  signInWithGoogle: (idToken: string, termsAccepted: boolean, language: string) =>
+    request<LoginResponse>("/auth/google", {
+      method: "POST",
+      body: JSON.stringify({ id_token: idToken, terms_accepted: termsAccepted, language }),
+    }),
   me: () => request<UserProfile>("/users/me"),
   listUsers: () => request<UserAdmin[]>("/users"),
   changePassword: (currentPassword: string, newPassword: string) =>

@@ -25,6 +25,7 @@ interface FormState {
   smtpUseTls: boolean;
   turnstileSiteKey: string;
   turnstileSecretKey: string;
+  googleClientId: string;
   publicSiteUrl: string;
   backofficeRecipesPageSize: string;
   maxImportsPerUser: string;
@@ -52,6 +53,7 @@ function toFormState(settings: Settings): FormState {
     smtpUseTls: settings.smtp_use_tls,
     turnstileSiteKey: settings.turnstile_site_key,
     turnstileSecretKey: "",
+    googleClientId: settings.google_client_id,
     publicSiteUrl: settings.public_site_url,
     backofficeRecipesPageSize: String(settings.backoffice_recipes_page_size),
     maxImportsPerUser: String(settings.max_imports_per_user),
@@ -144,6 +146,7 @@ export function SettingsManager() {
         smtp_use_tls: form.smtpUseTls,
         turnstile_site_key: form.turnstileSiteKey.trim(),
         ...(form.turnstileSecretKey ? { turnstile_secret_key: form.turnstileSecretKey } : {}),
+        google_client_id: form.googleClientId.trim(),
         public_site_url: form.publicSiteUrl.trim(),
         backoffice_recipes_page_size: Number(form.backofficeRecipesPageSize),
         max_imports_per_user: Number(form.maxImportsPerUser),
@@ -385,6 +388,13 @@ export function SettingsManager() {
           value={form.turnstileSecretKey}
           placeholder={secretPlaceholder(settings.turnstile_secret_key_is_set)}
           onChange={(v) => update({ turnstileSecretKey: v })}
+        />
+        <Field
+          id="settings-google-client-id"
+          label={t.settingsManager.googleClientIdLabel}
+          help={t.settingsManager.googleClientIdHelp}
+          value={form.googleClientId}
+          onChange={(v) => update({ googleClientId: v })}
         />
 
         <div className="sm:col-span-2">

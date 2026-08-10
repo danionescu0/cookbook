@@ -45,6 +45,7 @@ def get_settings(db: Session) -> AppSettings:
         contact_recipient_email="",
         preferred_ai_provider="claude",
         deepseek_api_key="",
+        google_client_id="",
     )
     db.add(row)
     db.commit()
@@ -114,6 +115,7 @@ def update_settings(db: Session, patch: SettingsUpdate) -> AppSettings:
         "max_imports_per_user",
         "contact_recipient_email",
         "preferred_ai_provider",
+        "google_client_id",
     ):
         if field in updates:
             setattr(row, field, updates[field])

@@ -4,11 +4,14 @@ import jwt
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
+import bcrypt
+
 import app.routers.auth as auth_router
 from app.auth import create_access_token
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
+from app.settings_service import get_settings
 
 _SIGNUP_PAYLOAD = {
     "email": "newuser@example.com",
@@ -398,3 +401,151 @@ def test_imports_router_is_fully_protected(unauthenticated_client: TestClient) -
     response = unauthenticated_client.get("/imports")
 
     assert response.status_code == 401
+
+
+def _configure_google(db_session: Session, client_id: str = "test-client-id") -> None:
+    app_settings = get_settings(db_session)
+    app_settings.google_client_id = client_id
+    db_session.commit()
+
+
+def _mock_google_verify(
+    monkeypatch, sub: str, email: str, email_verified: bool = True
+) -> None:
+    def fake_verify(token, request, audience):
+        return {"sub": sub, "email": email, "email_verified": email_verified}
+
+    monkeypatch.setattr(auth_router.google_id_token, "verify_oauth2_token", fake_verify)
+
+
+def test_google_signin_requires_terms_for_a_new_account_then_succeeds_on_retry(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _configure_google(db_session)
+    _mock_google_verify(monkeypatch, sub="google-sub-1", email="newgoogle@example.com")
+
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token"})
+    assert response.status_code == 400
+    assert "Terms and Conditions" in response.json()["detail"]
+    assert db_session.query(User).filter_by(email="newgoogle@example.com").count() == 0
+
+    response = unauthenticated_client.post(
+        "/auth/google", json={"id_token": "fake-token", "terms_accepted": True}
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["user"]["email"] == "newgoogle@example.com"
+    user = db_session.query(User).filter_by(email="newgoogle@example.com").one()
+    assert user.google_sub == "google-sub-1"
+    assert user.is_verified is True
+    assert user.terms_accepted_at is not None
+
+
+def test_google_signin_logs_straight_in_via_google_sub_on_a_second_call(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _configure_google(db_session)
+    _mock_google_verify(monkeypatch, sub="google-sub-2", email="repeat@example.com")
+    unauthenticated_client.post(
+        "/auth/google", json={"id_token": "fake-token", "terms_accepted": True}
+    )
+    user_id = db_session.query(User).filter_by(email="repeat@example.com").one().id
+
+    # A changed email on Google's side shouldn't matter once google_sub already links the
+    # account — the sub lookup wins before any email lookup is even attempted.
+    _mock_google_verify(monkeypatch, sub="google-sub-2", email="repeat@example.com")
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token-2"})
+
+    assert response.status_code == 200
+    assert response.json()["user"]["id"] == user_id
+    assert db_session.query(User).filter_by(email="repeat@example.com").count() == 1
+
+
+def test_google_signin_auto_links_a_verified_existing_account_by_email(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session, admin_user: User
+) -> None:
+    _configure_google(db_session)
+    _mock_google_verify(monkeypatch, sub="google-sub-3", email=admin_user.email)
+
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token"})
+
+    assert response.status_code == 200
+    db_session.refresh(admin_user)
+    assert admin_user.google_sub == "google-sub-3"
+
+
+def test_google_signin_claims_an_unverified_account_and_invalidates_its_password(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    user = User(
+        email="unconfirmed@example.com",
+        password_hash=bcrypt.hashpw(b"old-password", bcrypt.gensalt()).decode(),
+        is_admin=False,
+        is_verified=False,
+    )
+    db_session.add(user)
+    db_session.commit()
+    _configure_google(db_session)
+    _mock_google_verify(monkeypatch, sub="google-sub-4", email="unconfirmed@example.com")
+
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token"})
+
+    assert response.status_code == 200
+    db_session.refresh(user)
+    assert user.is_verified is True
+    assert user.google_sub == "google-sub-4"
+
+    old_password_login = unauthenticated_client.post(
+        "/auth/login", json={"email": "unconfirmed@example.com", "password": "old-password"}
+    )
+    assert old_password_login.status_code == 401
+
+
+def test_google_signin_rejects_an_invalid_token(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _configure_google(db_session)
+
+    def raise_value_error(token, request, audience):
+        raise ValueError("bad token")
+
+    monkeypatch.setattr(auth_router.google_id_token, "verify_oauth2_token", raise_value_error)
+
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "not-a-real-token"})
+
+    assert response.status_code == 401
+
+
+def test_google_signin_rejects_an_unverified_google_email(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _configure_google(db_session)
+    _mock_google_verify(
+        monkeypatch, sub="google-sub-5", email="sketchy@example.com", email_verified=False
+    )
+
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token"})
+
+    assert response.status_code == 401
+
+
+def test_google_signin_rejects_when_not_configured(
+    unauthenticated_client: TestClient, db_session: Session
+) -> None:
+    response = unauthenticated_client.post("/auth/google", json={"id_token": "fake-token"})
+
+    assert response.status_code == 400
+
+
+def test_google_signin_stamps_last_login_at(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _configure_google(db_session)
+    _mock_google_verify(monkeypatch, sub="google-sub-6", email="freshlogin@example.com")
+
+    unauthenticated_client.post(
+        "/auth/google", json={"id_token": "fake-token", "terms_accepted": True}
+    )
+
+    user = db_session.query(User).filter_by(email="freshlogin@example.com").one()
+    assert user.last_login_at is not None
