@@ -255,14 +255,14 @@ def test_get_import_job_not_found(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_create_import_job_shows_the_creators_username(client: TestClient) -> None:
+def test_create_import_job_shows_the_creators_email(client: TestClient) -> None:
     response = client.post("/imports", json={"source": "https://example.com/recipe"})
 
-    assert response.json()["created_by_username"] == "admin"
+    assert response.json()["created_by_email"] == "admin@example.com"
 
 
 def test_non_admin_import_queues_and_publishes_immediately(
-    client: TestClient, user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+    client: TestClient, user_client: TestClient, regular_user: User, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # No public-exposure review is needed for a private import — unlike an admin's own job,
     # which stays "pending" until explicitly approved.
@@ -278,7 +278,10 @@ def test_non_admin_import_queues_and_publishes_immediately(
     assert response.status_code == 201
     body = response.json()
     assert body["status"] == "queued"
-    assert body["created_by_username"] == "regular"
+    assert body["created_by_user_id"] == regular_user.id
+    # The raw email is admin-only, same nulling pattern as ImportJobRead.error — a non-admin
+    # caller doesn't get it back even for their own job.
+    assert body["created_by_email"] is None
     assert published == [(body["id"], "single", "https://example.com/recipe")]
 
 

@@ -39,7 +39,6 @@ const mockedApi = vi.mocked(api);
 
 const profile: UserProfile = {
   id: 1,
-  username: "someone",
   email: "someone@example.com",
   is_admin: false,
   is_super_admin: false,
@@ -66,7 +65,8 @@ const importedRecipe: Recipe = {
   approved_at: "2026-08-04T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "someone",
+  owner_user_id: 1,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-08-04T00:00:00Z",
 };
@@ -171,7 +171,8 @@ describe("AccountPage", () => {
       error: null,
       error_kind: null,
       created_at: "2026-08-06T00:00:00Z",
-      created_by_username: "someone",
+      created_by_user_id: 1,
+      created_by_email: null,
       dismissed_at: null,
       admin_reviewed_at: null,
     });

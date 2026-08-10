@@ -443,8 +443,8 @@ class TestListPagination:
 
         assert response.status_code == 401
 
-    def test_owner_by_username_returns_that_users_recipes_any_status_for_an_admin(
-        self, client: TestClient, user_client: TestClient
+    def test_owner_by_id_returns_that_users_recipes_any_status_for_an_admin(
+        self, client: TestClient, user_client: TestClient, regular_user: User
     ) -> None:
         category_id = _create_category(client)
         theirs_private = _create_recipe(user_client, category_id, title="Their private recipe")
@@ -453,30 +453,35 @@ class TestListPagination:
         )
         _create_recipe(client, category_id, title="Admin's own recipe", is_shared=True)
 
-        response = client.get("/recipes", params={"owner": "regular"})
+        response = client.get("/recipes", params={"owner": str(regular_user.id)})
 
         assert response.status_code == 200
         ids = {r["id"] for r in response.json()}
         assert ids == {theirs_private["id"], theirs_shared["id"]}
 
-    def test_owner_by_username_rejects_a_non_admin_caller(
-        self, user_client: TestClient
+    def test_owner_by_id_rejects_a_non_admin_caller(
+        self, user_client: TestClient, admin_user: User
     ) -> None:
-        response = user_client.get("/recipes", params={"owner": "admin"})
+        response = user_client.get("/recipes", params={"owner": str(admin_user.id)})
 
         assert response.status_code == 403
 
-    def test_owner_by_username_rejects_an_anonymous_caller(
-        self, unauthenticated_client: TestClient
+    def test_owner_by_id_rejects_an_anonymous_caller(
+        self, unauthenticated_client: TestClient, admin_user: User
     ) -> None:
-        response = unauthenticated_client.get("/recipes", params={"owner": "admin"})
+        response = unauthenticated_client.get("/recipes", params={"owner": str(admin_user.id)})
 
         assert response.status_code == 403
 
-    def test_owner_by_username_404s_for_an_unknown_username(self, client: TestClient) -> None:
-        response = client.get("/recipes", params={"owner": "nobody"})
+    def test_owner_by_id_404s_for_an_unknown_id(self, client: TestClient) -> None:
+        response = client.get("/recipes", params={"owner": "999999"})
 
         assert response.status_code == 404
+
+    def test_owner_rejects_a_non_numeric_value(self, client: TestClient) -> None:
+        response = client.get("/recipes", params={"owner": "nobody"})
+
+        assert response.status_code == 400
 
     def test_only_public_excludes_the_admins_own_private_recipes(
         self, client: TestClient

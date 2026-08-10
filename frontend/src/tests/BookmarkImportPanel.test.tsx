@@ -33,8 +33,7 @@ function logInAsAdmin() {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 1,
-    username: "admin",
-    email: null,
+    email: "admin@example.com",
     is_admin: true,
     is_super_admin: true,
     imported_recipes_count: 0,
@@ -45,8 +44,7 @@ function logInAsRegularUser() {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 2,
-    username: "someone",
-    email: null,
+    email: "someone@example.com",
     is_admin: false,
     is_super_admin: false,
     imported_recipes_count: 8,
@@ -144,7 +142,8 @@ describe("BookmarkImportPanel", () => {
           error: null,
           error_kind: null,
           created_at: "2026-08-09T00:00:00Z",
-          created_by_username: "admin",
+          created_by_user_id: 1,
+          created_by_email: null,
           dismissed_at: null,
           admin_reviewed_at: null,
         },

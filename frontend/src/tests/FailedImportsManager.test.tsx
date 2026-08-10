@@ -30,7 +30,8 @@ const failedJob: ImportJob = {
   error: "unexpected error: connection reset",
   error_kind: "technical",
   created_at: "2026-08-06T00:00:00Z",
-  created_by_username: "someone",
+  created_by_user_id: 2,
+  created_by_email: "someone@example.com",
   dismissed_at: null,
   admin_reviewed_at: null,
 };

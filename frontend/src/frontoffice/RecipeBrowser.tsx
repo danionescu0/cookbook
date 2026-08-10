@@ -62,7 +62,7 @@ export function RecipeBrowser() {
   // about sharing status, only_public doesn't care about ownership) — drop it from this one so
   // it isn't shown twice.
   const community = isAuthenticated
-    ? publicFeed.recipes.filter((r) => r.owner_username !== user!.username)
+    ? publicFeed.recipes.filter((r) => r.owner_user_id !== user!.id)
     : publicFeed.recipes;
 
   const primary = isAuthenticated ? mine : publicFeed;

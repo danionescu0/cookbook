@@ -18,7 +18,7 @@ function Consumer() {
   const { isAuthenticated, user, login, logout } = useAuth();
   const handleLogin = async () => {
     try {
-      await login("admin", "secret");
+      await login("admin@example.com", "secret");
     } catch {
       // ignored — mirrors LoginForm's own catch
     }
@@ -26,7 +26,7 @@ function Consumer() {
   return (
     <div>
       <span data-testid="status">{isAuthenticated ? "in" : "out"}</span>
-      <span data-testid="username">{user?.username ?? ""}</span>
+      <span data-testid="email">{user?.email ?? ""}</span>
       <button type="button" onClick={handleLogin}>
         log in
       </button>
@@ -61,8 +61,7 @@ describe("AuthProvider", () => {
     window.localStorage.setItem(AUTH_STORAGE_KEY, "stored-token");
     mockedApi.me.mockResolvedValue({
       id: 1,
-      username: "admin",
-      email: null,
+      email: "admin@example.com",
       is_admin: true,
       is_super_admin: true,
       imported_recipes_count: 0,
@@ -71,7 +70,7 @@ describe("AuthProvider", () => {
     renderConsumer();
 
     await waitFor(() => expect(screen.getByTestId("status")).toHaveTextContent("in"));
-    expect(screen.getByTestId("username")).toHaveTextContent("admin");
+    expect(screen.getByTestId("email")).toHaveTextContent("admin@example.com");
   });
 
   it("logs out automatically if the stored token is rejected", async () => {
@@ -89,20 +88,20 @@ describe("AuthProvider", () => {
     mockedApi.login.mockResolvedValue({
       access_token: "new-token",
       token_type: "bearer",
-      user: { id: 1, username: "admin", is_admin: true, is_super_admin: true },
+      user: { id: 1, email: "admin@example.com", is_admin: true, is_super_admin: true },
     });
     renderConsumer();
 
     await user.click(screen.getByRole("button", { name: "log in" }));
 
     expect(screen.getByTestId("status")).toHaveTextContent("in");
-    expect(screen.getByTestId("username")).toHaveTextContent("admin");
+    expect(screen.getByTestId("email")).toHaveTextContent("admin@example.com");
     expect(window.localStorage.getItem(AUTH_STORAGE_KEY)).toBe("new-token");
   });
 
   it("login failure keeps the user unauthenticated", async () => {
     const user = userEvent.setup();
-    mockedApi.login.mockRejectedValue(new Error("Invalid username or password"));
+    mockedApi.login.mockRejectedValue(new Error("Invalid email or password"));
     renderConsumer();
 
     await user.click(screen.getByRole("button", { name: "log in" }));
@@ -115,8 +114,7 @@ describe("AuthProvider", () => {
     window.localStorage.setItem(AUTH_STORAGE_KEY, "stored-token");
     mockedApi.me.mockResolvedValue({
       id: 1,
-      username: "admin",
-      email: null,
+      email: "admin@example.com",
       is_admin: true,
       is_super_admin: true,
       imported_recipes_count: 0,

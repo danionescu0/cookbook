@@ -80,6 +80,8 @@ _DISALLOWED_PATHS = (
     "/submit-recipe",
     "/login",
     "/signup",
+    "/forgot-password",
+    "/reset-password",
     "/verify-email",
 )
 

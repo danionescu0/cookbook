@@ -17,7 +17,6 @@ const mockedApi = vi.mocked(api);
 
 const alice: UserAdmin = {
   id: 1,
-  username: "alice",
   email: "alice@example.com",
   is_verified: true,
   created_at: "2026-07-01T00:00:00Z",
@@ -29,8 +28,7 @@ const alice: UserAdmin = {
 
 const bob: UserAdmin = {
   id: 2,
-  username: "bob",
-  email: null,
+  email: "bob@example.com",
   is_verified: false,
   created_at: "2026-07-15T00:00:00Z",
   last_login_at: null,
@@ -57,7 +55,8 @@ function recipe(overrides: Partial<Recipe> = {}): Recipe {
     approved_at: "2026-07-23T00:00:00Z",
     available_languages: ["en"],
     processing_status: null,
-    owner_username: "alice",
+    owner_user_id: 1,
+    owner_email: null,
     is_shared: false,
     import_reviewed_at: null,
     ...overrides,
@@ -86,16 +85,14 @@ describe("UsersManager", () => {
 
     renderManager();
 
-    expect(await screen.findByText("alice")).toBeInTheDocument();
-    const aliceRow = screen.getByText("alice").closest("tr")!;
-    expect(within(aliceRow).getByText("alice@example.com")).toBeInTheDocument();
+    expect(await screen.findByText("alice@example.com")).toBeInTheDocument();
+    const aliceRow = screen.getByText("alice@example.com").closest("tr")!;
     expect(within(aliceRow).getByText("Confirmed")).toBeInTheDocument();
     expect(within(aliceRow).getByText("4")).toBeInTheDocument();
     expect(within(aliceRow).getByText("6")).toBeInTheDocument();
     expect(within(aliceRow).getByText("2")).toBeInTheDocument();
 
-    const bobRow = screen.getByText("bob").closest("tr")!;
-    expect(within(bobRow).getByText("—")).toBeInTheDocument();
+    const bobRow = screen.getByText("bob@example.com").closest("tr")!;
     expect(within(bobRow).getByText("Unconfirmed")).toBeInTheDocument();
     expect(within(bobRow).getByText("Never")).toBeInTheDocument();
   });
@@ -116,14 +113,14 @@ describe("UsersManager", () => {
     const user = userEvent.setup();
 
     renderManager();
-    await screen.findByText("alice");
+    await screen.findByText("alice@example.com");
 
     await user.click(screen.getByRole("button", { name: "Show recipes" }));
 
     expect(await screen.findByText("Soup")).toBeInTheDocument();
     expect(screen.getByText("Salad")).toBeInTheDocument();
     expect(mockedApi.listRecipesPage).toHaveBeenCalledWith({
-      owner: "alice",
+      owner: "1",
       limit: 10,
       offset: 0,
     });
@@ -134,7 +131,7 @@ describe("UsersManager", () => {
 
     await waitFor(() =>
       expect(mockedApi.listRecipesPage).toHaveBeenCalledWith({
-        owner: "alice",
+        owner: "1",
         limit: 10,
         offset: 10,
       })
@@ -147,7 +144,7 @@ describe("UsersManager", () => {
     const user = userEvent.setup();
 
     renderManager();
-    await screen.findByText("alice");
+    await screen.findByText("alice@example.com");
 
     await user.click(screen.getByRole("button", { name: "Show recipes" }));
     await screen.findByText("Soup");
@@ -163,7 +160,7 @@ describe("UsersManager", () => {
     const user = userEvent.setup();
 
     renderManager();
-    await screen.findByText("bob");
+    await screen.findByText("bob@example.com");
 
     await user.click(screen.getByRole("button", { name: "Show recipes" }));
 

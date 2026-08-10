@@ -25,7 +25,10 @@ class ImportJobRead(BaseModel):
     error: str | None
     error_kind: ImportErrorKind | None = None
     created_at: datetime
-    created_by_username: str | None = None
+    created_by_user_id: int | None = None
+    # Only populated for an admin caller — see routers/imports.py's _serialize, same nulling
+    # pattern already used for `error` above and routers/recipes.py's owner_email.
+    created_by_email: str | None = None
     # Set once the owner dismisses a failed job from their account page — see
     # POST /imports/{id}/dismiss. Never consulted by the admin failed-imports page.
     dismissed_at: datetime | None = None

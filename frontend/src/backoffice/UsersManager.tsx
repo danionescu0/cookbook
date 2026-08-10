@@ -14,14 +14,14 @@ function formatDate(iso: string | null): string | null {
 }
 
 interface UserRecipesRowProps {
-  username: string;
+  ownerId: number;
   colSpan: number;
 }
 
 // The expanded "Show recipes" panel for one user — its own fetch/pagination state, independent
 // of the outer users table, so switching between users' panels doesn't fight over a single
 // shared page number.
-function UserRecipesRow({ username, colSpan }: UserRecipesRowProps) {
+function UserRecipesRow({ ownerId, colSpan }: UserRecipesRowProps) {
   const { t } = useLanguage();
   const [recipes, setRecipes] = useState<Recipe[]>([]);
   const [total, setTotal] = useState(0);
@@ -30,13 +30,17 @@ function UserRecipesRow({ username, colSpan }: UserRecipesRowProps) {
 
   useEffect(() => {
     api
-      .listRecipesPage({ owner: username, limit: RECIPES_PAGE_SIZE, offset: (page - 1) * RECIPES_PAGE_SIZE })
+      .listRecipesPage({
+        owner: String(ownerId),
+        limit: RECIPES_PAGE_SIZE,
+        offset: (page - 1) * RECIPES_PAGE_SIZE,
+      })
       .then(({ items, total: newTotal }) => {
         setRecipes(items);
         setTotal(newTotal);
       })
       .catch((e) => setError(String(e)));
-  }, [username, page]);
+  }, [ownerId, page]);
 
   const totalPages = Math.max(1, Math.ceil(total / RECIPES_PAGE_SIZE));
 
@@ -93,7 +97,7 @@ export function UsersManager() {
   const { t } = useLanguage();
   const [users, setUsers] = useState<UserAdmin[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const [expandedUsername, setExpandedUsername] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<number | null>(null);
 
   useEffect(() => {
     api
@@ -102,7 +106,7 @@ export function UsersManager() {
       .catch((e) => setError(String(e)));
   }, []);
 
-  const columnCount = 9;
+  const columnCount = 8;
 
   return (
     <div>
@@ -118,7 +122,6 @@ export function UsersManager() {
         <table className="w-full min-w-max border-collapse text-left text-sm">
           <thead>
             <tr className="border-b border-olive-light text-ink/60">
-              <th className="py-2 pr-4 font-medium">{t.usersManager.username}</th>
               <th className="py-2 pr-4 font-medium">{t.usersManager.email}</th>
               <th className="py-2 pr-4 font-medium">{t.usersManager.status}</th>
               <th className="py-2 pr-4 font-medium">{t.usersManager.createdAt}</th>
@@ -133,8 +136,7 @@ export function UsersManager() {
             {users.map((user) => (
               <Fragment key={user.id}>
                 <tr className="border-b border-olive-light/60">
-                  <td className="py-2 pr-4 text-ink">{user.username}</td>
-                  <td className="py-2 pr-4 text-ink/80">{user.email ?? "—"}</td>
+                  <td className="py-2 pr-4 text-ink">{user.email}</td>
                   <td className="py-2 pr-4">
                     <span
                       className={
@@ -157,19 +159,15 @@ export function UsersManager() {
                   <td className="py-2">
                     <button
                       type="button"
-                      onClick={() =>
-                        setExpandedUsername(expandedUsername === user.username ? null : user.username)
-                      }
+                      onClick={() => setExpandedUserId(expandedUserId === user.id ? null : user.id)}
                       className={secondaryButton}
                     >
-                      {expandedUsername === user.username
-                        ? t.usersManager.hideRecipes
-                        : t.usersManager.showRecipes}
+                      {expandedUserId === user.id ? t.usersManager.hideRecipes : t.usersManager.showRecipes}
                     </button>
                   </td>
                 </tr>
-                {expandedUsername === user.username && (
-                  <UserRecipesRow username={user.username} colSpan={columnCount} />
+                {expandedUserId === user.id && (
+                  <UserRecipesRow ownerId={user.id} colSpan={columnCount} />
                 )}
               </Fragment>
             ))}

@@ -31,7 +31,8 @@ const pendingJob: ImportJob = {
   error: null,
   error_kind: null,
   created_at: "2026-07-24T00:00:00Z",
-  created_by_username: "admin",
+  created_by_user_id: 1,
+  created_by_email: "admin@example.com",
   dismissed_at: null,
   admin_reviewed_at: null,
 };
@@ -49,14 +50,13 @@ function renderManager(onJobCreated?: () => void, reloadTrigger?: number) {
   );
 }
 
-// Admin by default — matches the existing fixtures ("imported by admin") and keeps every
-// pre-existing test's behavior unchanged, since admins skip the usage/limit fetch entirely.
+// Admin by default — matches the existing fixtures ("imported by admin@example.com") and keeps
+// every pre-existing test's behavior unchanged, since admins skip the usage/limit fetch entirely.
 function logInAsAdmin() {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 1,
-    username: "admin",
-    email: null,
+    email: "admin@example.com",
     is_admin: true,
     is_super_admin: true,
     imported_recipes_count: 0,
@@ -67,8 +67,7 @@ function logInAsRegularUser(importedRecipesCount: number, maxImportsPerUser: num
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 2,
-    username: "someone",
-    email: null,
+    email: "someone@example.com",
     is_admin: false,
     is_super_admin: false,
     imported_recipes_count: importedRecipesCount,
@@ -108,7 +107,7 @@ describe("ImportManager", () => {
   it("shows who imported a job", async () => {
     renderManager();
 
-    expect(await screen.findByText("imported by admin")).toBeInTheDocument();
+    expect(await screen.findByText("imported by admin@example.com")).toBeInTheDocument();
   });
 
   it("submits a URL, creating a pending job", async () => {

@@ -7,6 +7,7 @@ from app.models.import_job import ImportJob, ImportJobStatus, ImportJobType
 from app.models.ingredient import Ingredient
 from app.models.ingredient_refresh_job import IngredientRefreshJob, IngredientRefreshJobStatus
 from app.models.nutrition_job import NutritionJob, NutritionJobStatus
+from app.models.password_reset_token import PasswordResetToken
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_favorite import RecipeFavorite
 from app.models.recipe_ingredient_link import RecipeIngredientLink
@@ -31,6 +32,7 @@ __all__ = [
     "IngredientRefreshJobStatus",
     "NutritionJob",
     "NutritionJobStatus",
+    "PasswordResetToken",
     "Recipe",
     "RecipeFavorite",
     "RecipeIngredientLink",

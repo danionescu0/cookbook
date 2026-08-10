@@ -171,9 +171,9 @@ export function ImportManager({ onJobCreated, reloadTrigger }: ImportManagerProp
                   <p className="break-all text-ink">{job.source}</p>
                   <p className="text-sm text-ink/50">
                     {t.importManager.statuses[job.status]}
-                    {job.created_by_username && (
+                    {job.created_by_email && (
                       <span className="ml-2">
-                        {t.importManager.importedBy.replace("{username}", job.created_by_username)}
+                        {t.importManager.importedBy.replace("{email}", job.created_by_email)}
                       </span>
                     )}
                   </p>

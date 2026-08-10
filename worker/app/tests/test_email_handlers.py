@@ -10,7 +10,14 @@ from sqlalchemy.pool import StaticPool
 from app import email_handlers
 from app.database import Base
 from app.email_handlers import handle_email_job
-from app.models import AppSettings, EmailJob, EmailJobStatus, EmailVerificationToken, User
+from app.models import (
+    AppSettings,
+    EmailJob,
+    EmailJobStatus,
+    EmailVerificationToken,
+    PasswordResetToken,
+    User,
+)
 
 
 @pytest.fixture()
@@ -56,10 +63,8 @@ def _seed_app_settings(db: Session) -> None:
     db.commit()
 
 
-def _create_user(
-    db: Session, email: str | None = "someone@example.com", language: str = "ro"
-) -> User:
-    user = User(username="someone", email=email, language=language)
+def _create_user(db: Session, email: str = "someone@example.com", language: str = "ro") -> User:
+    user = User(email=email, language=language)
     db.add(user)
     db.commit()
     db.refresh(user)
@@ -71,6 +76,19 @@ def _create_token(db: Session, user_id: int, used: bool = False) -> EmailVerific
         user_id=user_id,
         token="a-token",
         expires_at=datetime.now(timezone.utc) + timedelta(hours=24),
+        used_at=datetime.now(timezone.utc) if used else None,
+    )
+    db.add(token)
+    db.commit()
+    db.refresh(token)
+    return token
+
+
+def _create_reset_token(db: Session, user_id: int, used: bool = False) -> PasswordResetToken:
+    token = PasswordResetToken(
+        user_id=user_id,
+        token="a-reset-token",
+        expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         used_at=datetime.now(timezone.utc) if used else None,
     )
     db.add(token)
@@ -141,9 +159,9 @@ def test_handle_email_job_sends_verification_email(db_session: Session, _fake_sm
     message = smtp.sent_messages[0]
     body = message.get_content()
     assert f"https://cookbook.example.com/verify-email?token={token.token}" in body
-    # Romanian (the user's language, and this fixture's default) — greets by username and
-    # explains what the site is, not just a bare link.
-    assert "Salut, someone!" in body
+    # Romanian (the user's language, and this fixture's default) — explains what the site is,
+    # not just a bare link.
+    assert "Salut!" in body
     assert "caiet de rețete" in body
     assert message["Subject"] == "Confirmă-ți contul Cookbook"
 
@@ -160,7 +178,7 @@ def test_handle_email_job_sends_the_verification_email_in_the_users_language(
 
     message = _fake_smtp[0].sent_messages[0]
     body = message.get_content()
-    assert "Hi someone," in body
+    assert "Hi," in body
     assert "cookbook that's actually yours" in body
     assert message["Subject"] == "Verify your Cookbook account"
 
@@ -195,18 +213,6 @@ def test_handle_email_job_skips_login_when_no_smtp_username(
     assert _fake_smtp[0].login_args is None
 
 
-def test_handle_email_job_fails_when_user_has_no_email(db_session: Session) -> None:
-    _seed_app_settings(db_session)
-    user = _create_user(db_session, email=None)
-    job = _create_job(db_session, user.id)
-
-    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
-
-    db_session.refresh(job)
-    assert job.status == EmailJobStatus.FAILED
-    assert "no email" in job.error
-
-
 def test_handle_email_job_fails_when_no_unused_token_exists(db_session: Session) -> None:
     _seed_app_settings(db_session)
     user = _create_user(db_session)
@@ -223,14 +229,57 @@ def test_handle_email_job_fails_when_no_unused_token_exists(db_session: Session)
 def test_handle_email_job_fails_for_unknown_kind(db_session: Session) -> None:
     _seed_app_settings(db_session)
     user = _create_user(db_session)
-    _create_token(db_session, user.id)
-    job = _create_job(db_session, user.id, kind="password_reset")
+    job = _create_job(db_session, user.id, kind="something-else")
 
     handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
 
     db_session.refresh(job)
     assert job.status == EmailJobStatus.FAILED
     assert "unknown email job kind" in job.error
+
+
+def test_handle_email_job_sends_password_reset_email(db_session: Session, _fake_smtp) -> None:
+    _seed_app_settings(db_session)
+    user = _create_user(db_session)
+    token = _create_reset_token(db_session, user.id)
+    job = _create_job(db_session, user.id, kind="password_reset")
+
+    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == EmailJobStatus.DONE
+    assert job.error is None
+    message = _fake_smtp[0].sent_messages[0]
+    body = message.get_content()
+    assert f"https://cookbook.example.com/reset-password?token={token.token}" in body
+    assert message["Subject"] == "Resetează-ți parola Cookbook"
+
+
+def test_handle_email_job_sends_the_password_reset_email_in_the_users_language(
+    db_session: Session, _fake_smtp
+) -> None:
+    _seed_app_settings(db_session)
+    user = _create_user(db_session, language="en")
+    _create_reset_token(db_session, user.id)
+    job = _create_job(db_session, user.id, kind="password_reset")
+
+    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
+
+    message = _fake_smtp[0].sent_messages[0]
+    assert message["Subject"] == "Reset your Cookbook password"
+
+
+def test_handle_email_job_fails_when_no_unused_password_reset_token_exists(db_session: Session) -> None:
+    _seed_app_settings(db_session)
+    user = _create_user(db_session)
+    _create_reset_token(db_session, user.id, used=True)
+    job = _create_job(db_session, user.id, kind="password_reset")
+
+    handle_email_job(json.dumps({"job_id": job.id, "user_id": user.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == EmailJobStatus.FAILED
+    assert "no unused password reset token" in job.error
 
 
 def test_handle_email_job_fails_when_user_not_found(db_session: Session) -> None:

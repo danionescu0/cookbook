@@ -161,7 +161,11 @@ def _processing_statuses(db: Session, recipe_ids: list[int]) -> dict[int, str]:
 
 
 def _serialize(
-    recipe: Recipe, language: str, default_language: str, processing_status: str | None = None
+    recipe: Recipe,
+    language: str,
+    default_language: str,
+    processing_status: str | None = None,
+    current_user: AuthUser | None = None,
 ) -> RecipeRead:
     translation = _resolve_translation(recipe, language, default_language)
     return RecipeRead(
@@ -181,7 +185,8 @@ def _serialize(
         tips=translation.tips,
         available_languages=sorted(t.language for t in recipe.translations),
         processing_status=processing_status,
-        owner_username=recipe.owner.username,
+        owner_user_id=recipe.owner_user_id,
+        owner_email=recipe.owner.email if current_user and current_user.is_admin else None,
         is_shared=recipe.is_shared,
         import_reviewed_at=recipe.import_reviewed_at,
     )
@@ -194,7 +199,7 @@ def list_recipes(
     language: str | None = Query(default=None),
     # "me": only the caller's own recipes, any status — powers the frontend's "My recipes"
     # infinite scroll (requires auth; 401 for an anonymous caller). Any other value is treated as
-    # a target username and requires the caller to be an admin (403 otherwise) — powers the
+    # a target user id and requires the caller to be an admin (403 otherwise) — powers the
     # superadmin Users page's per-user recipe list (see routers/users.py's list_users). Mutually
     # exclusive with only_public in practice, though nothing stops both being set — owner wins.
     owner: str | None = Query(default=None),
@@ -224,7 +229,11 @@ def list_recipes(
     elif owner is not None:
         if current_user is None or not current_user.is_admin:
             raise HTTPException(status_code=403, detail="Admin access required")
-        target = db.scalar(select(User).where(User.username == owner))
+        try:
+            target_id = int(owner)
+        except ValueError:
+            raise HTTPException(status_code=400, detail="Invalid owner id")
+        target = db.get(User, target_id)
         if target is None:
             raise HTTPException(status_code=404, detail="User not found")
         clause = Recipe.owner_user_id == target.id
@@ -250,7 +259,9 @@ def list_recipes(
     recipes = list(db.scalars(stmt))
     statuses = _processing_statuses(db, [recipe.id for recipe in recipes])
     return [
-        _serialize(recipe, language or default_language, default_language, statuses.get(recipe.id))
+        _serialize(
+            recipe, language or default_language, default_language, statuses.get(recipe.id), current_user
+        )
         for recipe in recipes
     ]
 
@@ -293,7 +304,7 @@ def create_recipe(
     db.add(recipe)
     db.commit()
     db.refresh(recipe)
-    return _serialize(recipe, language, app_settings.default_language)
+    return _serialize(recipe, language, app_settings.default_language, current_user=current_user)
 
 
 @router.get("/{recipe_id}", response_model=RecipeRead)
@@ -309,16 +320,15 @@ def get_recipe(
     default_language = get_settings(db).default_language
     recipe = _get_visible_or_404(db, recipe_id, current_user)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, language or default_language, default_language, processing_status)
+    return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
-@router.post(
-    "/{recipe_id}/approve", response_model=RecipeRead, dependencies=[Depends(require_admin)]
-)
+@router.post("/{recipe_id}/approve", response_model=RecipeRead)
 def approve_recipe(
     recipe_id: int,
     language: str | None = Query(default=None),
     db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(require_admin),
 ) -> RecipeRead:
     default_language = get_settings(db).default_language
     recipe = _get_or_404(db, recipe_id)
@@ -327,7 +337,7 @@ def approve_recipe(
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, language or default_language, default_language, processing_status)
+    return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
 @router.put("/{recipe_id}", response_model=RecipeRead)
@@ -394,7 +404,7 @@ def update_recipe(
         _enqueue_translation_sync_job(db, recipe.id, target_language)
 
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, target_language, default_language, processing_status)
+    return _serialize(recipe, target_language, default_language, processing_status, current_user)
 
 
 @router.patch("/{recipe_id}/share", response_model=RecipeRead)
@@ -420,7 +430,7 @@ def update_recipe_sharing(
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, language or default_language, default_language, processing_status)
+    return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
 @router.patch("/{recipe_id}/category", response_model=RecipeRead)
@@ -445,7 +455,7 @@ def update_recipe_category(
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, language or default_language, default_language, processing_status)
+    return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
 @router.post("/{recipe_id}/acknowledge-import", response_model=RecipeRead)
@@ -468,7 +478,7 @@ def acknowledge_import(
     db.commit()
     db.refresh(recipe)
     processing_status = _processing_statuses(db, [recipe.id]).get(recipe.id)
-    return _serialize(recipe, language or default_language, default_language, processing_status)
+    return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
 @router.delete("/{recipe_id}", status_code=204, dependencies=[Depends(require_admin)])
@@ -561,7 +571,7 @@ def list_my_favorites(
     recipes = list(db.scalars(stmt))
     statuses = _processing_statuses(db, [recipe.id for recipe in recipes])
     return [
-        _serialize(recipe, default_language, default_language, statuses.get(recipe.id))
+        _serialize(recipe, default_language, default_language, statuses.get(recipe.id), current_user)
         for recipe in recipes
     ]
 
@@ -580,6 +590,6 @@ def list_my_submissions(
     recipes = list(db.scalars(stmt))
     statuses = _processing_statuses(db, [recipe.id for recipe in recipes])
     return [
-        _serialize(recipe, default_language, default_language, statuses.get(recipe.id))
+        _serialize(recipe, default_language, default_language, statuses.get(recipe.id), current_user)
         for recipe in recipes
     ]

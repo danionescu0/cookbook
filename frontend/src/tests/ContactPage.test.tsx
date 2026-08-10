@@ -42,7 +42,6 @@ function logInAsRegularUser() {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 2,
-    username: "someone",
     email: "someone@example.com",
     is_admin: false,
     is_super_admin: false,

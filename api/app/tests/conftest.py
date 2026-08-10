@@ -52,7 +52,6 @@ def admin_user(db_session: Session) -> User:
     # stricter tier. `plain_admin_user`/`admin_client` below cover the "admin but not super admin"
     # case specifically for testing that distinction.
     user = User(
-        username="admin",
         email="admin@example.com",
         password_hash="x",
         is_admin=True,
@@ -68,7 +67,6 @@ def admin_user(db_session: Session) -> User:
 @pytest.fixture()
 def plain_admin_user(db_session: Session) -> User:
     user = User(
-        username="plainadmin",
         email="plainadmin@example.com",
         password_hash="x",
         is_admin=True,
@@ -83,9 +81,7 @@ def plain_admin_user(db_session: Session) -> User:
 
 @pytest.fixture()
 def regular_user(db_session: Session) -> User:
-    user = User(
-        username="regular", email="regular@example.com", password_hash="x", is_admin=False, is_verified=True
-    )
+    user = User(email="regular@example.com", password_hash="x", is_admin=False, is_verified=True)
     db_session.add(user)
     db_session.commit()
     db_session.refresh(user)

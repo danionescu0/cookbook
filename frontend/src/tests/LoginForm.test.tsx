@@ -57,11 +57,11 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
 
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "admin");
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
     await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Log in" }));
 
-    await waitFor(() => expect(login).toHaveBeenCalledWith("admin", "secret"));
+    await waitFor(() => expect(login).toHaveBeenCalledWith("admin@example.com", "secret"));
   });
 
   it("shows an error message when login fails", async () => {
@@ -70,12 +70,12 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
 
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "admin");
+    await user.type(screen.getByLabelText("Email"), "admin@example.com");
     await user.type(screen.getByLabelText("Password"), "wrong");
     await user.click(screen.getByRole("button", { name: "Log in" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Invalid username or password."
+      "Invalid email or password."
     );
   });
 
@@ -85,7 +85,7 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
 
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "unverified-user");
+    await user.type(screen.getByLabelText("Email"), "unverified-user@example.com");
     await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Log in" }));
 
@@ -104,7 +104,7 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
 
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "unverified-user");
+    await user.type(screen.getByLabelText("Email"), "unverified-user@example.com");
     await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Log in" }));
     await screen.findByText("Didn't get the email, or it's been a while?");
@@ -118,7 +118,7 @@ describe("LoginForm", () => {
     await user.click(resendButton);
 
     await waitFor(() =>
-      expect(mockedApi.resendVerification).toHaveBeenCalledWith("unverified-user", "test-turnstile-token")
+      expect(mockedApi.resendVerification).toHaveBeenCalledWith("unverified-user@example.com", "test-turnstile-token")
     );
     expect(await screen.findByText("A new verification email has been sent.")).toBeInTheDocument();
   });
@@ -130,7 +130,7 @@ describe("LoginForm", () => {
     const user = userEvent.setup();
 
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "unverified-user");
+    await user.type(screen.getByLabelText("Email"), "unverified-user@example.com");
     await user.type(screen.getByLabelText("Password"), "secret");
     await user.click(screen.getByRole("button", { name: "Log in" }));
     await user.click(await screen.findByRole("button", { name: "solve captcha" }));

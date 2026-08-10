@@ -13,7 +13,7 @@ def test_read_profile(client: TestClient) -> None:
 
     assert response.status_code == 200
     body = response.json()
-    assert body["username"] == "admin"
+    assert body["email"] == "admin@example.com"
     assert body["is_admin"] is True
     assert body["is_super_admin"] is True
 
@@ -86,7 +86,7 @@ def test_list_users_reports_recipe_counts_per_user(
     response = client.get("/users")
 
     assert response.status_code == 200
-    entry = next(row for row in response.json() if row["username"] == "regular")
+    entry = next(row for row in response.json() if row["email"] == "regular@example.com")
     assert entry["owned_recipes_count"] == 3
     assert entry["shared_recipes_count"] == 1
     assert entry["imported_recipes_count"] == 5
@@ -98,14 +98,13 @@ def test_list_users_includes_a_user_with_no_recipes(client: TestClient, regular_
     response = client.get("/users")
 
     assert response.status_code == 200
-    entry = next(row for row in response.json() if row["username"] == "regular")
+    entry = next(row for row in response.json() if row["email"] == "regular@example.com")
     assert entry["owned_recipes_count"] == 0
     assert entry["shared_recipes_count"] == 0
 
 
 def test_login_stamps_last_login_at(unauthenticated_client: TestClient, db_session: Session) -> None:
     user = User(
-        username="loginstamp",
         email="loginstamp@example.com",
         password_hash=bcrypt.hashpw(b"a-password", bcrypt.gensalt()).decode(),
         is_admin=False,
@@ -116,7 +115,7 @@ def test_login_stamps_last_login_at(unauthenticated_client: TestClient, db_sessi
     assert user.last_login_at is None
 
     response = unauthenticated_client.post(
-        "/auth/login", json={"username": "loginstamp", "password": "a-password"}
+        "/auth/login", json={"email": "loginstamp@example.com", "password": "a-password"}
     )
 
     assert response.status_code == 200
@@ -128,7 +127,6 @@ def test_change_password_succeeds_and_old_password_stops_working(
     unauthenticated_client: TestClient, db_session: Session
 ) -> None:
     user = User(
-        username="pwtest",
         email="pwtest@example.com",
         password_hash=bcrypt.hashpw(b"old-password", bcrypt.gensalt()).decode(),
         is_admin=False,
@@ -145,12 +143,12 @@ def test_change_password_succeeds_and_old_password_stops_working(
     assert response.status_code == 204
 
     old_login = unauthenticated_client.post(
-        "/auth/login", json={"username": "pwtest", "password": "old-password"}
+        "/auth/login", json={"email": "pwtest@example.com", "password": "old-password"}
     )
     assert old_login.status_code == 401
 
     new_login = unauthenticated_client.post(
-        "/auth/login", json={"username": "pwtest", "password": "new-password"}
+        "/auth/login", json={"email": "pwtest@example.com", "password": "new-password"}
     )
     assert new_login.status_code == 200
 
@@ -159,7 +157,6 @@ def test_change_password_rejects_wrong_current_password(
     unauthenticated_client: TestClient, db_session: Session
 ) -> None:
     user = User(
-        username="pwtest2",
         email="pwtest2@example.com",
         password_hash=bcrypt.hashpw(b"old-password", bcrypt.gensalt()).decode(),
         is_admin=False,

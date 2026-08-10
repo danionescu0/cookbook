@@ -13,7 +13,7 @@ ALGORITHM = "HS256"
 @dataclass
 class AuthUser:
     id: int
-    username: str
+    email: str
     is_admin: bool
     is_super_admin: bool
 
@@ -21,7 +21,7 @@ class AuthUser:
 def create_access_token(user: User) -> str:
     expires_at = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expires_minutes)
     payload = {
-        "sub": user.username,
+        "sub": user.email,
         "user_id": user.id,
         "is_admin": user.is_admin,
         "is_super_admin": user.is_super_admin,
@@ -45,7 +45,7 @@ def get_current_user(authorization: str | None = Header(default=None)) -> AuthUs
     payload = _decode(authorization)
     return AuthUser(
         id=payload["user_id"],
-        username=payload["sub"],
+        email=payload["sub"],
         is_admin=bool(payload.get("is_admin")),
         is_super_admin=bool(payload.get("is_super_admin")),
     )

@@ -84,7 +84,7 @@ export function RecipeEditPage() {
     return <p className="text-ink/60">{t.detail.loading}</p>;
   }
 
-  const canEdit = user?.is_admin || user?.username === recipe.owner_username;
+  const canEdit = user?.is_admin || user?.id === recipe.owner_user_id;
   if (!canEdit) {
     return (
       <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">

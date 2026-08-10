@@ -23,13 +23,15 @@ go live.
 
 ## Screenshots
 
-**Accounts** — self-service signup behind a Cloudflare Turnstile CAPTCHA:
+**Accounts** — self-service signup behind a Cloudflare Turnstile CAPTCHA. Login is by email now, not
+a separate username — see [Design Decisions](#design-decisions) ("Removing usernames"):
 
-<img src="docs/screenshots/signup-turnstile.jpg" alt="Signup form with username/email/password fields and a solved Cloudflare Turnstile CAPTCHA" width="800">
+<img src="docs/screenshots/signup-turnstile.jpg" alt="Signup form with email/password fields and a Cloudflare Turnstile CAPTCHA" width="800">
 
-The same login form serves regular users and admins — there's no separate back-office login:
+The same login form serves regular users and admins — there's no separate back-office login. A
+"Forgot your password?" link starts the self-service reset flow:
 
-<img src="docs/screenshots/backoffice-login.jpg" alt="Login form with a link to sign up and a note that admin access uses the same login" width="800">
+<img src="docs/screenshots/backoffice-login.jpg" alt="Login form with email/password fields, a link to sign up, a forgot-password link, and a note that admin access uses the same login" width="800">
 
 **Front office** — public recipe browsing, filterable by category, with recipes that were
 scraped and cleaned up by the import pipeline:
@@ -146,18 +148,26 @@ state:
       English content from one Claude call, and switching languages in the browser updated both
       the UI and the recipe content instantly with no reload; migration `0004`'s data copy was also
       verified against the real (non-empty) dev database
-- [x] Per-user accounts: self-service signup (`POST /auth/signup`, username/email/password behind
+- [x] Per-user accounts: self-service signup (`POST /auth/signup`, email/password behind
       a Cloudflare Turnstile CAPTCHA) gated on email verification — a signed-up account can't log
       in until it clicks the link from a verification email, sent by the worker over SMTP. The
       email is sent in the language active on the signup form (`users.language`, snapshotted at
-      signup, independent of `default_language`/browsing-language changes afterward) and greets the
-      user by username with a one-paragraph "what this site is" blurb, not just a bare link. A
+      signup, independent of `default_language`/browsing-language changes afterward) with a
+      one-paragraph "what this site is" blurb, not just a bare link. A
       `POST /auth/resend-verification` endpoint (also CAPTCHA-gated) covers a lost/expired email or
       a signup blocked by broken SMTP settings, and re-signing up with an already-registered-but-
       unverified email transparently resends instead of erroring. Login (`POST /auth/login`) is now
       JWT against the `users` table (bcrypt-hashed passwords, `PyJWT` signing) — the same login form
-      serves regular users and admins, there's no separate back-office login. `JWT_SECRET`/
-      `JWT_EXPIRES_MINUTES` stay `.env`-only (see [Design Decisions](#design-decisions)).
+      serves regular users and admins, there's no separate back-office login. There is no username —
+      email is the only account identifier (see [Design Decisions](#design-decisions), "Removing
+      usernames"). `JWT_SECRET`/`JWT_EXPIRES_MINUTES` stay `.env`-only.
+- [x] Self-service password recovery: `POST /auth/forgot-password` (CAPTCHA-gated) always returns
+      the same generic response regardless of whether the email is registered — only a real match
+      actually gets a `password_reset_tokens` row and an email — and `POST /auth/reset-password`
+      consumes a one-hour, single-use token. A "Forgot your password?" link sits under the login
+      form, and the signup form itself surfaces the same link inline when it rejects an
+      already-registered email, instead of leaving the visitor at a dead end. See
+      [Design Decisions](#design-decisions).
 - [x] Two admin tiers: `users.is_admin` (back office access — categories/recipes/imports
       moderation) and a stricter `users.is_super_admin` (the Settings subpage only, since it holds
       API keys and SMTP/Turnstile secrets). A super admin is expected to also be a regular admin,
@@ -268,7 +278,7 @@ state:
 - [x] Reverse proxy (Caddy) in front of frontend + API — production only, see
       [Deployment](#deployment)
 - [x] Superadmin Users page (`UsersManager`, `/backoffice/users`): a table of every account —
-      username, email, confirmed/unconfirmed, joined date, last login, and lifetime
+      email, confirmed/unconfirmed, joined date, last login, and lifetime
       imported/currently-owned/currently-shared recipe counts (`GET /users`, one query with two
       correlated scalar subqueries for the live counts, portable across the Postgres used in
       production and the SQLite the test suite runs against). "Last login" is a new
@@ -277,8 +287,8 @@ state:
       per-request session to hook into. A **Show recipes** button per row expands a read-only,
       10-per-page list of that user's recipes (title, status, shared/imported badges) inline,
       reusing `GET /recipes`'s existing pagination — its `owner` query param now also accepts an
-      explicit username for an admin caller (previously only `"me"`), 403ing a non-admin and 404ing
-      an unknown username. See [Design Decisions](#design-decisions).
+      explicit user id for an admin caller (previously only `"me"`), 403ing a non-admin and 404ing
+      an unknown id. See [Design Decisions](#design-decisions).
 - [x] Owner-editable recipe category: `PATCH /recipes/{id}/category` lets a recipe's owner (or an
       admin, for anyone's) change its category after the fact — manually-added or imported alike.
       Surfaced as a `<select>` per card in the Account page's "My recipes" list, saving on change.
@@ -348,11 +358,17 @@ state:
 - **User accounts** — self-service signup behind a CAPTCHA, gated on email verification, plus a
   resend flow for a lost link or a signup blocked by broken mail settings. Every account gets a
   private recipe collection: favorites, their own imports, and anything they've added by hand.
+  Accounts are identified by email only — there's no separate username (see
+  [Design Decisions](#design-decisions), "Removing usernames").
+- **Self-service password recovery** — a "Forgot your password?" link on the login page, and the
+  same link surfaced inline on the signup form when it rejects an email that's already registered,
+  so a returning visitor who mistypes their password never dead-ends. See
+  [Design Decisions](#design-decisions).
 - **Recipe privacy, with opt-in community sharing** — recipes are private to whoever owns them by
   default. A manually-added (not imported) recipe can be shared with the community, at which point
   it appears on the public landing page and everyone's own recipe page, after admin approval for a
   non-admin's recipe.
-- **Back office** — username/password-protected admin area with full CRUD for categories and
+- **Back office** — email/password-protected admin area with full CRUD for categories and
   recipes, full per-language recipe editing, moderation of shared submissions, and a stricter
   super-admin tier for the Settings page, split into a **Recipes** page and a **Settings** page
   behind a small sub-nav.
@@ -403,7 +419,7 @@ state:
   account can import up to an admin-configurable number of recipes total (default 30), counting
   ones they've since deleted so the cap can't be gamed; the Account page shows current usage and
   disables the import button once it's reached. Admins aren't capped.
-- **Superadmin Users page** — a table of every account (username, email, confirmed status, joined
+- **Superadmin Users page** — a table of every account (email, confirmed status, joined
   date, last login, imported/owned/shared recipe counts), with a per-row **Show recipes** button
   that expands a read-only, paginated (10/page) list of that user's recipes inline, without leaving
   the page.
@@ -567,8 +583,10 @@ cookbook/
 │   │   │                            #   hostnameOf.ts (shared by RecipeManager, RecipeDetailView,
 │   │   │                            #   and UsersManager for the "imported from {domain}" link)
 │   │   ├── auth/                    # AuthContext.tsx (useAuth: isAuthenticated/login/logout, token
-│   │   │                            #   + role flags in localStorage), SignupForm (username/email/
-│   │   │                            #   password + Turnstile), VerifyEmailPage (/verify-email?token=),
+│   │   │                            #   + role flags in localStorage), SignupForm (email/password +
+│   │   │                            #   Turnstile), ForgotPasswordPage (/forgot-password),
+│   │   │                            #   ResetPasswordPage (/reset-password?token=),
+│   │   │                            #   VerifyEmailPage (/verify-email?token=),
 │   │   │                            #   TurnstileWidget (loads the Cloudflare script, wraps
 │   │   │                            #   site-key/callback plumbing), useFavoriteIds
 │   │   ├── contact/                 # ContactPage.tsx (/contact — reachable logged in or out;
@@ -585,14 +603,15 @@ cookbook/
 │   ├── app/
 │   │   ├── routers/                # auth.py (POST /auth/signup, /resend-verification,
 │   │   │                           #   /verify-email, /login — the last one also stamps
-│   │   │                           #   users.last_login_at), users.py (GET /users/me — incl.
+│   │   │                           #   users.last_login_at — /forgot-password, /reset-password),
+│   │   │                           #   users.py (GET /users/me — incl.
 │   │   │                           #   imported_recipes_count, PATCH /users/me/password, GET
 │   │   │                           #   /users — super-admin only, every account + live owned/
 │   │   │                           #   shared recipe counts via two correlated scalar subqueries),
 │   │   │                           #   categories.py, recipes.py (CRUD + /approve + /share +
 │   │   │                           #   /category + /reparse + /reparse-all-imported,
 │   │   │                           #   owner/visibility-scoped — the `owner` list filter also
-│   │   │                           #   accepts an explicit username for an admin caller, not just
+│   │   │                           #   accepts an explicit user id for an admin caller, not just
 │   │   │                           #   "me", powering the Users page's per-user recipe list;
 │   │   │                           #   `PATCH .../category` is owner-or-admin, unlike the
 │   │   │                           #   admin-only `PUT .../{id}` full edit — plus
@@ -627,7 +646,7 @@ cookbook/
 │   │   │                           #   imported_recipes_count — lifetime, never decremented/
 │   │   │                           #   last_login_at — stamped on login only, a proxy for "last
 │   │   │                           #   used" rather than a full activity log],
-│   │   │                           #   EmailVerificationToken, EmailJob, Category, Recipe
+│   │   │                           #   EmailVerificationToken, PasswordResetToken, EmailJob, Category, Recipe
 │   │   │                           #   [+owner_user_id, is_shared, estimated_servings],
 │   │   │                           #   RecipeTranslation, RecipeFavorite, ImportJob
 │   │   │                           #   [+created_by_user_id, INSTAGRAM type], TranslationSyncJob,
@@ -826,7 +845,7 @@ limits, then fails cleanly at the Claude call):
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:8000/auth/login -H "Content-Type: application/json" \
-  -d '{"username": "<your username>", "password": "<your password>"}' \
+  -d '{"email": "<your email>", "password": "<your password>"}' \
   | python3 -c "import sys,json;print(json.load(sys.stdin)['access_token'])")
 
 # At least one category must already exist — the worker fails the job immediately if none do
@@ -869,27 +888,38 @@ npm run build   # type-checks (tsc -b) and produces a production bundle
 
 ## Core Workflows
 
-### 0. Signup and email verification
-1. A visitor signs up (username/email/password) and solves a Cloudflare Turnstile CAPTCHA
-   (`POST /auth/signup`). The site key is fetched from `GET /settings/public` before the visitor
-   has any account, let alone a token — it isn't secret, it's the same value embedded in the
-   signup page's own HTML.
+### 0. Signup, email verification, login, and password recovery
+1. A visitor signs up (email/password — no username, see [Design Decisions](#design-decisions),
+   "Removing usernames") and solves a Cloudflare Turnstile CAPTCHA (`POST /auth/signup`). The site
+   key is fetched from `GET /settings/public` before the visitor has any account, let alone a
+   token — it isn't secret, it's the same value embedded in the signup page's own HTML. If the
+   email is already registered and verified, the form shows that inline along with a "Forgot your
+   password?" link to workflow step 7 below, instead of a dead-end error.
 2. The account is created with `is_verified=False` and `language` set to whichever of
    `supported_languages` the signup form was showing (falling back to `default_language` if the
    submitted value is missing/unsupported), and an `email_jobs` row is queued for the worker.
-   The worker sends a verification email in that language — greeting the user by username and
-   explaining what the site is, not just a bare link — over the admin-configured SMTP settings,
-   linking back to `public_site_url + /verify-email?token=...`. Only "en"/"ro" copy exists in
+   The worker sends a verification email in that language — explaining what the site is, not just
+   a bare link — over the admin-configured SMTP settings, linking back to
+   `public_site_url + /verify-email?token=...`. Only "en"/"ro" copy exists in
    `worker/app/email_handlers.py` regardless of how many languages `supported_languages` lists;
    anything else falls back to English.
-3. `POST /auth/login` rejects an unverified account with a specific error, so the login form can
-   point at the resend flow instead of just showing "invalid credentials."
-4. `POST /auth/resend-verification` (also CAPTCHA-gated) issues a fresh token and re-sends the
-   email — for a lost/expired link, or a first signup that silently failed to send because SMTP
-   wasn't configured yet. Signing up again with the same, still-unverified email transparently
-   resends instead of erroring on a duplicate.
+3. `POST /auth/login` (email + password) rejects an unverified account with a specific error, so
+   the login form can point at the resend flow instead of just showing "invalid credentials."
+4. `POST /auth/resend-verification` (also CAPTCHA-gated, now keyed by email) issues a fresh token
+   and re-sends the email — for a lost/expired link, or a first signup that silently failed to send
+   because SMTP wasn't configured yet. Signing up again with the same, still-unverified email
+   transparently resends instead of erroring on a duplicate.
 5. `POST /auth/verify-email` marks the account verified; `POST /auth/login` then succeeds and
    returns a JWT carrying `is_admin`/`is_super_admin`.
+6. `JWT`'s `sub` claim is the account's email (previously username) — `auth.py`'s `AuthUser`
+   carries `email` instead of `username` throughout the API.
+7. **Forgot password**: `POST /auth/forgot-password` (CAPTCHA-gated) always returns the same
+   generic "if that email has an account..." response whether or not the email is registered, to
+   avoid leaking which emails are signed up — only a real match actually gets a
+   `password_reset_tokens` row (1-hour expiry, single-use) and a `kind="password_reset"`
+   `email_jobs` row. `POST /auth/reset-password` consumes the token and sets a new
+   `password_hash`, same validation shape (not found/already used/expired) as `verify-email`. See
+   [Design Decisions](#design-decisions).
 
 ### 1. Manual authoring
 Any signed-in user creates their own recipes from their account page (no AI involved); an admin
@@ -1138,15 +1168,15 @@ being re-imported as a duplicate.
 
 ### 8. Superadmin user management
 1. A super admin opens `/backoffice/users` (new **Users** tab, alongside Recipes/Settings) to see
-   every account in one table: username, email, confirmed/unconfirmed, joined date, last login,
+   every account in one table: email, confirmed/unconfirmed, joined date, last login,
    and lifetime imported / currently-owned / currently-shared recipe counts, from a single `GET
    /users` call.
 2. Clicking **Show recipes** on a row expands a read-only, 10-per-page list of that user's recipes
    (title, status, shared/imported badges) inline, without navigating away — its own independent
    pagination state per row, reusing the same `Pagination` component `RecipeManager` already had.
 3. That list is powered by the existing `GET /recipes` endpoint's `owner` filter, extended to
-   accept an explicit username (previously only the literal `"me"`) for an admin caller — 403s a
-   non-admin, 404s an unknown username — rather than adding a second, parallel listing endpoint.
+   accept an explicit user id (previously only the literal `"me"`) for an admin caller — 403s a
+   non-admin, 404s an unknown id — rather than adding a second, parallel listing endpoint.
    This is deliberately **read-only**: approving/deleting/sharing a recipe still only happens
    through `RecipeManager`, so there's exactly one place that can mutate recipe state, not two.
 
@@ -1174,13 +1204,15 @@ being re-imported as a duplicate.
 
 ## Data Model (sketch)
 
-- **users** — id, username (unique), email (unique, nullable — nullable only for the
-  migration-seeded original admin, which predates self-service signup; every real signup sets it),
+- **users** — id, email (unique, `NOT NULL` — the account's only identifier now; see
+  [Design Decisions](#design-decisions), "Removing usernames". Migration `0033` dropped the old
+  `username` column and backfilled the one pre-existing account that lacked an email, the
+  migration-seeded original admin, by hand before deploying),
   password_hash (bcrypt), is_admin, is_super_admin (independent flags, not a role enum — see
   [Design Decisions](#design-decisions)), is_verified, language (default `"ro"` — snapshotted from
-  the signup form at signup time, used only to pick which language the verification email is sent
-  in; not kept in sync with the user's browsing language afterward, since there's currently no
-  other account email that would need it), imported_recipes_count (lifetime count of
+  the signup form at signup time, used only to pick which language the verification/password-reset
+  email is sent in; not kept in sync with the user's browsing language afterward, since there's
+  currently no other account email that would need it), imported_recipes_count (lifetime count of
   *successful* imports, default 0, incremented once by the worker per import and never
   decremented — deleting the resulting recipe or its `import_jobs` row never frees up quota; see
   [Design Decisions](#design-decisions), "Lifetime import limit"), created_at, last_login_at
@@ -1190,9 +1222,15 @@ being re-imported as a duplicate.
 - **email_verification_tokens** — id, user_id (FK → users.id), token (unique, random), expires_at,
   used_at (nullable), created_at. A fresh row per signup/resend; old ones are simply left to expire
   rather than explicitly invalidated
-- **email_jobs** — id, user_id (FK → users.id), kind (currently only `"verification"`), status
-  (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Queued by `POST /auth/signup`
-  / `/resend-verification`, sent by the worker over the admin-configured SMTP settings
+- **password_reset_tokens** — id, user_id (FK → users.id, `ON DELETE CASCADE`), token (unique,
+  random), expires_at (1 hour from creation — shorter than a verification token's 24h, since a
+  reset link directly grants account access), used_at (nullable), created_at. Structurally
+  identical to `email_verification_tokens`, kept as a separate table rather than a shared one so
+  the two token kinds can't be confused/reused across flows. Added by migration `0033`
+- **email_jobs** — id, user_id (FK → users.id), kind (`"verification"` or `"password_reset"`),
+  status (`queued` \| `processing` \| `done` \| `failed`), error, created_at. Queued by
+  `POST /auth/signup` / `/resend-verification` / `/forgot-password`, sent by the worker over the
+  admin-configured SMTP settings
 - **recipe_favorites** — id, user_id (FK → users.id), recipe_id (FK → recipes.id), created_at;
   unique on (user_id, recipe_id)
 - **categories** — id, name, slug (a single name shown regardless of site language — not translated
@@ -1442,9 +1480,10 @@ Operational/troubleshooting procedures for a running deployment — the "how", a
   owns any recipe hits a not-null-constraint error, not a clean cascade. `import_jobs.created_by_
   user_id` is nullable but `ON DELETE NO ACTION`, so it blocks a delete too unless cleared first.
   Everything else referencing `users.id` (`email_jobs`, `email_verification_tokens`,
-  `recipe_favorites`) already cascades on its own. The order that actually works:
+  `password_reset_tokens`, `recipe_favorites`) already cascades on its own. The order that actually
+  works:
   ```bash
-  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, username, (SELECT count(*) FROM recipes WHERE owner_user_id = users.id) AS owned_recipes, (SELECT count(*) FROM import_jobs WHERE created_by_user_id = users.id) AS created_imports FROM users WHERE id = <ID>; DELETE FROM recipes WHERE owner_user_id = <ID>; UPDATE import_jobs SET created_by_user_id = NULL WHERE created_by_user_id = <ID>; DELETE FROM users WHERE id = <ID>; SELECT id FROM users WHERE id = <ID>;"
+  docker compose exec -T db psql -U cookbook -d cookbook -c "SELECT id, email, (SELECT count(*) FROM recipes WHERE owner_user_id = users.id) AS owned_recipes, (SELECT count(*) FROM import_jobs WHERE created_by_user_id = users.id) AS created_imports FROM users WHERE id = <ID>; DELETE FROM recipes WHERE owner_user_id = <ID>; UPDATE import_jobs SET created_by_user_id = NULL WHERE created_by_user_id = <ID>; DELETE FROM users WHERE id = <ID>; SELECT id FROM users WHERE id = <ID>;"
   ```
   The first `SELECT` shows what's about to be affected; `DELETE FROM recipes` removes the user's
   own recipes first (cascades cleanly to `recipe_translations`, `recipe_ingredient_links`,
@@ -1462,9 +1501,9 @@ Operational/troubleshooting procedures for a running deployment — the "how", a
 
 | Layer            | Framework                          | Status | Focus |
 |-------------------|-------------------------------------|--------|-------|
-| API backend        | `pytest` + FastAPI `TestClient`    | 266 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". `test_recipe_visibility.py`: an anonymous/other user only sees a recipe if `approved` + `is_shared`, the owner always sees their own regardless of status, an admin sees everything, `GET /recipes/{id}` 404s (not 403s) on an invisible recipe, `PATCH /recipes/{id}/share` succeeds for the owner or an admin, 403s for anyone else, 400s on an imported recipe, and re-sets `status=unapproved` when a non-admin turns sharing on. Import jobs (`test_imports.py`): create stays `pending` for an admin and doesn't publish, queues and publishes immediately for a non-admin, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), duplicate-URL rejection is scoped per creator (409, two different users can import the same URL independently), a non-admin only sees/modifies their own jobs while an admin sees everyone's, `created_by_username` is populated, `category_id` starts `null` on creation (no longer part of `ImportJobCreate` — an extra `category_id` in the POST body, still accepted by some other clients, is just ignored). `test_auth.py`/`test_users.py`: signup requires a valid Turnstile token, rejects a taken username/verified email, resends instead of erroring on a duplicate unverified email, records the submitted `language` on the new user and falls back to `default_language` when it's missing or not in `supported_languages`, login rejects an unverified account with a specific message, `/verify-email` accepts a valid token once and rejects an expired/reused/unknown one, `/resend-verification` re-sends and is itself CAPTCHA-gated, `GET /users/me` and `PATCH /users/me/password` require a valid current password. Settings: `GET`/`PATCH /settings` require **super**-admin (a plain admin is rejected), secrets (including `calorie_ninjas_api_key`, `smtp_password`, `turnstile_secret_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields; `GET /settings/public` returns only the Turnstile site key, unauthenticated. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams/`total_grams` correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Recipe editing: `PUT /recipes/{id}` enqueues a `translation_sync_jobs` row only when a translation field actually changed, `processing_status` reflects whichever of nutrition/translation-sync is currently active for a recipe. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes. Import limit (`test_imports.py`): `POST /imports` 403s a non-admin at/over `max_imports_per_user` with the current/limit counts in the message, allows the request one under the limit, exempts admins even far over it, and the counter is untouched by an admin deleting the resulting recipe; `GET /users/me` exposes `imported_recipes_count`. Reparse (`test_recipes.py`): `POST /recipes/{id}/reparse` and `/reparse-all-imported` both require admin and 400 on a recipe with no `source_url`. Users page (`test_users.py`): `GET /users` requires super-admin (401 unauthenticated, 403 a plain admin), reports correct owned/shared/imported counts including a user with zero recipes, `POST /auth/login` stamps `last_login_at`. `GET /recipes`'s admin-only `owner` lookup (`test_recipe_visibility.py`): returns the target user's recipes in any status, 403s a non-admin or anonymous caller, 404s an unknown username. Owner-editable category (`test_recipe_visibility.py`): `PATCH /recipes/{id}/category` succeeds for the owner (manually-added or imported recipe alike) or an admin, 403s a non-owner non-admin, 401s an anonymous caller, 400s an unknown category id. Post-import review panel (`test_recipe_visibility.py`'s `TestUpdateEndpoint`/`TestAcknowledgeImportEndpoint`, `test_imports.py`): `PUT /recipes/{id}` now succeeds for the owner, 403s a non-owner non-admin, 400s a non-admin's `status` change, still 401s unauthenticated; `POST /recipes/{id}/acknowledge-import` succeeds for the owner or an admin, 403s a non-owner non-admin, 400s a non-imported recipe; `POST /imports/{id}/dismiss` succeeds for the owner or an admin and sets `dismissed_at`, 400s a non-`failed` job, 404s a non-owner non-admin; `GET /imports` with `limit`/`offset` paginates and sets `X-Total-Count`, filters by `status`, and omitting `limit` keeps returning the full unheadered list; a non-admin caller never receives the raw `error` text (only `error_kind`) even for their own job, while an admin sees both. Admin review tracking (`test_imports.py`): `POST /imports/{id}/mark-reviewed` requires admin (403 otherwise), sets `admin_reviewed_at` without touching `dismissed_at`, 400s a job that hasn't failed; the owner's own `/dismiss` afterward leaves `admin_reviewed_at` untouched (and vice versa); `GET /imports`'s `admin_reviewed` filter excludes/includes reviewed jobs correctly. Contact form (`test_contact.py`): anonymous submission 400s without a `turnstile_token` and 400s an invalid one, succeeds with a valid one; a logged-in submitter skips the CAPTCHA check entirely and gets `submitted_by_user_id` set; rejects a payload with neither email nor phone (422) while accepting either alone; rejects a message under 50 characters and a blank name (422); a broken queue publish still returns 201 but leaves the row `status=failed` with the publish error recorded. Settings (`test_settings.py`): `contact_recipient_email` defaults to `""`, round-trips through `PATCH`/`GET`; `preferred_ai_provider` defaults to `"claude"` and `deepseek_api_key_is_set` to `false`, updating both round-trips through `PATCH`/`GET` with the raw key masked, an unrecognized provider value is rejected (422), and a blank `deepseek_api_key` leaves the current value untouched. `test_bookmark_parser.py`: extracts only `http(s)` links (drops `javascript:`/`place:`/other browser-internal entries), dedupes by URL keeping the first title seen, falls back to the URL itself when link text is blank, preserves file order, empty for a linkless file, caps at 1000 links. Bookmark import (`test_imports.py`): `POST /imports/bookmark/parse` returns the candidate links (filtered the same way), reports `remaining_quota: null` for an admin and the correct remaining count for a non-admin, flags a link as `already_imported` whether it matches an existing `Recipe.source_url` or an `ImportJob.source` for that caller, 401s unauthenticated; `POST /imports/bookmark` creates one job per selected URL (type `bookmark`), admin jobs stay `pending` while a non-admin's queue and publish immediately (same split as a single-URL import), rejects a selection whose *new* URLs alone exceed the caller's remaining quota (400) while allowing exactly the remaining amount, exempts admins from that check entirely, skips a URL that's already a recipe/queued job instead of erroring — reported back in `skipped_duplicate` and not counted against the quota check — dedupes a URL repeated within the same request, 401s unauthenticated |
-| Worker              | `pytest`                           | 158 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation *after* HTML cleaning not before, strips script/style/nav/footer/header/aside/form/iframe/svg/comments and noisy attributes while preserving `<img src>` and real content, promotes `data-src`/`data-lazy-src`/`data-original`/`data-srcset` into a real `src` for lazy-loaded images without clobbering an already-real one, keeps a `<noscript>` image fallback intact, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client, runs on `EXTRACTION_MODEL`/Haiku, requests a high enough `max_tokens` for a long recipe in multiple languages, includes the given category list verbatim in the prompt so Claude can pick one — same for `parse_recipe_from_text`), `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams parsing, also Haiku), `claude_client.parse_recipe_from_text` (Haiku, same `max_tokens` floor), and `claude_client.translate_recipe` (re-translates edited content into every other configured language, creating a missing language's translation the same way a fresh import would, stays on `MODEL`/Sonnet, same `max_tokens` floor); every one of those four functions also verified for its `provider` argument — omitted, it still resolves to Claude's own models; `provider="deepseek"` selects `DEEPSEEK_EXTRACTION_MODEL`/`DEEPSEEK_MODEL` and reaches `_client`, which points `anthropic.Anthropic` at DeepSeek's own Anthropic-compatible `base_url` instead of the default (not just the model name — a regression test locks in that the provider argument actually reaches client construction, not only model selection), and passes `thinking={"type": "disabled"}` for DeepSeek only, never for Claude, and its shared prompt text explicitly forbids turning a page's own whole-list heading into a sub-group marker and forbids carrying over the source's own step numbers (see Design Decisions, "DeepSeek as an alternate AI provider"), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `test_instagram_client.py` (Playwright drives a headless page load and extracts caption/comments/preview image; a failed/blocked load is handled without crashing the job), `handlers.handle_import_job` (success inserts an already-`approved` recipe owned by the import job's creator with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it, *and* increments the owner's `imported_recipes_count` by exactly one; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` *and* the correct `error_kind` (`disallowed` only for a `robots.txt` block, `technical` for everything else, Instagram included) without leaving a half-inserted recipe, and does *not* increment the count; also resolves Claude's suggested category name to a real `category_id` by case-insensitive exact match, falls back to the first category by id when the suggestion matches nothing, and fails cleanly with an actionable message when no category exists at all), `reparse_handlers.handle_reparse_job` (updates existing `recipe_translations` rows in place rather than inserting a new `Recipe`, leaves slug/images/owner untouched, re-enqueues nutrition on success, fails cleanly on a scrape/extraction error), `translation_sync_handlers.handle_translation_sync_job` (translates the edited language into every other one, re-enqueues a `NutritionJob` on success, fails cleanly on an unknown recipe/job or an unexpected exception, still succeeds even if the nutrition re-enqueue itself raises), `email_handlers.handle_email_job` (sends a real SMTP message using the admin-configured host/port/credentials/TLS setting, builds the verification link from `public_site_url`, sends the user's own `language` copy — including the username in the greeting — and falls back to English for an unrecognized language, fails cleanly with no SMTP host configured), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if a handler raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache) — including `SettingsSnapshot.ai_api_key`, which resolves to `anthropic_api_key` by default and to `deepseek_api_key` once `preferred_ai_provider` is `"deepseek"`. `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` on success, computes `estimated_servings` from total resolved grams ÷ `STANDARD_PORTION_GRAMS` floored at 1 (not a separate Claude guess), prefers a CalorieNinjas gram figure over Claude's own estimate when one matches *and* the unit isn't a confirmed-unreliable one, skips the CalorieNinjas refinement call entirely for `ml`/`gr`/`l`/`liter(s)`/`litre(s)` and trusts Claude's estimate directly, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id). `contact_handlers.handle_contact_message_job` (sends a real SMTP message to `contact_recipient_email` with the visitor's name/email/phone/message in the body, confirms no `Reply-To` header is ever set — see Design Decisions, "Contact page" — fails cleanly with an actionable error when `contact_recipient_email` is blank, fails cleanly on a real SMTP error, ignores an unknown job id) |
-| Frontend            | Vitest + React Testing Library     | 163 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle, full per-language edit form incl. image upload. `ImportManager`: submits just a URL (no category picker any more — the AI suggests one after extraction, see workflow #2), approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, shows who created a job (`imported by {username}`), explains that imports are private to the importer, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled, calls `onJobCreated` after a successful create and after a successful approve; lifetime import limit: an admin never fetches or shows usage, a non-admin sees "`used` / `limit` imports used", the Add button is blurred+disabled once the limit is reached (and `handleSubmit` itself also guards on it, not just the `disabled` attribute, verified via a direct form-submit event); reloads the job list when an external `reloadTrigger` prop changes, so a job created elsewhere (bulk bookmark import) shows up without a manual action here. `BookmarkImportPanel`: shows the parsed links as checkboxes after loading a file, renders an already-imported link disabled with a badge and excludes it from selection, caps selection at a non-admin's remaining quota (disabling further boxes and showing a running count) while showing no cap at all for an admin, imports the selected links and reports a created/skipped summary while notifying the parent via `onJobCreated`, surfaces a parse error and lets the admin retry, resets back to the load-file state via "Choose another file", opens and closes the how-to-import dialog. `HowToImportBookmarksDialog`: shows export steps for Chrome/Firefox/Safari/Internet Explorer, closes via the OK button or Escape. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token (and role flags) on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered credentials, shows the translated error message on failure, including the "not verified yet" case with a resend option. `SignupForm`: submits the current UI language alongside the form fields once terms are accepted. `SettingsManager`: loads and displays current settings including SMTP/Turnstile/`max_imports_per_user` fields, secret fields (including the new DeepSeek key) stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, saves a changed `max_imports_per_user`, defaults the AI provider select to the current setting and saves a changed one, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, shows the total weight badge in grams under 1kg and kilograms above it, hides that badge when `total_grams` is unknown, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active. `UsersManager`: lists every user with their stats, shows an error when the list fails to load, expands/collapses a user's recipe list on toggle, paginates it 10-per-page independently per row, shows a message for a user with no recipes. `AccountPage`: shows a category selector on an owned recipe preselected to its current category, changing it calls the API and updates the selection, shows an error on failure, links an owned recipe to its edit page, submitting a fresh import via the embedded `ImportManager` form makes the resulting recipe appear once created, with no navigation/reload (the full `ImportManager` → `AccountPage` → `PendingImportsPanel` hand-off, not a single component in isolation). `PendingImportsPanel`: renders nothing with nothing pending, shows a just-finished import's card with a working Edit link, shows the AI-selected category name resolved from the recipe's `category_id`, shows the Instagram play-button warning only for an Instagram `source_url`, acknowledging calls the API and removes the card via the parent callback, shows the right canned message per `error_kind` (including the `technical`/unset fallback), dismissing a failed job calls the API and removes its card, ignores an already-dismissed job, calls the parent's `onImportsPolled` on every poll tick while a job is still active so a just-finished import's recipe shows up without a page reload, reloads immediately (jobs *and* submissions) when an external `reloadTrigger` bump signals a job was just created or approved elsewhere on the page, and never shows another user's failed job even when the viewer is an admin. `RecipeEditPage`: preloads a recipe's current fields, denies access to a non-owner non-admin, allows an admin editing someone else's recipe, saves and navigates back to the account page, shows an error on a failed save. `FailedImportsManager`: lists a failed job with its full raw error and `error_kind` badge, omits the category badge entirely for the common case of a job that never reached category resolution (`category_id` null), shows an empty state, Retry/Delete both call the right endpoint (Delete behind the shared confirm dialog), marking as reviewed calls the API and reloads, paginates via the shared `Pagination` component. `ContactPage`: requires the CAPTCHA to be solved when logged out and submits successfully once it is, skips the CAPTCHA entirely when logged in (and never even fetches the Turnstile site key in that case), requires at least an email or a phone number, accepts a phone number alone, rejects a message under 50 characters, shows the server's error message on a failed submission |
+| API backend        | `pytest` + FastAPI `TestClient`    | 271 tests, passing | Categories/recipes CRUD, validation (unknown category, duplicate slug), status transitions, `GET /languages`, translation language resolution/fallback, recipe approve (sets `approved_at`, 404), rejects a whole-field URL in title/description/ingredients/steps/tips (400) while allowing normal text that merely contains "http". `test_recipe_visibility.py`: an anonymous/other user only sees a recipe if `approved` + `is_shared`, the owner always sees their own regardless of status, an admin sees everything, `GET /recipes/{id}` 404s (not 403s) on an invisible recipe, `PATCH /recipes/{id}/share` succeeds for the owner or an admin, 403s for anyone else, 400s on an imported recipe, and re-sets `status=unapproved` when a non-admin turns sharing on. Import jobs (`test_imports.py`): create stays `pending` for an admin and doesn't publish, queues and publishes immediately for a non-admin, approve publishes and moves to `queued`, approve retries a `failed` job, approve rejects an already-`queued` job (400), duplicate-URL rejection is scoped per creator (409, two different users can import the same URL independently), a non-admin only sees/modifies their own jobs while an admin sees everyone's, `created_by_user_id` is always populated and `created_by_email` only for an admin caller, `category_id` starts `null` on creation (no longer part of `ImportJobCreate` — an extra `category_id` in the POST body, still accepted by some other clients, is just ignored). `test_auth.py`/`test_users.py`: signup requires a valid Turnstile token, rejects a verified duplicate email, resends instead of erroring on a duplicate unverified email, records the submitted `language` on the new user and falls back to `default_language` when it's missing or not in `supported_languages`, login (by email, no username) rejects an unverified account with a specific message, `/verify-email` accepts a valid token once and rejects an expired/reused/unknown one, `/resend-verification` re-sends and is itself CAPTCHA-gated, `GET /users/me` and `PATCH /users/me/password` require a valid current password. Password recovery (`test_auth.py`): `/forgot-password` requires a valid Turnstile token and returns the exact same generic response for a registered vs. unregistered email while only creating a `password_reset_tokens` row for the real one, `/reset-password` succeeds and immediately invalidates the old password (confirmed via a follow-up login with both), rejects an invalid/reused/expired token (400 each). Settings: `GET`/`PATCH /settings` require **super**-admin (a plain admin is rejected), secrets (including `calorie_ninjas_api_key`, `smtp_password`, `turnstile_secret_key`) never appear in the response body, numeric fields reject non-positive values (422), invalid/empty language codes and a `default_language` outside `supported_languages` are rejected (400), an omitted/blank secret leaves the current value untouched, partial updates don't clobber other fields; `GET /settings/public` returns only the Turnstile site key, unauthenticated. Nutrition: `GET /recipes/{id}/nutrition` is public (no `POST` here — enrichment is triggered by the worker, not the API) and reports `not_enriched` for a fresh recipe, 404 for an unknown one, computes totals/per-serving/per-ingredient-grams/`total_grams` correctly from `recipe_ingredient_links` × `ingredients`, and keeps showing previously-good totals even while a re-enrichment is queued/processing or after it fails. Recipe editing: `PUT /recipes/{id}` enqueues a `translation_sync_jobs` row only when a translation field actually changed, `processing_status` reflects whichever of nutrition/translation-sync is currently active for a recipe. Ingredient refresh: `GET`/`POST /ingredients/refresh` both require admin, `GET` reports `never_run` before any job exists and otherwise the latest job (tie-broken by id, not just timestamp), `POST` queues and publishes. Import limit (`test_imports.py`): `POST /imports` 403s a non-admin at/over `max_imports_per_user` with the current/limit counts in the message, allows the request one under the limit, exempts admins even far over it, and the counter is untouched by an admin deleting the resulting recipe; `GET /users/me` exposes `imported_recipes_count`. Reparse (`test_recipes.py`): `POST /recipes/{id}/reparse` and `/reparse-all-imported` both require admin and 400 on a recipe with no `source_url`. Users page (`test_users.py`): `GET /users` requires super-admin (401 unauthenticated, 403 a plain admin), reports correct owned/shared/imported counts including a user with zero recipes, `POST /auth/login` stamps `last_login_at`. `GET /recipes`'s admin-only `owner` lookup (`test_recipe_visibility.py`): returns the target user's recipes in any status, 403s a non-admin or anonymous caller, 404s an unknown id, 400s a non-numeric value. Owner-editable category (`test_recipe_visibility.py`): `PATCH /recipes/{id}/category` succeeds for the owner (manually-added or imported recipe alike) or an admin, 403s a non-owner non-admin, 401s an anonymous caller, 400s an unknown category id. Post-import review panel (`test_recipe_visibility.py`'s `TestUpdateEndpoint`/`TestAcknowledgeImportEndpoint`, `test_imports.py`): `PUT /recipes/{id}` now succeeds for the owner, 403s a non-owner non-admin, 400s a non-admin's `status` change, still 401s unauthenticated; `POST /recipes/{id}/acknowledge-import` succeeds for the owner or an admin, 403s a non-owner non-admin, 400s a non-imported recipe; `POST /imports/{id}/dismiss` succeeds for the owner or an admin and sets `dismissed_at`, 400s a non-`failed` job, 404s a non-owner non-admin; `GET /imports` with `limit`/`offset` paginates and sets `X-Total-Count`, filters by `status`, and omitting `limit` keeps returning the full unheadered list; a non-admin caller never receives the raw `error` text (only `error_kind`) even for their own job, while an admin sees both. Admin review tracking (`test_imports.py`): `POST /imports/{id}/mark-reviewed` requires admin (403 otherwise), sets `admin_reviewed_at` without touching `dismissed_at`, 400s a job that hasn't failed; the owner's own `/dismiss` afterward leaves `admin_reviewed_at` untouched (and vice versa); `GET /imports`'s `admin_reviewed` filter excludes/includes reviewed jobs correctly. Contact form (`test_contact.py`): anonymous submission 400s without a `turnstile_token` and 400s an invalid one, succeeds with a valid one; a logged-in submitter skips the CAPTCHA check entirely and gets `submitted_by_user_id` set; rejects a payload with neither email nor phone (422) while accepting either alone; rejects a message under 50 characters and a blank name (422); a broken queue publish still returns 201 but leaves the row `status=failed` with the publish error recorded. Settings (`test_settings.py`): `contact_recipient_email` defaults to `""`, round-trips through `PATCH`/`GET`; `preferred_ai_provider` defaults to `"claude"` and `deepseek_api_key_is_set` to `false`, updating both round-trips through `PATCH`/`GET` with the raw key masked, an unrecognized provider value is rejected (422), and a blank `deepseek_api_key` leaves the current value untouched. `test_bookmark_parser.py`: extracts only `http(s)` links (drops `javascript:`/`place:`/other browser-internal entries), dedupes by URL keeping the first title seen, falls back to the URL itself when link text is blank, preserves file order, empty for a linkless file, caps at 1000 links. Bookmark import (`test_imports.py`): `POST /imports/bookmark/parse` returns the candidate links (filtered the same way), reports `remaining_quota: null` for an admin and the correct remaining count for a non-admin, flags a link as `already_imported` whether it matches an existing `Recipe.source_url` or an `ImportJob.source` for that caller, 401s unauthenticated; `POST /imports/bookmark` creates one job per selected URL (type `bookmark`), admin jobs stay `pending` while a non-admin's queue and publish immediately (same split as a single-URL import), rejects a selection whose *new* URLs alone exceed the caller's remaining quota (400) while allowing exactly the remaining amount, exempts admins from that check entirely, skips a URL that's already a recipe/queued job instead of erroring — reported back in `skipped_duplicate` and not counted against the quota check — dedupes a URL repeated within the same request, 401s unauthenticated |
+| Worker              | `pytest`                           | 160 tests, passing | `scraping.fetch_page` (robots.txt allow/disallow/missing/unreachable, truncation *after* HTML cleaning not before, strips script/style/nav/footer/header/aside/form/iframe/svg/comments and noisy attributes while preserving `<img src>` and real content, promotes `data-src`/`data-lazy-src`/`data-original`/`data-srcset` into a real `src` for lazy-loaded images without clobbering an already-real one, keeps a `<noscript>` image fallback intact, HTTP errors, current DB-backed rate limit reaches the rate limiter on every call), `rate_limiter.DomainRateLimiter` (per-domain interval, crawl-delay override, a per-call rate override taking precedence over the constructor default, deterministic via injected clock), `claude_client.extract_recipe` (multi-language tool-use response parsing, the given API key reaches the Anthropic client, runs on `EXTRACTION_MODEL`/Haiku, requests a high enough `max_tokens` for a long recipe in multiple languages, includes the given category list verbatim in the prompt so Claude can pick one — same for `parse_recipe_from_text`), `claude_client.parse_ingredients_for_nutrition` (structured food/quantity/unit/grams parsing, also Haiku), `claude_client.parse_recipe_from_text` (Haiku, same `max_tokens` floor), and `claude_client.translate_recipe` (re-translates edited content into every other configured language, creating a missing language's translation the same way a fresh import would, stays on `MODEL`/Sonnet, same `max_tokens` floor); every one of those four functions also verified for its `provider` argument — omitted, it still resolves to Claude's own models; `provider="deepseek"` selects `DEEPSEEK_EXTRACTION_MODEL`/`DEEPSEEK_MODEL` and reaches `_client`, which points `anthropic.Anthropic` at DeepSeek's own Anthropic-compatible `base_url` instead of the default (not just the model name — a regression test locks in that the provider argument actually reaches client construction, not only model selection), and passes `thinking={"type": "disabled"}` for DeepSeek only, never for Claude, and its shared prompt text explicitly forbids turning a page's own whole-list heading into a sub-group marker and forbids carrying over the source's own step numbers (see Design Decisions, "DeepSeek as an alternate AI provider"), `images.process_images` (resize to max dimension, quality-reduction loop respects/floors on max size, skips failed downloads/non-image content without failing the batch), `test_instagram_client.py` (Playwright drives a headless page load and extracts caption/comments/preview image; a failed/blocked load is handled without crashing the job), `handlers.handle_import_job` (success inserts an already-`approved` recipe owned by the import job's creator with `approved_at` set and one translation row per language, *and* auto-enqueues + publishes a `NutritionJob` for it, *and* increments the owner's `imported_recipes_count` by exactly one; a broken queue publish for that follow-up job marks the `NutritionJob` failed without touching the already-successful import job; each import failure mode, including an empty `translations` list, maps to a distinct `job.error` *and* the correct `error_kind` (`disallowed` only for a `robots.txt` block, `technical` for everything else, Instagram included) without leaving a half-inserted recipe, and does *not* increment the count; also resolves Claude's suggested category name to a real `category_id` by case-insensitive exact match, falls back to the first category by id when the suggestion matches nothing, and fails cleanly with an actionable message when no category exists at all), `reparse_handlers.handle_reparse_job` (updates existing `recipe_translations` rows in place rather than inserting a new `Recipe`, leaves slug/images/owner untouched, re-enqueues nutrition on success, fails cleanly on a scrape/extraction error), `translation_sync_handlers.handle_translation_sync_job` (translates the edited language into every other one, re-enqueues a `NutritionJob` on success, fails cleanly on an unknown recipe/job or an unexpected exception, still succeeds even if the nutrition re-enqueue itself raises), `email_handlers.handle_email_job` (sends a real SMTP message using the admin-configured host/port/credentials/TLS setting, dispatches on `job.kind` — builds the verification link or the password-reset link from `public_site_url` accordingly, looking up the newest unused token of the matching kind — sends the user's own `language` copy for either kind and falls back to English for an unrecognized language, fails cleanly on an unknown `kind` or no matching unused token), `consumer._on_message` (delegates and acks; marks a job `failed` with the exception message if a handler raises *anything* unexpected, even with an unparseable body), `settings_service.get_settings` (falls back to defaults when the row is missing, reads the current row, reflects an update on the very next call — no cache) — including `SettingsSnapshot.ai_api_key`, which resolves to `anthropic_api_key` by default and to `deepseek_api_key` once `preferred_ai_provider` is `"deepseek"`. `nutrition_api_client.lookup_nutrition`/`extract_nutrients_per_100g` (returns the first matching item, sends the `X-Api-Key` header, returns `None` for an empty result, normalizes nutrients to a per-100g basis from whatever `serving_size_g` came back, defaults to zero when the serving size is missing/zero). `nutrition_handlers.handle_nutrition_job` (creates a new `Ingredient` + `RecipeIngredientLink` on success, computes `estimated_servings` from total resolved grams ÷ `STANDARD_PORTION_GRAMS` floored at 1 (not a separate Claude guess), prefers a CalorieNinjas gram figure over Claude's own estimate when one matches *and* the unit isn't a confirmed-unreliable one, skips the CalorieNinjas refinement call entirely for `ml`/`gr`/`l`/`liter(s)`/`litre(s)` and trusts Claude's estimate directly, reuses an existing `Ingredient` by name without a redundant lookup, rounds a decimal quantity like `5.5` to `6` before querying to work around a CalorieNinjas parser bug that mangles decimals, a malformed ingredient item is skipped without failing the rest, fails cleanly with no ingredients / no parsed items / an unknown recipe / an unexpected exception, replaces (not accumulates) links from a previous run). `ingredient_refresh_handlers.handle_ingredient_refresh_job` (refreshes an ingredient via a `"100g <name>"` lookup, leaves an ingredient untouched when nothing matches, one ingredient's CalorieNinjas failure doesn't sink the others, fails cleanly with a clear message when no CalorieNinjas key is configured, ignores an unknown job id). `contact_handlers.handle_contact_message_job` (sends a real SMTP message to `contact_recipient_email` with the visitor's name/email/phone/message in the body, confirms no `Reply-To` header is ever set — see Design Decisions, "Contact page" — fails cleanly with an actionable error when `contact_recipient_email` is blank, fails cleanly on a real SMTP error, ignores an unknown job id) |
+| Frontend            | Vitest + React Testing Library     | 170 tests, passing | `CategoryManager`/`RecipeManager`: list/create/delete, error handling, approve button, preview toggle, full per-language edit form incl. image upload. `ImportManager`: submits just a URL (no category picker any more — the AI suggests one after extraction, see workflow #2), approve button gated to `pending`/`failed` jobs only, delete, shows a job's error, shows who created a job (`imported by {email}`, admin-only — a non-admin's own job shows just the id-based ownership check with no email in the response), explains that imports are private to the importer, polls every 3s while any job is `queued`/`fetching`/`processing` and stops once settled, calls `onJobCreated` after a successful create and after a successful approve; lifetime import limit: an admin never fetches or shows usage, a non-admin sees "`used` / `limit` imports used", the Add button is blurred+disabled once the limit is reached (and `handleSubmit` itself also guards on it, not just the `disabled` attribute, verified via a direct form-submit event); reloads the job list when an external `reloadTrigger` prop changes, so a job created elsewhere (bulk bookmark import) shows up without a manual action here. `BookmarkImportPanel`: shows the parsed links as checkboxes after loading a file, renders an already-imported link disabled with a badge and excludes it from selection, caps selection at a non-admin's remaining quota (disabling further boxes and showing a running count) while showing no cap at all for an admin, imports the selected links and reports a created/skipped summary while notifying the parent via `onJobCreated`, surfaces a parse error and lets the admin retry, resets back to the load-file state via "Choose another file", opens and closes the how-to-import dialog. `HowToImportBookmarksDialog`: shows export steps for Chrome/Firefox/Safari/Internet Explorer, closes via the OK button or Escape. `RecipeBrowser`: filters to approved-only, cards link to `/recipes/:id`, category filter triggers a re-fetch. `RecipeDetail`: renders full content once loaded, blocks unapproved recipes with a message, surfaces fetch errors. `LanguageProvider`: defaults to Romanian, reads/persists a stored language, switching updates translations live. `AuthProvider`: starts unauthenticated, reads a stored token (and role flags) on mount, login success persists the token and flips state, login failure leaves it unauthenticated, logout clears both. `LoginForm`: submits entered email/password, shows the translated error message on failure, including the "not verified yet" case with a resend option, links to `/forgot-password`. `SignupForm`: submits the current UI language alongside the form fields once terms are accepted, shows a "Forgot your password?" link instead of a dead-end error when the server reports the email is already registered. `ForgotPasswordPage`: submits the email once the CAPTCHA is solved and shows the server's generic response, requires the CAPTCHA first, shows the server's error on failure. `ResetPasswordPage`: submits the new password with the token read from the URL, shows an error and disables submit when the link has no token, flags a too-short password or a mismatched confirmation before submitting, shows the server's error on a failed reset (expired/reused/invalid token). `SettingsManager`: loads and displays current settings including SMTP/Turnstile/`max_imports_per_user` fields, secret fields (including the new DeepSeek key) stay blank with a placeholder hinting whether one is set, Apply omits a secret from the request when left blank but includes it when typed, saves a changed `max_imports_per_user`, defaults the AI provider select to the current setting and saves a changed one, shows a success message on save and the server error on failure. `NutritionPanel`: renders per-serving values + the servings badge when both are known, shows the total weight badge in grams under 1kg and kilograms above it, hides that badge when `total_grams` is unknown, falls back to whole-recipe totals when there's no servings estimate, renders nothing when nutrition isn't enriched yet or a job is still in flight. `IngredientRefreshPanel`: shows "never run" on first load, creates a job and shows its status on click, polls while active and shows the updated count once done (and stops polling once settled), shows the job's error message on failure, disables the button while a refresh is active. `UsersManager`: lists every user with their stats, shows an error when the list fails to load, expands/collapses a user's recipe list on toggle, paginates it 10-per-page independently per row, shows a message for a user with no recipes. `AccountPage`: shows a category selector on an owned recipe preselected to its current category, changing it calls the API and updates the selection, shows an error on failure, links an owned recipe to its edit page, submitting a fresh import via the embedded `ImportManager` form makes the resulting recipe appear once created, with no navigation/reload (the full `ImportManager` → `AccountPage` → `PendingImportsPanel` hand-off, not a single component in isolation). `PendingImportsPanel`: renders nothing with nothing pending, shows a just-finished import's card with a working Edit link, shows the AI-selected category name resolved from the recipe's `category_id`, shows the Instagram play-button warning only for an Instagram `source_url`, acknowledging calls the API and removes the card via the parent callback, shows the right canned message per `error_kind` (including the `technical`/unset fallback), dismissing a failed job calls the API and removes its card, ignores an already-dismissed job, calls the parent's `onImportsPolled` on every poll tick while a job is still active so a just-finished import's recipe shows up without a page reload, reloads immediately (jobs *and* submissions) when an external `reloadTrigger` bump signals a job was just created or approved elsewhere on the page, and never shows another user's failed job even when the viewer is an admin. `RecipeEditPage`: preloads a recipe's current fields, denies access to a non-owner non-admin, allows an admin editing someone else's recipe, saves and navigates back to the account page, shows an error on a failed save. `FailedImportsManager`: lists a failed job with its full raw error and `error_kind` badge, omits the category badge entirely for the common case of a job that never reached category resolution (`category_id` null), shows an empty state, Retry/Delete both call the right endpoint (Delete behind the shared confirm dialog), marking as reviewed calls the API and reloads, paginates via the shared `Pagination` component. `ContactPage`: requires the CAPTCHA to be solved when logged out and submits successfully once it is, skips the CAPTCHA entirely when logged in (and never even fetches the Turnstile site key in that case), requires at least an email or a phone number, accepts a phone number alone, rejects a message under 50 characters, shows the server's error message on a failed submission |
 | Cross-service       | Integration tests                  | Not scaffolded yet | Full import flow (job published → worker consumes → recipe lands `unapproved` in DB) against the Docker Compose stack — manually verified several times (see below), not automated |
 
 Notes on the current setup:
@@ -1720,6 +1759,22 @@ Notes on the current setup:
   fixture), confirmed via `psql` that the water link now stores `2650g`/`claude_estimate` and
   `estimated_servings` became `8`, and loaded the actual recipe page in the browser to see "~8"
   portions at 128 kcal/serving where it previously read "4" at 256 kcal/serving.
+- Username removal and the forgot/reset-password flow were verified end to end against the real
+  dev stack, not just unit tests: migration `0033` applied cleanly against the real dev Postgres
+  (`\d users` confirmed `username` gone and `email` `NOT NULL`, `\d password_reset_tokens` showed
+  the new table), and logging in as the real admin account by email (`POST /auth/login` via
+  `curl`, then again through the actual browser UI) succeeded with the real password. In the
+  browser: the Account page shows only Email (no Username row); the Users page's table and
+  per-user "Show recipes" expansion (now keyed by id, not username) both render against the three
+  real accounts in this dev database; the admin Recipes list's "owned by {email}" badge renders
+  correctly. Signing up with the already-registered admin email showed the inline "already
+  registered" message with a working "Forgot your password?" link; following it to
+  `/forgot-password`, solving the real Cloudflare Turnstile widget, and submitting produced the
+  generic success response and a real `password_reset_tokens` row plus a `DONE` `email_jobs` row
+  (confirmed via `psql`, using this environment's already-configured dev SMTP) — the real admin's
+  password was deliberately **not** actually reset through this flow, to avoid changing a live
+  credential as a side effect of verification; `/reset-password` with an invalid token was
+  confirmed separately to show the correct inline error instead.
 
 Conventions:
 - Unit tests live next to the code they cover (`api/app/tests/test_*.py`, `worker/app/tests/test_*.py`,
@@ -2513,16 +2568,57 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   receiving a working link with no indication of what the site even was or which account it was
   for. Fix: `users.language` snapshots whichever language the signup form was showing at the
   moment of signup (falling back to `default_language` if that value is missing or not in
-  `supported_languages`), and the worker sends the email in that language, greeting the user by
-  username with a short "what this site is" paragraph. Deliberately **not** kept in sync with the
-  user's browsing language afterward (switching the site language in the header doesn't rewrite
-  `users.language`) — the only email this affects today is the one-time verification email sent
-  before the account can even log in, so there's no ongoing relationship between "current UI
-  language" and "language of an email" worth maintaining; that would change if a second account
-  email (e.g. password reset) were added later. Email copy itself only exists for `"en"`/`"ro"` in
-  `worker/app/email_handlers.py`, hardcoded independently of `supported_languages` — a third
-  configured language would silently fall back to English until someone adds real copy for it, the
-  same tradeoff already made for `LANGUAGE_LABELS` and the frontend's own translation dictionaries.
+  `supported_languages`), and the worker sends the email in that language, with a short "what this
+  site is" paragraph. Deliberately **not** kept in sync with the user's browsing language
+  afterward (switching the site language in the header doesn't rewrite `users.language`) — there's
+  no ongoing relationship between "current UI language" and "language of an email" worth
+  maintaining, since an account's emails are all one-off transactional messages (verification,
+  password reset), not an inbox someone reads over time. Email copy itself only exists for
+  `"en"`/`"ro"` in `worker/app/email_handlers.py`, hardcoded independently of `supported_languages`
+  — a third configured language would silently fall back to English until someone adds real copy
+  for it, the same tradeoff already made for `LANGUAGE_LABELS` and the frontend's own translation
+  dictionaries. The email used to greet the user by username ("Hi, {username}"); the prediction
+  above ("that would change if a second account email were added") did come true once
+  password-reset emails were added — rather than resolve a name for two different email kinds, the
+  greeting was simplified to "Hi," / "Salut!" with no name at all, once username stopped existing
+  as something to greet anyone by (see "Removing usernames" below).
+- **Removing usernames** — the account model originally had both a `username` (used for login and
+  as the JWT subject) and an `email` (used only for verification mail), because the login+password
+  pattern was built before self-service signup existed. In practice this meant every returning
+  visitor had to remember which of two strings to log in with, and the UI never explained the
+  distinction — a real point of confusion, not a hypothetical one. Fix: `email` is now the only
+  account identifier — `users.username` was dropped entirely (migration `0033`), the JWT `sub`
+  claim is the email, and every place that used to look a user up or display them by username
+  (recipe ownership self-checks, the admin Users/Recipes/Failed-Imports pages, `GET /recipes`'s
+  admin `owner` filter) now uses the numeric `id` for logic and, where a human-readable label is
+  actually needed for an admin's own eyes, the email. Two things had to be handled carefully:
+  1. *One pre-existing account had no email.* The admin account seeded directly into the database
+     by migration `0018` (before self-service signup existed) predates the requirement that every
+     signup collect an email, so it had neither. Backfilled by hand (`UPDATE users SET email = ...
+     WHERE username = 'danionescu'`) in both dev and prod *before* deploying migration `0033`,
+     which also carries a defensive `UPDATE ... WHERE email IS NULL` safety net (synthesizing a
+     `username-id@invalid.local` placeholder) so the same situation on some other environment fails
+     loudly with an obviously-fake address instead of blocking the migration outright.
+  2. *A recipe/import job's owner is shown to more than just its owner* — the admin Recipes list
+     shows "submitted by X" for every recipe, and the admin Failed Imports page shows who ran a
+     failed import. Exposing a real email address to *every* API caller (including anonymous
+     visitors hitting the public `GET /recipes` feed) the way `owner_username` used to be exposed
+     would have been a real privacy regression, not a like-for-like rename. Fix: `RecipeRead`/
+     `ImportJobRead` now carry both an always-present `owner_user_id`/`created_by_user_id` (just a
+     number, harmless to expose, used for the client-side self/ownership checks that
+     `owner_username`/`created_by_username` used to power) and an `owner_email`/`created_by_email`
+     that the API nulls out unless the *caller* is an admin — reusing the exact nulling pattern
+     `ImportJobRead.error` already established for hiding a raw technical string from a non-admin.
+     Notably this also nulls a non-admin's own email back to them on their own job — deliberately
+     consistent with the `error` precedent rather than carving out a "but it's mine" exception,
+     since the point is "only an admin needs to see an email here," not "only strangers shouldn't."
+- **Forgot password: same generic response whether or not the email exists** —
+  `POST /auth/forgot-password` never distinguishes "sent a reset link" from "no account with that
+  email" in its response; both return the identical detail string, and only a real match actually
+  gets a token + email. Telling a caller outright that an email isn't registered would turn the
+  endpoint into an account-enumeration oracle — trivial to script against a list of candidate
+  addresses. The real distinction (did an email actually go out) is something only the account
+  owner can observe, by checking their own inbox, which is exactly where it belongs.
 - **Superadmin Users page: three scoped design choices, made explicitly before building it.**
   1. *"Last used" is login-stamp-only, not a full activity log.* This API is stateless JWT auth —
      there's no session row to touch on every request. Stamping `last_login_at` on every
@@ -2531,7 +2627,7 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
      costs one write at one call site. Revisit only if "last used" needs to mean "used the app
      recently," not "logged in recently."
   2. *The per-user recipe list reuses `GET /recipes`'s existing `owner` filter* (extended to accept
-     an explicit username for an admin, not just `"me"`) *instead of a new endpoint.* The
+     an explicit user id for an admin, not just `"me"`) *instead of a new endpoint.* The
      pagination/`X-Total-Count`/serialization machinery already existed and already had a working
      frontend `Pagination` component (extracted from `RecipeManager` for this, see [Project
      Structure](#project-structure)) — a parallel `GET /users/{id}/recipes` endpoint would have
@@ -2624,7 +2720,7 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   page, which is a personal review widget, not a moderation surface — so an admin looking at their
   own account saw every other user's failures mixed into "Import problems," alongside their own
   private "Recently imported" cards. Fixed by deriving a `myJobs` list scoped to
-  `created_by_username === user?.username` before rendering (and before deciding whether to poll)
+  `created_by_user_id === user?.id` before rendering (and before deciding whether to poll)
   — cross-user visibility now only ever happens on the Failed Imports page, where it belongs. The
   second gap was subtler: an admin technically *could* already click "OK" on someone else's failed
   job from their own Account page (the dismiss endpoint has always been owner-or-admin), and it

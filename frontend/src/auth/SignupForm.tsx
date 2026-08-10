@@ -9,15 +9,13 @@ import { TurnstileWidget } from "./TurnstileWidget";
 const inputClasses =
   "rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none";
 
-const USERNAME_PATTERN = /^[A-Za-z0-9]+$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD_LENGTH = 8;
 
-type FieldName = "username" | "email" | "password" | "confirmPassword";
+type FieldName = "email" | "password" | "confirmPassword";
 
 export function SignupForm() {
   const { t, language } = useLanguage();
-  const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
@@ -26,6 +24,9 @@ export function SignupForm() {
   const [termsAccepted, setTermsAccepted] = useState(false);
   const [showTerms, setShowTerms] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Set when the server reports this email is already registered and verified — shown instead
+  // of the generic error, with a link to recover the account rather than a dead end.
+  const [alreadyRegistered, setAlreadyRegistered] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<FieldName, string>>>({});
   const [submitting, setSubmitting] = useState(false);
   // The server's own message, not a fixed string — it differs when this email already has an
@@ -38,8 +39,6 @@ export function SignupForm() {
   // tabbing through untouched fields doesn't light up the whole form in red.
   const validateField = (field: FieldName, value: string): string | null => {
     switch (field) {
-      case "username":
-        return value && !USERNAME_PATTERN.test(value) ? t.signup.usernameInvalidError : null;
       case "email":
         return value && !EMAIL_PATTERN.test(value) ? t.signup.emailInvalidError : null;
       case "password":
@@ -69,13 +68,14 @@ export function SignupForm() {
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
     setError(null);
+    setAlreadyRegistered(false);
 
     if (!termsAccepted) {
       setShowTerms(true);
       return;
     }
 
-    const values: Record<FieldName, string> = { username, email, password, confirmPassword };
+    const values: Record<FieldName, string> = { email, password, confirmPassword };
     const nextFieldErrors: Partial<Record<FieldName, string>> = {};
     for (const field of Object.keys(values) as FieldName[]) {
       const fieldError = validateField(field, values[field]);
@@ -94,7 +94,6 @@ export function SignupForm() {
     setSubmitting(true);
     try {
       const response = await api.signup({
-        username,
         email,
         password,
         turnstile_token: turnstileToken,
@@ -103,7 +102,14 @@ export function SignupForm() {
       });
       setSuccessMessage(response.detail);
     } catch (e) {
-      setError(String(e));
+      // Matches the exact detail string api/app/routers/auth.py's signup() returns for an
+      // already-verified email — a dead-end error here would leave the visitor stuck, so point
+      // them at password recovery instead.
+      if (String(e).includes("already registered")) {
+        setAlreadyRegistered(true);
+      } else {
+        setError(String(e));
+      }
     } finally {
       setSubmitting(false);
     }
@@ -128,29 +134,6 @@ export function SignupForm() {
       <h2 className="font-serif text-2xl font-semibold text-ink">{t.signup.heading}</h2>
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
-        <div className="flex flex-col gap-1">
-          <label htmlFor="signup-username" className="text-sm font-medium text-ink/70">
-            {t.signup.usernameLabel}
-          </label>
-          <input
-            id="signup-username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => {
-              setUsername(e.target.value);
-              clearFieldError("username");
-            }}
-            onBlur={(e) => handleBlur("username", e.target.value)}
-            aria-invalid={Boolean(fieldErrors.username)}
-            className={inputClasses}
-          />
-          {fieldErrors.username && (
-            <p role="alert" className="text-xs text-red-700">
-              {fieldErrors.username}
-            </p>
-          )}
-        </div>
-
         <div className="flex flex-col gap-1">
           <label htmlFor="signup-email" className="text-sm font-medium text-ink/70">
             {t.signup.emailLabel}
@@ -253,6 +236,15 @@ export function SignupForm() {
         {error && (
           <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
             {error}
+          </p>
+        )}
+
+        {alreadyRegistered && (
+          <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
+            {t.signup.alreadyRegisteredError}{" "}
+            <Link to="/forgot-password" className="font-medium underline">
+              {t.signup.forgotPasswordLink}
+            </Link>
           </p>
         )}
 

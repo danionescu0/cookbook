@@ -121,10 +121,10 @@ async function requestImportJobsPage(params: URLSearchParams): Promise<ImportJob
 }
 
 export const api = {
-  login: (username: string, password: string) =>
+  login: (email: string, password: string) =>
     request<LoginResponse>("/auth/login", {
       method: "POST",
-      body: JSON.stringify({ username, password }),
+      body: JSON.stringify({ email, password }),
     }),
   signup: (payload: SignupRequest) =>
     request<{ detail: string }>("/auth/signup", { method: "POST", body: JSON.stringify(payload) }),
@@ -133,10 +133,20 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ token }),
     }),
-  resendVerification: (username: string, turnstileToken: string) =>
+  resendVerification: (email: string, turnstileToken: string) =>
     request<{ detail: string }>("/auth/resend-verification", {
       method: "POST",
-      body: JSON.stringify({ username, turnstile_token: turnstileToken }),
+      body: JSON.stringify({ email, turnstile_token: turnstileToken }),
+    }),
+  forgotPassword: (email: string, turnstileToken: string) =>
+    request<{ detail: string }>("/auth/forgot-password", {
+      method: "POST",
+      body: JSON.stringify({ email, turnstile_token: turnstileToken }),
+    }),
+  resetPassword: (token: string, newPassword: string) =>
+    request<{ detail: string }>("/auth/reset-password", {
+      method: "POST",
+      body: JSON.stringify({ token, new_password: newPassword }),
     }),
   me: () => request<UserProfile>("/users/me"),
   listUsers: () => request<UserAdmin[]>("/users"),
@@ -165,7 +175,7 @@ export const api = {
   listRecipesPage: (params: {
     categoryId?: number;
     language?: string;
-    // "me", or (admin-only) another user's exact username — see routers/recipes.py's
+    // "me", or (admin-only) another user's id as a string — see routers/recipes.py's
     // list_recipes.
     owner?: string;
     onlyPublic?: boolean;

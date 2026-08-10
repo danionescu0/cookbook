@@ -152,7 +152,7 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
 def test_handle_import_job_increments_owners_lifetime_import_count(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    user = User(id=1, username="tester", imported_recipes_count=4)
+    user = User(id=1, email="tester@example.com", imported_recipes_count=4)
     db_session.add(user)
     db_session.commit()
 
@@ -180,7 +180,7 @@ def test_handle_import_job_does_not_increment_count_on_failure(
 ) -> None:
     # Only successful imports should count toward the lifetime cap — see
     # app_settings.max_imports_per_user on the API side.
-    user = User(id=1, username="tester", imported_recipes_count=4)
+    user = User(id=1, email="tester@example.com", imported_recipes_count=4)
     db_session.add(user)
     db_session.commit()
 

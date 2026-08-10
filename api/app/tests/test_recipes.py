@@ -706,7 +706,7 @@ def test_create_recipe_requires_login(unauthenticated_client: TestClient) -> Non
 
 
 def test_non_admin_private_submission_is_approved_immediately(
-    client: TestClient, user_client: TestClient
+    client: TestClient, user_client: TestClient, regular_user: User
 ) -> None:
     # Default (no is_shared) is private — only the owner will ever see it, so there's nothing to
     # moderate.
@@ -721,11 +721,11 @@ def test_non_admin_private_submission_is_approved_immediately(
     body = response.json()
     assert body["status"] == "approved"
     assert body["is_shared"] is False
-    assert body["owner_username"] == "regular"
+    assert body["owner_user_id"] == regular_user.id
 
 
 def test_non_admin_shared_submission_is_unapproved_and_tracks_owner(
-    client: TestClient, user_client: TestClient
+    client: TestClient, user_client: TestClient, regular_user: User
 ) -> None:
     category_id = _create_category(client)
 
@@ -743,11 +743,11 @@ def test_non_admin_shared_submission_is_unapproved_and_tracks_owner(
     body = response.json()
     assert body["status"] == "unapproved"
     assert body["is_shared"] is True
-    assert body["owner_username"] == "regular"
+    assert body["owner_user_id"] == regular_user.id
 
 
 def test_admin_created_recipe_is_private_by_default_and_owned_by_the_admin(
-    client: TestClient,
+    client: TestClient, admin_user: User
 ) -> None:
     category_id = _create_category(client)
 
@@ -756,7 +756,7 @@ def test_admin_created_recipe_is_private_by_default_and_owned_by_the_admin(
     )
 
     body = response.json()
-    assert body["owner_username"] == "admin"
+    assert body["owner_user_id"] == admin_user.id
     assert body["is_shared"] is False
 
 

@@ -16,8 +16,7 @@ router = APIRouter(prefix="/users", tags=["users"])
 
 class UserProfile(BaseModel):
     id: int
-    username: str
-    email: str | None
+    email: str
     is_admin: bool
     is_super_admin: bool
     # Lifetime count of successful imports — see users.imported_recipes_count. Meaningless for
@@ -28,8 +27,7 @@ class UserProfile(BaseModel):
 
 class UserAdminRead(BaseModel):
     id: int
-    username: str
-    email: str | None
+    email: str
     is_verified: bool
     created_at: datetime
     # Null if the account has never logged in since this column existed — see
@@ -60,7 +58,6 @@ def read_profile(
     user = _get_user_or_404(db, current_user.id)
     return UserProfile(
         id=user.id,
-        username=user.username,
         email=user.email,
         is_admin=user.is_admin,
         is_super_admin=user.is_super_admin,
@@ -88,7 +85,6 @@ def list_users(db: Session = Depends(get_db)) -> list[UserAdminRead]:
     return [
         UserAdminRead(
             id=user.id,
-            username=user.username,
             email=user.email,
             is_verified=user.is_verified,
             created_at=user.created_at,

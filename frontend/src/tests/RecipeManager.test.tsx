@@ -43,7 +43,8 @@ const cake: Recipe = {
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "admin",
+  owner_user_id: 1,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: null,
 };
@@ -64,7 +65,8 @@ const pendingSoup: Recipe = {
   approved_at: null,
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "admin",
+  owner_user_id: 1,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-07-23T00:00:00Z",
 };

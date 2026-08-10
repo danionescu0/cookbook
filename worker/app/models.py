@@ -272,8 +272,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), nullable=False)
-    email: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    email: Mapped[str] = mapped_column(String(255), nullable=False)
     imported_recipes_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # The language to send account emails in — see api/app/models/user.py's User.language.
     language: Mapped[str] = mapped_column(String(5), nullable=False, default="ro")
@@ -305,6 +304,20 @@ class EmailVerificationToken(Base):
     # Kept in sync by hand with api/app/models/email_verification_token.py — the worker only
     # reads the newest unused token for a user to build the link inside a verification email.
     __tablename__ = "email_verification_tokens"
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    token: Mapped[str] = mapped_column(String(64), nullable=False)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+
+class PasswordResetToken(Base):
+    # Kept in sync by hand with api/app/models/password_reset_token.py — the worker only reads
+    # the newest unused token for a user to build the link inside a password-reset email.
+    __tablename__ = "password_reset_tokens"
 
     id: Mapped[int] = mapped_column(primary_key=True)
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), nullable=False)

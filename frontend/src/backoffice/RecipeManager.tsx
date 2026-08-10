@@ -307,7 +307,7 @@ export function RecipeManager() {
                   </a>
                 ) : null}
                 <span className="ml-2 text-sm text-ink/50">
-                  {t.recipeManager.submittedBy.replace("{username}", recipe.owner_username)}
+                  {t.recipeManager.submittedBy.replace("{email}", recipe.owner_email ?? "—")}
                 </span>
                 {recipe.is_shared && (
                   <span className="ml-2 rounded-full bg-olive/10 px-2 py-0.5 text-xs font-medium text-olive">

@@ -41,7 +41,8 @@ const cake: Recipe = {
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "admin",
+  owner_user_id: 1,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-07-23T00:00:00Z",
 };
@@ -137,8 +138,7 @@ describe("RecipeDetail", () => {
     window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
     mockedApi.me.mockResolvedValue({
       id: 1,
-      username: "someone",
-      email: null,
+      email: "someone@example.com",
       is_admin: false,
       is_super_admin: false,
       imported_recipes_count: 0,

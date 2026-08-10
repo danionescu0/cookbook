@@ -39,7 +39,8 @@ const baseRecipe: Recipe = {
   approved_at: "2026-08-06T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "someone",
+  owner_user_id: 1,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: null,
 };
@@ -62,7 +63,8 @@ const failedJob: ImportJob = {
   error: null,
   error_kind: "disallowed",
   created_at: "2026-08-06T00:00:00Z",
-  created_by_username: "someone",
+  created_by_user_id: 1,
+  created_by_email: null,
   dismissed_at: null,
   admin_reviewed_at: null,
 };
@@ -91,13 +93,12 @@ function renderPanel(
 beforeEach(() => {
   vi.resetAllMocks();
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
-  // "someone" matches the created_by_username on failedJob/baseRecipe's owner — the failed-jobs
-  // list is now scoped to the viewer's own jobs (see PendingImportsPanel's myJobs), so tests that
-  // expect a failed-job card to render need the logged-in viewer to actually own it.
+  // id 1 matches created_by_user_id on failedJob/baseRecipe's owner — the failed-jobs list is
+  // now scoped to the viewer's own jobs (see PendingImportsPanel's myJobs), so tests that expect
+  // a failed-job card to render need the logged-in viewer to actually own it.
   mockedApi.me.mockResolvedValue({
     id: 1,
-    username: "someone",
-    email: null,
+    email: "someone@example.com",
     is_admin: false,
     is_super_admin: false,
     imported_recipes_count: 0,
@@ -199,13 +200,12 @@ describe("PendingImportsPanel", () => {
     // tool, so an admin viewing their own account must not see someone else's failure mixed in.
     mockedApi.me.mockResolvedValue({
       id: 2,
-      username: "the-admin",
-      email: null,
+      email: "the-admin@example.com",
       is_admin: true,
       is_super_admin: true,
       imported_recipes_count: 0,
     });
-    mockedApi.listImportJobs.mockResolvedValue([failedJob]); // created_by_username: "someone"
+    mockedApi.listImportJobs.mockResolvedValue([failedJob]); // created_by_user_id: 1
 
     const { container } = renderPanel([]);
 

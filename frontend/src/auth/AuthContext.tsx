@@ -8,7 +8,7 @@ export const AUTH_STORAGE_KEY = "cookbook-auth-token";
 interface AuthContextValue {
   isAuthenticated: boolean;
   user: User | null;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -34,7 +34,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => setUnauthorizedHandler(null);
   }, []);
 
-  // A stored token only proves *a* session existed — it doesn't carry username/is_admin on its
+  // A stored token only proves *a* session existed — it doesn't carry email/is_admin on its
   // own (decoding the JWT client-side isn't worth it when the API can just answer), so every
   // fresh page load re-fetches the profile before treating the visitor as logged in.
   useEffect(() => {
@@ -49,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .then((profile) =>
         setUser({
           id: profile.id,
-          username: profile.username,
+          email: profile.email,
           is_admin: profile.is_admin,
           is_super_admin: profile.is_super_admin,
         })
@@ -58,8 +58,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setIsRehydrating(false));
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const response = await api.login(username, password);
+  const login = async (email: string, password: string) => {
+    const response = await api.login(email, password);
     setAuthToken(response.access_token);
     window.localStorage.setItem(AUTH_STORAGE_KEY, response.access_token);
     setUser(response.user);

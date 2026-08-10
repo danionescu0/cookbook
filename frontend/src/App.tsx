@@ -22,6 +22,8 @@ import { RecipeManager } from "./backoffice/RecipeManager";
 import { SettingsManager } from "./backoffice/SettingsManager";
 import { UsersManager } from "./backoffice/UsersManager";
 import { SignupForm } from "./auth/SignupForm";
+import { ForgotPasswordPage } from "./auth/ForgotPasswordPage";
+import { ResetPasswordPage } from "./auth/ResetPasswordPage";
 import { VerifyEmailPage } from "./auth/VerifyEmailPage";
 import { useAuth } from "./auth/AuthContext";
 import { ContactPage } from "./contact/ContactPage";
@@ -259,6 +261,14 @@ export function App() {
           </Route>
           <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />} />
           <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
+          <Route
+            path="/forgot-password"
+            element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
+          />
+          <Route
+            path="/reset-password"
+            element={isAuthenticated ? <Navigate to="/" replace /> : <ResetPasswordPage />}
+          />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/contact" element={<ContactPage />} />

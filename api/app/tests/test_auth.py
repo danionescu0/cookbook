@@ -1,3 +1,5 @@
+from datetime import datetime, timedelta, timezone
+
 import jwt
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
@@ -5,10 +7,10 @@ from sqlalchemy.orm import Session
 import app.routers.auth as auth_router
 from app.auth import create_access_token
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 
 _SIGNUP_PAYLOAD = {
-    "username": "newuser",
     "email": "newuser@example.com",
     "password": "supersecret1",
     "turnstile_token": "test-token",
@@ -28,7 +30,7 @@ def test_signup_creates_unverified_user(
     response = _signup(unauthenticated_client, monkeypatch)
 
     assert response.status_code == 201
-    user = db_session.query(User).filter_by(username="newuser").one()
+    user = db_session.query(User).filter_by(email="newuser@example.com").one()
     assert user.is_verified is False
     assert user.is_admin is False
 
@@ -39,7 +41,7 @@ def test_signup_records_the_submitted_language(
     response = _signup(unauthenticated_client, monkeypatch, language="en")
 
     assert response.status_code == 201
-    user = db_session.query(User).filter_by(username="newuser").one()
+    user = db_session.query(User).filter_by(email="newuser@example.com").one()
     assert user.language == "en"
 
 
@@ -49,7 +51,7 @@ def test_signup_falls_back_to_the_default_language_when_none_is_submitted_or_uns
     response = _signup(unauthenticated_client, monkeypatch, language="fr")
 
     assert response.status_code == 201
-    user = db_session.query(User).filter_by(username="newuser").one()
+    user = db_session.query(User).filter_by(email="newuser@example.com").one()
     assert user.language == "ro"
 
 
@@ -57,7 +59,7 @@ def test_signup_records_terms_acceptance(unauthenticated_client: TestClient, mon
     response = _signup(unauthenticated_client, monkeypatch)
 
     assert response.status_code == 201
-    user = db_session.query(User).filter_by(username="newuser").one()
+    user = db_session.query(User).filter_by(email="newuser@example.com").one()
     assert user.terms_accepted_at is not None
     assert user.terms_version == auth_router.TERMS_VERSION
 
@@ -76,20 +78,6 @@ def test_signup_rejects_failed_captcha(unauthenticated_client: TestClient, monke
     assert response.status_code == 400
 
 
-def test_signup_rejects_duplicate_username(
-    unauthenticated_client: TestClient, monkeypatch, admin_user: User
-) -> None:
-    response = _signup(unauthenticated_client, monkeypatch, username=admin_user.username)
-
-    assert response.status_code == 400
-
-
-def test_signup_rejects_non_alphanumeric_username(unauthenticated_client: TestClient, monkeypatch) -> None:
-    response = _signup(unauthenticated_client, monkeypatch, username="new-user!")
-
-    assert response.status_code == 422
-
-
 def test_signup_rejects_duplicate_email(
     unauthenticated_client: TestClient, monkeypatch, admin_user: User
 ) -> None:
@@ -104,13 +92,12 @@ def test_signup_with_existing_unverified_email_resends_instead_of_erroring(
     _signup(unauthenticated_client, monkeypatch)
     first_token = db_session.query(EmailVerificationToken).one().token
 
-    response = _signup(unauthenticated_client, monkeypatch, username="adifferentusername")
+    response = _signup(unauthenticated_client, monkeypatch)
 
     assert response.status_code == 201
     assert "already exists but hasn't been verified" in response.json()["detail"]
-    # Recovered the existing account rather than creating a second row under the new username.
-    existing = db_session.query(User).filter_by(email="newuser@example.com").one()
-    assert existing.username == "newuser"
+    # Recovered the existing account rather than creating a second row for the same email.
+    assert db_session.query(User).filter_by(email="newuser@example.com").count() == 1
     # A fresh token was issued alongside the original (both remain individually valid/checkable).
     tokens = db_session.query(EmailVerificationToken).all()
     assert len(tokens) == 2
@@ -121,9 +108,9 @@ def test_signup_with_existing_unverified_email_does_not_change_the_password(
     unauthenticated_client: TestClient, monkeypatch, db_session: Session
 ) -> None:
     _signup(unauthenticated_client, monkeypatch)
-    original_hash = db_session.query(User).filter_by(username="newuser").one().password_hash
+    original_hash = db_session.query(User).filter_by(email="newuser@example.com").one().password_hash
 
-    _signup(unauthenticated_client, monkeypatch, username="someoneelse", password="a-totally-different-pw")
+    _signup(unauthenticated_client, monkeypatch, password="a-totally-different-pw")
 
     assert db_session.query(User).filter_by(email="newuser@example.com").one().password_hash == original_hash
 
@@ -133,17 +120,17 @@ def test_resend_verification_requires_captcha(unauthenticated_client: TestClient
     monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: False)
 
     response = unauthenticated_client.post(
-        "/auth/resend-verification", json={"username": "newuser", "turnstile_token": "bad"}
+        "/auth/resend-verification", json={"email": "newuser@example.com", "turnstile_token": "bad"}
     )
 
     assert response.status_code == 400
 
 
-def test_resend_verification_rejects_unknown_username(unauthenticated_client: TestClient, monkeypatch) -> None:
+def test_resend_verification_rejects_unknown_email(unauthenticated_client: TestClient, monkeypatch) -> None:
     monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: True)
 
     response = unauthenticated_client.post(
-        "/auth/resend-verification", json={"username": "nobody", "turnstile_token": "test-token"}
+        "/auth/resend-verification", json={"email": "nobody@example.com", "turnstile_token": "test-token"}
     )
 
     assert response.status_code == 404
@@ -157,7 +144,7 @@ def test_resend_verification_sends_a_new_token_for_an_unverified_user(
     monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: True)
 
     response = unauthenticated_client.post(
-        "/auth/resend-verification", json={"username": "newuser", "turnstile_token": "test-token"}
+        "/auth/resend-verification", json={"email": "newuser@example.com", "turnstile_token": "test-token"}
     )
 
     assert response.status_code == 200
@@ -179,7 +166,7 @@ def test_resend_verification_is_a_no_op_for_an_already_verified_user(
     monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: True)
 
     response = unauthenticated_client.post(
-        "/auth/resend-verification", json={"username": "newuser", "turnstile_token": "test-token"}
+        "/auth/resend-verification", json={"email": "newuser@example.com", "turnstile_token": "test-token"}
     )
 
     assert response.status_code == 200
@@ -192,7 +179,7 @@ def test_login_rejects_unverified_user(unauthenticated_client: TestClient, monke
     _signup(unauthenticated_client, monkeypatch)
 
     response = unauthenticated_client.post(
-        "/auth/login", json={"username": "newuser", "password": "supersecret1"}
+        "/auth/login", json={"email": "newuser@example.com", "password": "supersecret1"}
     )
 
     assert response.status_code == 401
@@ -208,7 +195,7 @@ def test_verify_email_then_login_succeeds(
     assert verify_response.status_code == 200
 
     login_response = unauthenticated_client.post(
-        "/auth/login", json={"username": "newuser", "password": "supersecret1"}
+        "/auth/login", json={"email": "newuser@example.com", "password": "supersecret1"}
     )
     assert login_response.status_code == 200
     body = login_response.json()
@@ -216,7 +203,7 @@ def test_verify_email_then_login_succeeds(
     assert body["token_type"] == "bearer"
     assert body["user"] == {
         "id": token_row.user_id,
-        "username": "newuser",
+        "email": "newuser@example.com",
         "is_admin": False,
         "is_super_admin": False,
     }
@@ -230,7 +217,7 @@ def test_login_rejects_wrong_password_once_verified(
     unauthenticated_client.post("/auth/verify-email", json={"token": token_row.token})
 
     response = unauthenticated_client.post(
-        "/auth/login", json={"username": "newuser", "password": "wrong"}
+        "/auth/login", json={"email": "newuser@example.com", "password": "wrong"}
     )
 
     assert response.status_code == 401
@@ -250,6 +237,104 @@ def test_verify_email_rejects_reused_token(
     unauthenticated_client.post("/auth/verify-email", json={"token": token_row.token})
 
     response = unauthenticated_client.post("/auth/verify-email", json={"token": token_row.token})
+
+    assert response.status_code == 400
+
+
+def _forgot_password(client: TestClient, monkeypatch, **overrides):
+    monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: True)
+    monkeypatch.setattr(auth_router, "publish_email_job", lambda *a: None)
+    payload = {"email": "newuser@example.com", "turnstile_token": "test-token", **overrides}
+    return client.post("/auth/forgot-password", json=payload)
+
+
+def test_forgot_password_requires_captcha(unauthenticated_client: TestClient, monkeypatch) -> None:
+    monkeypatch.setattr(auth_router, "verify_turnstile", lambda token, secret: False)
+
+    response = unauthenticated_client.post(
+        "/auth/forgot-password", json={"email": "newuser@example.com", "turnstile_token": "bad"}
+    )
+
+    assert response.status_code == 400
+
+
+def test_forgot_password_gives_the_same_generic_response_whether_or_not_the_email_exists(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _signup(unauthenticated_client, monkeypatch)
+
+    known_response = _forgot_password(unauthenticated_client, monkeypatch)
+    unknown_response = _forgot_password(unauthenticated_client, monkeypatch, email="nobody@example.com")
+
+    assert known_response.status_code == 200
+    assert unknown_response.status_code == 200
+    assert known_response.json() == unknown_response.json()
+    # Only the real account actually got a token — the generic response above doesn't leak that.
+    assert db_session.query(PasswordResetToken).count() == 1
+
+
+def test_reset_password_succeeds_and_old_password_stops_working(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _signup(unauthenticated_client, monkeypatch)
+    verification_token = db_session.query(EmailVerificationToken).one()
+    unauthenticated_client.post("/auth/verify-email", json={"token": verification_token.token})
+    _forgot_password(unauthenticated_client, monkeypatch)
+    reset_token = db_session.query(PasswordResetToken).one()
+
+    response = unauthenticated_client.post(
+        "/auth/reset-password", json={"token": reset_token.token, "new_password": "a-new-password1"}
+    )
+    assert response.status_code == 200
+
+    old_login = unauthenticated_client.post(
+        "/auth/login", json={"email": "newuser@example.com", "password": "supersecret1"}
+    )
+    assert old_login.status_code == 401
+
+    new_login = unauthenticated_client.post(
+        "/auth/login", json={"email": "newuser@example.com", "password": "a-new-password1"}
+    )
+    assert new_login.status_code == 200
+
+
+def test_reset_password_rejects_an_invalid_token(unauthenticated_client: TestClient) -> None:
+    response = unauthenticated_client.post(
+        "/auth/reset-password", json={"token": "not-a-real-token", "new_password": "a-new-password1"}
+    )
+
+    assert response.status_code == 400
+
+
+def test_reset_password_rejects_a_reused_token(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _signup(unauthenticated_client, monkeypatch)
+    _forgot_password(unauthenticated_client, monkeypatch)
+    reset_token = db_session.query(PasswordResetToken).one()
+    unauthenticated_client.post(
+        "/auth/reset-password", json={"token": reset_token.token, "new_password": "a-new-password1"}
+    )
+
+    response = unauthenticated_client.post(
+        "/auth/reset-password", json={"token": reset_token.token, "new_password": "another-password1"}
+    )
+
+    assert response.status_code == 400
+
+
+def test_reset_password_rejects_an_expired_token(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _signup(unauthenticated_client, monkeypatch)
+    _forgot_password(unauthenticated_client, monkeypatch)
+    reset_token = db_session.query(PasswordResetToken).one()
+    reset_token.expires_at = datetime.now(timezone.utc) - timedelta(minutes=1)
+    db_session.commit()
+
+    response = unauthenticated_client.post(
+        "/auth/reset-password", json={"token": reset_token.token, "new_password": "a-new-password1"}
+    )
 
     assert response.status_code == 400
 

@@ -10,10 +10,9 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
-    # Nullable so the migration-seeded admin (created directly in the DB, not through signup)
-    # doesn't need one — every self-service signup always sets it.
-    email: Mapped[str | None] = mapped_column(String(255), unique=True, nullable=True)
+    # The account's only identifier now — login, JWT subject, and every ownership/display lookup
+    # go through this (see migration 0033, which dropped the old `username` column).
+    email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     # A stricter tier than is_admin — gates the Settings subpage (API keys, SMTP, Turnstile,

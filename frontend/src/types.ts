@@ -27,8 +27,12 @@ export interface Recipe {
   approved_at: string | null;
   available_languages: string[];
   processing_status: RecipeProcessingStatus;
-  // Every recipe has an owner now — private to them by default, see is_shared.
-  owner_username: string;
+  // Every recipe has an owner now — private to them by default, see is_shared. Safe to expose
+  // to anyone (just an id, used client-side for self/ownership checks).
+  owner_user_id: number;
+  // Only populated for an admin caller — null for a public/non-admin request. See api's
+  // RecipeRead.owner_email.
+  owner_email: string | null;
   // Only ever true for a manually-added recipe (source_url is null) — imports are never
   // shareable. A shared recipe is only actually visible to everyone once status is "approved."
   is_shared: boolean;
@@ -101,7 +105,10 @@ export interface ImportJob {
   error_kind: ImportErrorKind | null;
   created_at: string;
   // Whoever ran the import — the resulting recipe is always private to them, never shareable.
-  created_by_username: string | null;
+  created_by_user_id: number | null;
+  // Only populated for an admin caller — null for a non-admin request. See api's
+  // ImportJobRead.created_by_email.
+  created_by_email: string | null;
   // Set once the owner dismisses a failed job from their account page. Never populated/consulted
   // by the admin failed-imports page.
   dismissed_at: string | null;
@@ -210,22 +217,20 @@ export interface PublicLanguages {
 
 export interface User {
   id: number;
-  username: string;
+  email: string;
   is_admin: boolean;
   // Stricter than is_admin — only this tier can reach the Settings subpage.
   is_super_admin: boolean;
 }
 
 export interface UserProfile extends User {
-  email: string | null;
   // Lifetime count of successful imports — meaningless for admins (exempt from the cap).
   imported_recipes_count: number;
 }
 
 export interface UserAdmin {
   id: number;
-  username: string;
-  email: string | null;
+  email: string;
   is_verified: boolean;
   created_at: string;
   // Null if the account has never logged in since this column existed.
@@ -243,7 +248,6 @@ export interface LoginResponse {
 }
 
 export interface SignupRequest {
-  username: string;
   email: string;
   password: string;
   turnstile_token: string;

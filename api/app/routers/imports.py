@@ -160,7 +160,8 @@ def _serialize(job: ImportJob, current_user: AuthUser) -> ImportJobRead:
         error=job.error if current_user.is_admin else None,
         error_kind=job.error_kind,
         created_at=job.created_at,
-        created_by_username=job.created_by_username,
+        created_by_user_id=job.created_by_user_id,
+        created_by_email=job.created_by_email if current_user.is_admin else None,
         dismissed_at=job.dismissed_at,
         admin_reviewed_at=job.admin_reviewed_at,
     )

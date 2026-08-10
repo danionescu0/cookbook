@@ -36,7 +36,6 @@ function renderForm() {
 }
 
 async function fillValidForm(user: ReturnType<typeof userEvent.setup>) {
-  await user.type(screen.getByLabelText("Username"), "newuser");
   await user.type(screen.getByLabelText("Email"), "newuser@example.com");
   await user.type(screen.getByLabelText("Password"), "supersecret1");
   await user.type(screen.getByLabelText("Confirm password"), "supersecret1");
@@ -125,7 +124,6 @@ describe("SignupForm", () => {
 
     await waitFor(() =>
       expect(mockedApi.signup).toHaveBeenCalledWith({
-        username: "newuser",
         email: "newuser@example.com",
         password: "supersecret1",
         turnstile_token: "test-turnstile-token",
@@ -135,40 +133,20 @@ describe("SignupForm", () => {
     );
   });
 
-  it("rejects a username with non-alphanumeric characters instead of submitting", async () => {
+  it("shows a forgot-password link instead of a dead-end error when the email is already registered", async () => {
+    mockedApi.signup.mockRejectedValue(new Error("That email is already registered"));
     const user = userEvent.setup();
     renderForm();
-    await user.type(screen.getByLabelText("Username"), "new-user!");
-    await user.type(screen.getByLabelText("Email"), "newuser@example.com");
-    await user.type(screen.getByLabelText("Password"), "supersecret1");
-    await user.type(screen.getByLabelText("Confirm password"), "supersecret1");
-    await user.click(await screen.findByRole("button", { name: "solve captcha" }));
+    await fillValidForm(user);
 
     await user.click(screen.getByRole("button", { name: "Sign up" }));
     await user.click(await screen.findByRole("button", { name: "I have read and agree" }));
     await user.click(screen.getByRole("button", { name: "Sign up" }));
 
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Username can only contain letters and numbers."
+    expect(await screen.findByRole("link", { name: "Forgot your password?" })).toHaveAttribute(
+      "href",
+      "/forgot-password"
     );
-    expect(mockedApi.signup).not.toHaveBeenCalled();
-  });
-
-  it("flags an invalid username as soon as the field loses focus, before any submit attempt", async () => {
-    const user = userEvent.setup();
-    renderForm();
-
-    await user.type(screen.getByLabelText("Username"), "new-user!");
-    await user.tab();
-
-    expect(await screen.findByRole("alert")).toHaveTextContent(
-      "Username can only contain letters and numbers."
-    );
-
-    await user.clear(screen.getByLabelText("Username"));
-    await user.type(screen.getByLabelText("Username"), "newuser");
-
-    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
 
   it("flags an invalid email on blur", async () => {
@@ -206,7 +184,7 @@ describe("SignupForm", () => {
     const user = userEvent.setup();
     renderForm();
 
-    screen.getByLabelText("Username").focus();
+    screen.getByLabelText("Email").focus();
     await user.tab();
 
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();

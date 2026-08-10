@@ -9,7 +9,7 @@ import { primaryButton, secondaryButton } from "../ui/buttonStyles";
 export function LoginForm() {
   const { t } = useLanguage();
   const { login } = useAuth();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -38,7 +38,7 @@ export function LoginForm() {
     setResendMessage(null);
     setSubmitting(true);
     try {
-      await login(username, password);
+      await login(email, password);
     } catch (e) {
       if (String(e).includes("not verified")) {
         setError(t.login.unverifiedError);
@@ -56,7 +56,7 @@ export function LoginForm() {
     setResendError(null);
     setResendSubmitting(true);
     try {
-      const response = await api.resendVerification(username, resendToken);
+      const response = await api.resendVerification(email, resendToken);
       setResendMessage(response.detail);
       setShowResend(false);
     } catch (e) {
@@ -72,14 +72,15 @@ export function LoginForm() {
 
       <form onSubmit={handleSubmit} className="mt-4 flex flex-col gap-3">
         <div className="flex flex-col gap-1">
-          <label htmlFor="login-username" className="text-sm font-medium text-ink/70">
-            {t.login.usernameLabel}
+          <label htmlFor="login-email" className="text-sm font-medium text-ink/70">
+            {t.login.emailLabel}
           </label>
           <input
-            id="login-username"
-            autoComplete="username"
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            id="login-email"
+            type="email"
+            autoComplete="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             className="rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
           />
         </div>
@@ -138,6 +139,11 @@ export function LoginForm() {
         {t.login.signupPrompt}{" "}
         <Link to="/signup" className="text-terracotta hover:underline">
           {t.login.signupLink}
+        </Link>
+      </p>
+      <p className="mt-1 text-sm">
+        <Link to="/forgot-password" className="text-terracotta hover:underline">
+          {t.login.forgotPasswordLink}
         </Link>
       </p>
       <p className="mt-1 text-xs text-ink/50">{t.login.backofficeNotice}</p>

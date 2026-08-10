@@ -45,7 +45,8 @@ const cake: Recipe = {
   approved_at: "2026-07-23T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "admin",
+  owner_user_id: 2,
+  owner_email: null,
   is_shared: true,
   import_reviewed_at: null,
 };
@@ -55,7 +56,7 @@ const soup: Recipe = {
   id: 2,
   title: "Soup",
   slug: "soup",
-  owner_username: "someone",
+  owner_user_id: 1,
   is_shared: false,
 };
 
@@ -93,12 +94,11 @@ function renderBrowser() {
   );
 }
 
-async function logInAs(username: string) {
+async function logInAs(email: string) {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
     id: 1,
-    username,
-    email: null,
+    email,
     is_admin: false,
     is_super_admin: false,
     imported_recipes_count: 0,

@@ -124,9 +124,9 @@ export function FailedImportsManager() {
                   {categoryName(job.category_id) !== null && (
                     <span className="ml-2 text-sm text-ink/50">{categoryName(job.category_id)}</span>
                   )}
-                  {job.created_by_username && (
+                  {job.created_by_email && (
                     <span className="ml-2 text-sm text-ink/50">
-                      {t.importManager.importedBy.replace("{username}", job.created_by_username)}
+                      {t.importManager.importedBy.replace("{email}", job.created_by_email)}
                     </span>
                   )}
                   <span className="ml-2 text-sm text-ink/50">{formatDate(job.created_at)}</span>

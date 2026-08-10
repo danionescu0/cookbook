@@ -43,17 +43,17 @@ const cake: Recipe = {
   approved_at: "2026-08-06T00:00:00Z",
   available_languages: ["en"],
   processing_status: null,
-  owner_username: "someone",
+  owner_user_id: 2,
+  owner_email: null,
   is_shared: false,
   import_reviewed_at: null,
 };
 
-function logIn(username: string, isAdmin = false) {
+function logIn(email: string, isAdmin = false) {
   window.localStorage.setItem(AUTH_STORAGE_KEY, "a-token");
   mockedApi.me.mockResolvedValue({
-    id: username === "someone" ? 2 : 3,
-    username,
-    email: null,
+    id: email === "someone" ? 2 : 3,
+    email,
     is_admin: isAdmin,
     is_super_admin: false,
     imported_recipes_count: 0,

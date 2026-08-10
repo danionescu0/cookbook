@@ -78,8 +78,13 @@ class RecipeRead(BaseModel):
     # _processing_statuses.
     processing_status: str | None = None
     # Every recipe has an owner now (see migration 0020) — this is always set, not just for user
-    # submissions.
-    owner_username: str
+    # submissions. Safe to expose to anyone (just an id, used client-side for self/ownership
+    # checks) — owner_email below is the sensitive one.
+    owner_user_id: int
+    # Only populated for an admin caller — see routers/recipes.py's _serialize, same nulling
+    # pattern routers/imports.py already uses for a non-admin's ImportJobRead.error. A public or
+    # non-owner caller must never learn another user's real email address.
+    owner_email: str | None = None
     # True only for a manually-added recipe (never an import) whose owner opted to make it
     # visible to everyone once approved — see routers/recipes.py's visibility rule.
     is_shared: bool

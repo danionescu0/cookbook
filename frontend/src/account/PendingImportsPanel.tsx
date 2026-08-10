@@ -59,7 +59,7 @@ export function PendingImportsPanel({
   // moderation) — this is a personal review panel on the Account page, not a moderation tool, so
   // it's narrowed to the viewer's own regardless of role. Cross-user triage lives on the
   // dedicated Failed Imports back office page instead.
-  const myJobs = jobs.filter((job) => job.created_by_username === user?.username);
+  const myJobs = jobs.filter((job) => job.created_by_user_id === user?.id);
 
   const reload = () => api.listImportJobs().then(setJobs).catch((e) => setError(String(e)));
 

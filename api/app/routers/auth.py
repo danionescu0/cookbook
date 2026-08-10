@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
-from pydantic import BaseModel, EmailStr, Field, field_validator
+from pydantic import BaseModel, EmailStr, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -12,6 +12,7 @@ from app.captcha import verify_turnstile
 from app.database import get_db
 from app.models.email_job import EmailJob, EmailJobStatus
 from app.models.email_verification_token import EmailVerificationToken
+from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
 from app.queue import publish_email_job
 from app.settings_service import get_settings
@@ -19,6 +20,9 @@ from app.settings_service import get_settings
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 _VERIFICATION_TOKEN_LIFETIME = timedelta(hours=24)
+# Shorter than the verification window above — a reset link is more sensitive (it directly grants
+# account access), so it's worth making a stale, forgotten link expire sooner.
+_PASSWORD_RESET_TOKEN_LIFETIME = timedelta(hours=1)
 
 # Bumped whenever the Terms and Conditions text changes materially. Kept in sync by hand with the
 # frontend's copy of the same string (frontend/src/i18n/translations/{en,ro}.ts, terms.version) —
@@ -27,7 +31,6 @@ TERMS_VERSION = "2026-07-31"
 
 
 class SignupRequest(BaseModel):
-    username: str = Field(min_length=3, max_length=50)
     email: EmailStr
     password: str = Field(min_length=8)
     turnstile_token: str
@@ -37,23 +40,16 @@ class SignupRequest(BaseModel):
     # not something worth failing a signup over.
     language: str | None = None
 
-    @field_validator("username")
-    @classmethod
-    def username_must_be_alphanumeric(cls, value: str) -> str:
-        if not value.isalnum() or not value.isascii():
-            raise ValueError("Username can only contain letters and numbers")
-        return value
-
 
 class UserRead(BaseModel):
     id: int
-    username: str
+    email: str
     is_admin: bool
     is_super_admin: bool
 
 
 class LoginRequest(BaseModel):
-    username: str
+    email: EmailStr
     password: str
 
 
@@ -68,12 +64,22 @@ class VerifyEmailRequest(BaseModel):
 
 
 class ResendVerificationRequest(BaseModel):
-    username: str
+    email: EmailStr
     turnstile_token: str
 
 
-def _enqueue_verification_email(db: Session, user_id: int) -> None:
-    job = EmailJob(user_id=user_id, kind="verification", status=EmailJobStatus.QUEUED)
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+    turnstile_token: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8)
+
+
+def _enqueue_email_job(db: Session, user_id: int, kind: str) -> None:
+    job = EmailJob(user_id=user_id, kind=kind, status=EmailJobStatus.QUEUED)
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -97,7 +103,7 @@ def _resend_verification_email(db: Session, user: User) -> None:
     )
     db.add(token)
     db.commit()
-    _enqueue_verification_email(db, user.id)
+    _enqueue_email_job(db, user.id, "verification")
 
 
 @router.post("/signup", status_code=201)
@@ -125,9 +131,6 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
             )
         }
 
-    if db.scalar(select(User).where(User.username == payload.username)) is not None:
-        raise HTTPException(status_code=400, detail="That username is already taken")
-
     language = (
         payload.language
         if payload.language in app_settings.supported_languages_list
@@ -136,7 +139,6 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> dict[str, s
 
     password_hash = bcrypt.hashpw(payload.password.encode(), bcrypt.gensalt()).decode("ascii")
     user = User(
-        username=payload.username,
         email=payload.email,
         password_hash=password_hash,
         is_verified=False,
@@ -159,13 +161,11 @@ def resend_verification(payload: ResendVerificationRequest, db: Session = Depend
     if not verify_turnstile(payload.turnstile_token, app_settings.turnstile_secret_key):
         raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
 
-    user = db.scalar(select(User).where(User.username == payload.username))
+    user = db.scalar(select(User).where(User.email == payload.email))
     if user is None:
-        raise HTTPException(status_code=404, detail="No account with that username")
+        raise HTTPException(status_code=404, detail="No account with that email")
     if user.is_verified:
         return {"detail": "This account is already verified — you can log in."}
-    if not user.email:
-        raise HTTPException(status_code=400, detail="This account has no email on file")
 
     _resend_verification_email(db, user)
     return {"detail": "A new verification email has been sent."}
@@ -199,9 +199,9 @@ def verify_email(payload: VerifyEmailRequest, db: Session = Depends(get_db)) -> 
 
 @router.post("/login", response_model=LoginResponse)
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse:
-    user = db.scalar(select(User).where(User.username == payload.username))
+    user = db.scalar(select(User).where(User.email == payload.email))
     if user is None or not bcrypt.checkpw(payload.password.encode(), user.password_hash.encode()):
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(status_code=401, detail="Invalid email or password")
     if not user.is_verified:
         raise HTTPException(
             status_code=401, detail="Account not verified yet — check your email for the verification link."
@@ -213,6 +213,59 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> LoginResponse
     return LoginResponse(
         access_token=create_access_token(user),
         user=UserRead(
-            id=user.id, username=user.username, is_admin=user.is_admin, is_super_admin=user.is_super_admin
+            id=user.id, email=user.email, is_admin=user.is_admin, is_super_admin=user.is_super_admin
         ),
     )
+
+
+@router.post("/forgot-password")
+def forgot_password(payload: ForgotPasswordRequest, db: Session = Depends(get_db)) -> dict[str, str]:
+    app_settings = get_settings(db)
+    if not verify_turnstile(payload.turnstile_token, app_settings.turnstile_secret_key):
+        raise HTTPException(status_code=400, detail="CAPTCHA verification failed")
+
+    # Always the same response whether or not the email is registered — telling a caller "no
+    # account with that email" here would let anyone enumerate registered addresses one guess at
+    # a time. The email itself (sent only when a user is actually found) is where any real
+    # distinction shows up.
+    generic_response = {"detail": "If that email has an account, we've sent a password reset link."}
+
+    user = db.scalar(select(User).where(User.email == payload.email))
+    if user is None:
+        return generic_response
+
+    token = PasswordResetToken(
+        user_id=user.id,
+        token=secrets.token_urlsafe(32),
+        expires_at=datetime.now(timezone.utc) + _PASSWORD_RESET_TOKEN_LIFETIME,
+    )
+    db.add(token)
+    db.commit()
+    _enqueue_email_job(db, user.id, "password_reset")
+
+    return generic_response
+
+
+@router.post("/reset-password")
+def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db)) -> dict[str, str]:
+    token = db.scalar(select(PasswordResetToken).where(PasswordResetToken.token == payload.token))
+    if token is None:
+        raise HTTPException(status_code=400, detail="Invalid reset token")
+    if token.used_at is not None:
+        raise HTTPException(status_code=400, detail="This reset link was already used")
+    # Same SQLite-vs-Postgres tzinfo defensiveness as verify_email above.
+    expires_at = token.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=timezone.utc)
+    if expires_at < datetime.now(timezone.utc):
+        raise HTTPException(status_code=400, detail="This reset link has expired")
+
+    user = db.get(User, token.user_id)
+    if user is None:
+        raise HTTPException(status_code=400, detail="Invalid reset token")
+
+    user.password_hash = bcrypt.hashpw(payload.new_password.encode(), bcrypt.gensalt()).decode("ascii")
+    token.used_at = datetime.now(timezone.utc)
+    db.commit()
+
+    return {"detail": "Password reset — you can log in now."}

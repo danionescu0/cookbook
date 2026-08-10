@@ -181,10 +181,8 @@ export function AccountPage() {
         )}
         {profile && (
           <dl className="mt-3 grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
-            <dt className="text-ink/60">{t.account.usernameLabel}</dt>
-            <dd className="text-ink">{profile.username}</dd>
             <dt className="text-ink/60">{t.account.emailLabel}</dt>
-            <dd className="text-ink">{profile.email ?? t.account.emailNotSet}</dd>
+            <dd className="text-ink">{profile.email}</dd>
           </dl>
         )}
 

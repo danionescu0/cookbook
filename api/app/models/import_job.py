@@ -80,5 +80,5 @@ class ImportJob(Base):
     created_by: Mapped["User | None"] = relationship()
 
     @property
-    def created_by_username(self) -> str | None:
-        return self.created_by.username if self.created_by else None
+    def created_by_email(self) -> str | None:
+        return self.created_by.email if self.created_by else None
