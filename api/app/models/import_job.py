@@ -21,6 +21,11 @@ class ImportErrorKind(str, enum.Enum):
     # routers/imports.py's _serialize), so the split only needs to be coarse enough to pick the
     # right canned copy.
     DISALLOWED = "disallowed"
+    # The page was fetched fine, but extraction came back with no real content (e.g. a dead recipe
+    # URL that now redirects to an unrelated page) — see worker/app/handlers.py's
+    # NotARecipeError. Retrying won't help either, same as DISALLOWED, so it gets its own
+    # non-actionable message instead of "an admin will take a look."
+    NOT_A_RECIPE = "not_a_recipe"
     TECHNICAL = "technical"
 
 

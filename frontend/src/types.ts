@@ -87,7 +87,7 @@ export type ImportJobStatus =
   | "done"
   | "failed";
 
-export type ImportErrorKind = "disallowed" | "technical";
+export type ImportErrorKind = "disallowed" | "not_a_recipe" | "technical";
 
 export interface ImportJob {
   id: number;

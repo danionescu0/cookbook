@@ -31,6 +31,22 @@ from app.slugify import generate_unique_slug
 logger = logging.getLogger(__name__)
 
 
+class NotARecipeError(Exception):
+    """Extraction technically succeeded, but every returned translation was blank.
+
+    Claude/DeepSeek is called with a forced tool choice (see claude_client.extract_recipe), so it
+    has no way to say "there's no recipe here" — faced with a non-recipe page (most often a dead
+    URL that now redirects somewhere unrelated, e.g. a since-deleted post redirecting to the
+    site's homepage or the author's Instagram profile), it returns an otherwise-valid tool call
+    with empty title/ingredients/steps instead. Left unchecked, that silently saves a real,
+    `APPROVED` recipe row with nothing in it — see README Design Decisions.
+    """
+
+
+def _is_blank_translation(t: dict) -> bool:
+    return not t.get("title", "").strip() and not t.get("ingredients") and not t.get("steps")
+
+
 def _enqueue_nutrition_job(db: Session, recipe_id: int) -> None:
     # Mirrors what the old manual "Enrich nutrition" button used to do via
     # POST /recipes/{id}/nutrition — enrichment is now automatic, triggered right after a
@@ -91,6 +107,9 @@ def _finish_import(
 ) -> None:
     if not translations_data:
         raise RecipeExtractionError("Claude returned no translations")
+
+    if all(_is_blank_translation(t) for t in translations_data):
+        raise NotARecipeError("This page doesn't appear to contain a recipe")
 
     # Validate/construct before touching the DB: if this raises partway (e.g. a malformed
     # translation entry), nothing has been added to the session yet, so the caller's `except`
@@ -214,6 +233,13 @@ def handle_import_job(body: bytes, db: Session) -> None:
         job.status = ImportJobStatus.FAILED
         job.error = f"failed to fetch page: {exc}"
         job.error_kind = ImportErrorKind.TECHNICAL
+        db.commit()
+    except NotARecipeError as exc:
+        job.status = ImportJobStatus.FAILED
+        job.error = str(exc)
+        # Not a bug on our end and retrying the same URL won't help — same "distinct,
+        # non-actionable message" treatment as ScrapeDisallowedError above.
+        job.error_kind = ImportErrorKind.NOT_A_RECIPE
         db.commit()
     except RecipeExtractionError as exc:
         job.status = ImportJobStatus.FAILED

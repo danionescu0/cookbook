@@ -26,6 +26,7 @@ class ImportErrorKind(str, enum.Enum):
     # Kept in sync by hand with api/app/models/import_job.py's ImportErrorKind — see the
     # "Worker/API code sharing" design decision.
     DISALLOWED = "disallowed"
+    NOT_A_RECIPE = "not_a_recipe"
     TECHNICAL = "technical"
 
 

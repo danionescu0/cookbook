@@ -133,7 +133,9 @@ export function FailedImportsManager() {
                   <span className="ml-2 rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-700">
                     {job.error_kind === "disallowed"
                       ? t.failedImportsManager.errorKindDisallowed
-                      : t.failedImportsManager.errorKindTechnical}
+                      : job.error_kind === "not_a_recipe"
+                        ? t.failedImportsManager.errorKindNotARecipe
+                        : t.failedImportsManager.errorKindTechnical}
                   </span>
                 </div>
                 <div className="flex flex-wrap gap-2">

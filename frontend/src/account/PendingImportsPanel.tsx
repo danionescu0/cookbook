@@ -194,7 +194,9 @@ export function PendingImportsPanel({
                   <p className="mt-1 text-sm text-red-700">
                     {job.error_kind === "disallowed"
                       ? t.account.errorDisallowed
-                      : t.account.errorTechnical}
+                      : job.error_kind === "not_a_recipe"
+                        ? t.account.errorNotARecipe
+                        : t.account.errorTechnical}
                   </p>
                 </div>
                 <div className="flex shrink-0 flex-wrap items-center gap-3">

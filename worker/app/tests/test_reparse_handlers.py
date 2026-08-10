@@ -123,6 +123,37 @@ def test_handle_reparse_job_updates_existing_translation_in_place(
     assert recipe.images == []
 
 
+def test_handle_reparse_job_fails_without_touching_the_recipe_when_extraction_comes_back_blank(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A source_url that now redirects to an unrelated page (dead link) must not silently wipe out
+    # this recipe's real, already-published content with blank fields.
+    _seed_app_settings(db_session)
+    recipe = _create_recipe(db_session)
+    job = _create_job(db_session, recipe.id)
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(
+        reparse_handlers,
+        "extract_recipe",
+        lambda html, langs, key, category_names, **kwargs: {
+            "images": [],
+            "translations": [{"language": "en", "title": "", "ingredients": [], "steps": []}],
+        },
+    )
+
+    handle_reparse_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == RecipeReparseJobStatus.FAILED
+    assert job.error == "This page doesn't appear to contain a recipe"
+
+    translation = db_session.scalars(
+        select(RecipeTranslation).where(RecipeTranslation.recipe_id == recipe.id)
+    ).one()
+    assert translation.title == "Soup"
+    assert translation.ingredients == ["water"]
+
+
 def test_handle_reparse_job_gives_a_new_language_a_fresh_slug(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

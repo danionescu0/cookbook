@@ -69,6 +69,16 @@ describe("FailedImportsManager", () => {
     expect(screen.getByText("Technical")).toBeInTheDocument();
   });
 
+  it("shows the not-a-recipe badge for that error kind", async () => {
+    mockedApi.listFailedImportsPage.mockResolvedValue(
+      page([{ ...failedJob, error_kind: "not_a_recipe" }])
+    );
+
+    renderManager();
+
+    expect(await screen.findByText("Not a recipe")).toBeInTheDocument();
+  });
+
   it("doesn't show a category badge when the job never reached category resolution", async () => {
     // Most failed jobs never get that far — see worker/app/handlers.py's handle_import_job,
     // where category resolution happens near the end of the try block, after fetch/extraction

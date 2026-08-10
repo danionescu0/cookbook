@@ -185,6 +185,16 @@ describe("PendingImportsPanel", () => {
     ).toBeInTheDocument();
   });
 
+  it("shows a specific message when the page wasn't a recipe at all", async () => {
+    mockedApi.listImportJobs.mockResolvedValue([{ ...failedJob, error_kind: "not_a_recipe" }]);
+
+    renderPanel([]);
+
+    expect(
+      await screen.findByText("This page doesn't seem to contain a recipe, so there was nothing to import.")
+    ).toBeInTheDocument();
+  });
+
   it("ignores an already-dismissed failed job", async () => {
     mockedApi.listImportJobs.mockResolvedValue([{ ...failedJob, dismissed_at: "2026-08-06T00:00:00Z" }]);
 

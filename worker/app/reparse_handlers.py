@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.claude_client import RecipeExtractionError, extract_recipe, parse_recipe_from_text
-from app.handlers import _enqueue_nutrition_job
+from app.handlers import NotARecipeError, _enqueue_nutrition_job, _is_blank_translation
 from app.instagram_client import InstagramFetchError, fetch_instagram_post
 from app.models import Category, Recipe, RecipeReparseJob, RecipeReparseJobStatus, RecipeTranslation
 from app.scraping import ScrapeDisallowedError, fetch_page
@@ -116,6 +116,11 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
         translations_data = extracted.get("translations", [])
         if not translations_data:
             raise RecipeExtractionError("Claude returned no translations")
+        if all(_is_blank_translation(t) for t in translations_data):
+            # Especially important to catch here, not just on a fresh import: this path updates
+            # an *existing* recipe's translations in place, so a blank result would silently wipe
+            # out real, already-published content instead of just failing to create a new row.
+            raise NotARecipeError("This page doesn't appear to contain a recipe")
 
         _update_translations_in_place(db, recipe, translations_data)
 
@@ -146,6 +151,11 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
         db.rollback()
         job.status = RecipeReparseJobStatus.FAILED
         job.error = f"failed to fetch page: {exc}"
+        db.commit()
+    except NotARecipeError as exc:
+        db.rollback()
+        job.status = RecipeReparseJobStatus.FAILED
+        job.error = str(exc)
         db.commit()
     except RecipeExtractionError as exc:
         db.rollback()

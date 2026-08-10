@@ -336,6 +336,65 @@ def test_handle_import_job_fails_when_translations_empty(
     assert db_session.scalars(select(Recipe)).first() is None
 
 
+def test_handle_import_job_fails_as_not_a_recipe_when_every_translation_is_blank(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Reproduces a real report: a dead recipe URL that now redirects to an unrelated page (e.g.
+    # the site owner's Instagram profile) got scraped and "successfully" extracted into a blank
+    # recipe, since the forced-tool-use extraction call has no way to say "there's no recipe
+    # here" other than returning empty fields.
+    job = _create_job(db_session)
+    _seed_category(db_session)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(
+        handlers,
+        "extract_recipe",
+        lambda html, languages, api_key, category_names, **kwargs: {
+            "images": [],
+            "translations": [
+                {"language": "ro", "title": "", "ingredients": [], "steps": []},
+                {"language": "en", "title": "  ", "ingredients": [], "steps": []},
+            ],
+        },
+    )
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.FAILED
+    assert job.error == "This page doesn't appear to contain a recipe"
+    assert job.error_kind == ImportErrorKind.NOT_A_RECIPE
+    assert db_session.scalars(select(Recipe)).first() is None
+
+
+def test_handle_import_job_succeeds_when_only_some_fields_are_blank(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A translation with a real title and ingredients but, say, no tips is a normal recipe, not
+    # "not a recipe" — only an *entirely* blank translation should trip the new guard.
+    job = _create_job(db_session)
+    _seed_category(db_session)
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(
+        handlers,
+        "extract_recipe",
+        lambda html, languages, api_key, category_names, **kwargs: {
+            "images": [],
+            "translations": [
+                {"language": "ro", "title": "Prăjitură", "ingredients": ["făină"], "steps": ["coace"]},
+            ],
+        },
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert db_session.scalars(select(Recipe)).first() is not None
+
+
 def test_handle_import_job_ignores_unknown_job_id(db_session: Session) -> None:
     handle_import_job(json.dumps({"job_id": 999}).encode(), db_session)
 
