@@ -488,6 +488,67 @@ const en = {
       },
     ],
   },
+  privacy: {
+    // Bumped whenever this text changes materially, same convention as terms.version — no
+    // per-user acceptance stored for this one, it's informational rather than a click-through.
+    lastUpdated: "Last updated: August 10, 2026",
+    title: "Privacy Policy",
+    navLink: "Privacy Policy",
+    sections: [
+      {
+        heading: "1. What we collect",
+        body: [
+          "Account data: your email address, a hashed password (we never store or see your actual password), your interface language, when you accepted the Terms and Conditions, whether your email is verified, when you last logged in, and how many recipes you've imported.",
+          "Content you add: recipes you write or import (title, ingredients, steps, images), which recipes you've favorited, and any URL you submit for import.",
+          "Contact form: if you use it, whatever name, email, phone, and message you submit, and — if you were logged in — which account submitted it.",
+        ],
+      },
+      {
+        heading: "2. How we use it",
+        body: [
+          "To create and secure your account, send you the emails described below, and show you your own recipes, favorites, and imports.",
+          "Recipe content you import is sent to a third-party AI provider to extract and translate it, and to a nutrition data provider to estimate calories/macros — see \"Third-party services\" below.",
+        ],
+      },
+      {
+        heading: "3. Third-party services",
+        body: [
+          "Cloudflare Turnstile verifies you're not a bot on signup, login, password reset, and the contact form; Cloudflare processes some technical browser data to do this.",
+          "When you import a recipe, its scraped text is sent to whichever AI provider is currently configured (Anthropic Claude, or DeepSeek as an alternate) to extract and translate it. Neither provider receives your account details.",
+          "Ingredient names and quantities are sent to a nutrition data provider (CalorieNinjas) to estimate nutrition — no account details are sent.",
+          "Your email address is used to send account verification, password reset, and — if you submit the contact form — a copy of your message to the site administrator, all via the site's email delivery service.",
+        ],
+      },
+      {
+        heading: "4. Cookies and local storage",
+        body: [
+          "We don't use tracking or advertising cookies. After logging in, your session token is stored in your browser's local storage (not a cookie) to keep you signed in, and is removed when you log out.",
+        ],
+      },
+      {
+        heading: "5. Data retention and deletion",
+        body: [
+          "We keep your account and content for as long as your account exists. To delete your account, or to ask what data we hold about you, contact the site administrator — this is currently a manual process, not a self-service one.",
+        ],
+      },
+      {
+        heading: "6. Your rights",
+        body: [
+          "Depending on where you live, you may have rights to access, correct, export, or delete your personal data. Contact the site administrator to exercise any of these.",
+        ],
+      },
+      {
+        heading: "7. Changes to this policy",
+        body: [
+          "We may update this policy as the site changes. If we make a material change, the date above will change.",
+        ],
+      },
+      {
+        heading: "8. Contact",
+        body: ["Questions about this policy, or requests about your data, can be sent to the site administrator."],
+      },
+    ],
+  },
   usersManager: {
     heading: "Users",
     loadError: "Couldn't load users.",

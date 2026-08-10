@@ -491,6 +491,65 @@ const ro: Translation = {
       },
     ],
   },
+  privacy: {
+    lastUpdated: "Ultima actualizare: 10 august 2026",
+    title: "Politica de confidențialitate",
+    navLink: "Confidențialitate",
+    sections: [
+      {
+        heading: "1. Ce colectăm",
+        body: [
+          "Date de cont: adresa ta de email, o parolă criptată (nu stocăm și nu vedem niciodată parola ta reală), limba interfeței, data la care ai acceptat Termenii și condițiile, dacă emailul tău este confirmat, data ultimei conectări și câte rețete ai importat.",
+          "Conținut adăugat de tine: rețetele pe care le scrii sau le imporți (titlu, ingrediente, pași, imagini), rețetele pe care le-ai marcat ca favorite și orice URL trimis spre import.",
+          "Formular de contact: dacă îl folosești, numele, emailul, telefonul și mesajul trimise, și — dacă erai autentificat — ce cont l-a trimis.",
+        ],
+      },
+      {
+        heading: "2. Cum folosim aceste date",
+        body: [
+          "Pentru a-ți crea și securiza contul, pentru a-ți trimite emailurile descrise mai jos și pentru a-ți afișa propriile rețete, favorite și importuri.",
+          "Conținutul rețetelor pe care le imporți este trimis unui furnizor terț de inteligență artificială pentru extragere și traducere, și unui furnizor de date nutriționale pentru estimarea caloriilor/macronutrienților — vezi \"Servicii terțe\" mai jos.",
+        ],
+      },
+      {
+        heading: "3. Servicii terțe",
+        body: [
+          "Cloudflare Turnstile verifică faptul că nu ești un robot la înregistrare, conectare, resetarea parolei și formularul de contact; Cloudflare procesează câteva date tehnice ale browserului pentru asta.",
+          "Când imporți o rețetă, textul extras de pe pagină este trimis către furnizorul AI configurat în acel moment (Anthropic Claude, sau DeepSeek ca alternativă) pentru extragere și traducere. Niciunul dintre furnizori nu primește datele contului tău.",
+          "Numele și cantitățile ingredientelor sunt trimise unui furnizor de date nutriționale (CalorieNinjas) pentru estimarea valorilor nutriționale — fără date despre cont.",
+          "Adresa ta de email este folosită pentru a trimite confirmarea contului, resetarea parolei și — dacă trimiți formularul de contact — o copie a mesajului tău către administratorul site-ului, toate prin serviciul de livrare email al site-ului.",
+        ],
+      },
+      {
+        heading: "4. Cookie-uri și stocare locală",
+        body: [
+          "Nu folosim cookie-uri de urmărire sau publicitare. După autentificare, tokenul sesiunii tale este stocat în memoria locală a browserului (nu într-un cookie) pentru a te menține conectat, și este șters la deconectare.",
+        ],
+      },
+      {
+        heading: "5. Păstrarea și ștergerea datelor",
+        body: [
+          "Păstrăm contul și conținutul tău atât timp cât contul există. Pentru a-ți șterge contul, sau pentru a afla ce date deținem despre tine, contactează administratorul site-ului — acesta este momentan un proces manual, nu unul automat.",
+        ],
+      },
+      {
+        heading: "6. Drepturile tale",
+        body: [
+          "În funcție de unde locuiești, poți avea dreptul de a accesa, corecta, exporta sau șterge datele tale personale. Contactează administratorul site-ului pentru a-ți exercita oricare dintre aceste drepturi.",
+        ],
+      },
+      {
+        heading: "7. Modificări ale acestei politici",
+        body: [
+          "Putem actualiza această politică pe măsură ce site-ul evoluează. Dacă facem o modificare importantă, data de mai sus se va schimba.",
+        ],
+      },
+      {
+        heading: "8. Contact",
+        body: ["Întrebările legate de această politică, sau cererile privind datele tale, pot fi trimise administratorului site-ului."],
+      },
+    ],
+  },
   usersManager: {
     heading: "Utilizatori",
     loadError: "Nu s-au putut încărca utilizatorii.",

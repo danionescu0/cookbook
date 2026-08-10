@@ -34,6 +34,7 @@ import { RecipeDetail } from "./frontoffice/RecipeDetail";
 import { isLanguage, type Language } from "./i18n/config";
 import { useLanguage } from "./i18n/LanguageContext";
 import { TermsPage } from "./legal/TermsPage";
+import { PrivacyPage } from "./legal/PrivacyPage";
 import { secondaryButton } from "./ui/buttonStyles";
 
 function navLinkClasses({ isActive }: { isActive: boolean }): string {
@@ -271,6 +272,7 @@ export function App() {
           />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
           <Route path="/terms" element={<TermsPage />} />
+          <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/contact" element={<ContactPage />} />
           <Route
             path="/account"
@@ -322,6 +324,10 @@ export function App() {
       <footer className="border-t border-olive-light bg-cream-card py-4 text-center text-xs text-ink/50">
         <Link to="/terms" className="hover:text-ink hover:underline">
           {t.terms.navLink}
+        </Link>
+        <span className="mx-2">·</span>
+        <Link to="/privacy" className="hover:text-ink hover:underline">
+          {t.privacy.navLink}
         </Link>
       </footer>
     </div>
