@@ -71,6 +71,24 @@ export function RecipeDetailView({
             recipeInstructions: recipe.steps.map(stripSectionHeader),
             inLanguage: recipe.language,
             ...(recipe.approved_at ? { datePublished: recipe.approved_at } : {}),
+            ...(nutrition?.estimated_servings
+              ? { recipeYield: `${nutrition.estimated_servings}` }
+              : {}),
+            // Deliberately per-serving, matching recipeYield above — schema.org's
+            // NutritionInformation is documented as being scoped to one serving of the recipe,
+            // not the whole dish's totals (see README Design Decisions, "Recipe structured data").
+            ...(nutrition?.per_serving
+              ? {
+                  nutrition: {
+                    "@type": "NutritionInformation",
+                    calories: `${Math.round(nutrition.per_serving.calories)} calories`,
+                    proteinContent: `${Math.round(nutrition.per_serving.protein_g)} g`,
+                    carbohydrateContent: `${Math.round(nutrition.per_serving.carbs_g)} g`,
+                    sugarContent: `${Math.round(nutrition.per_serving.sugars_g)} g`,
+                    fatContent: `${Math.round(nutrition.per_serving.fat_g)} g`,
+                  },
+                }
+              : {}),
           })}
         </script>
       )}

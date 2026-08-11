@@ -136,6 +136,47 @@ describe("PublicRecipeDetail", () => {
     );
   });
 
+  it("includes recipeYield and per-serving nutrition in JSON-LD once nutrition is enriched", async () => {
+    mockedApi.getRecipe.mockResolvedValue(lemonTart);
+    mockedApi.getNutrition.mockResolvedValue({
+      status: "done",
+      error: null,
+      estimated_servings: 8,
+      total_grams: 960,
+      totals: { calories: 2160, protein_g: 24, carbs_g: 280, sugars_g: 200, fat_g: 96 },
+      per_serving: { calories: 270, protein_g: 3, carbs_g: 35, sugars_g: 25, fat_g: 12 },
+      per_ingredient: [],
+    });
+
+    renderAt("/en/recipes/1-lemon-tart");
+    await screen.findByRole("heading", { name: "Lemon Tart" });
+
+    const jsonLd = document.querySelector('script[type="application/ld+json"]');
+    const data = JSON.parse(jsonLd!.textContent ?? "{}");
+    expect(data.recipeYield).toBe("8");
+    expect(data.nutrition).toEqual({
+      "@type": "NutritionInformation",
+      calories: "270 calories",
+      proteinContent: "3 g",
+      carbohydrateContent: "35 g",
+      sugarContent: "25 g",
+      fatContent: "12 g",
+    });
+  });
+
+  it("omits recipeYield and nutrition from JSON-LD when nutrition isn't enriched yet", async () => {
+    mockedApi.getRecipe.mockResolvedValue(lemonTart);
+    // beforeEach's default mock already returns not_enriched/nulls.
+
+    renderAt("/en/recipes/1-lemon-tart");
+    await screen.findByRole("heading", { name: "Lemon Tart" });
+
+    const jsonLd = document.querySelector('script[type="application/ld+json"]');
+    const data = JSON.parse(jsonLd!.textContent ?? "{}");
+    expect(data.recipeYield).toBeUndefined();
+    expect(data.nutrition).toBeUndefined();
+  });
+
   it("omits JSON-LD and sets noindex for a private recipe (visible only to its owner)", async () => {
     mockedApi.getRecipe.mockResolvedValue({ ...lemonTart, is_shared: false });
 
