@@ -10,6 +10,7 @@ from app import nutrition_handlers
 from app.database import Base
 from app.models import (
     AppSettings,
+    Category,
     Ingredient,
     NutritionJob,
     NutritionJobStatus,
@@ -36,8 +37,8 @@ def db_session() -> Generator[Session, None, None]:
         Base.metadata.drop_all(bind=engine)
 
 
-def _create_recipe(db: Session, ingredients: list[str]) -> Recipe:
-    recipe = Recipe(category_id=1, owner_user_id=1)
+def _create_recipe(db: Session, ingredients: list[str], category_id: int = 1) -> Recipe:
+    recipe = Recipe(category_id=category_id, owner_user_id=1)
     recipe.translations.append(
         RecipeTranslation(language="ro", title="Rețetă", slug="reteta", ingredients=ingredients)
     )
@@ -275,6 +276,34 @@ def test_estimated_servings_is_never_zero_for_a_small_recipe(
     assert recipe.estimated_servings == 1
 
 
+def test_estimated_servings_uses_a_smaller_portion_weight_for_desserts(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A dessert's own portion (a muffin/cake slice) is much lighter than the main-course-sized
+    # STANDARD_PORTION_GRAMS default — see nutrition_handlers._PORTION_GRAMS_BY_CATEGORY. Real bug:
+    # a 1170g pumpkin-muffin-and-frosting recipe came back as "2 servings" at ~585g each before this
+    # fix. 660g total / 110g (desserts) = exactly 6, versus 1 with the 475g default.
+    db_session.add(Category(id=7, name="Desserts", slug="desserts"))
+    db_session.commit()
+    recipe = _create_recipe(db_session, ["500 g flour", "160 g sugar"], category_id=7)
+    job = _create_job(db_session, recipe.id)
+    parse_result = {
+        "items": [
+            {"line_index": 0, "food_name": "flour", "quantity": 500, "unit": "g", "estimated_grams": 500},
+            {"line_index": 1, "food_name": "sugar", "quantity": 160, "unit": "g", "estimated_grams": 160},
+        ]
+    }
+    monkeypatch.setattr(
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
+    )
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
+
+    handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    db_session.refresh(recipe)
+    assert recipe.estimated_servings == 6
+
+
 def test_handle_nutrition_job_discards_implausible_ml_grams_and_uses_claude_estimate(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -357,6 +386,55 @@ def test_handle_nutrition_job_success_creates_ingredient_and_link(
     # The line-specific lookup resolved 110g, not Claude's own 90g guess.
     assert link.estimated_grams == 110.0
     assert link.grams_source == "api_lookup"
+
+
+def test_handle_nutrition_job_allows_two_foods_on_the_same_source_line(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A single ingredient line can legitimately name more than one food (e.g. "salt, black
+    # pepper") — Claude correctly returns one item per food, both sharing the same line_index.
+    # recipe_ingredient_links.ingredient_index used to be unique per recipe, so the second insert
+    # violated that constraint and failed the whole job (real bug found on recipe 21, "Beetroot
+    # Hummus") — see the migration dropping that constraint and this table's model docstring.
+    recipe = _create_recipe(db_session, ["salt, black pepper"])
+    job = _create_job(db_session, recipe.id)
+    parse_result = {
+        "items": [
+            {"line_index": 0, "food_name": "salt", "quantity": 1, "unit": "", "estimated_grams": 1.5},
+            {
+                "line_index": 0,
+                "food_name": "black pepper",
+                "quantity": 1,
+                "unit": "",
+                "estimated_grams": 2.3,
+            },
+        ]
+    }
+    monkeypatch.setattr(
+        nutrition_handlers, "parse_ingredients_for_nutrition", lambda lines, key, **kwargs: parse_result
+    )
+    monkeypatch.setattr(nutrition_handlers, "lookup_nutrition", lambda query, key: None)
+
+    handle_nutrition_job(json.dumps({"job_id": job.id, "recipe_id": recipe.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == NutritionJobStatus.DONE
+    assert job.error is None
+
+    links = (
+        db_session.query(RecipeIngredientLink)
+        .filter(RecipeIngredientLink.recipe_id == recipe.id)
+        .order_by(RecipeIngredientLink.id)
+        .all()
+    )
+    assert [(link.ingredient_index, link.raw_text) for link in links] == [
+        (0, "salt, black pepper"),
+        (0, "salt, black pepper"),
+    ]
+    ingredient_names = {
+        db_session.get(Ingredient, link.ingredient_id).name for link in links
+    }
+    assert ingredient_names == {"salt", "black pepper"}
 
 
 def test_handle_nutrition_job_skips_a_section_header_line_even_if_claude_returns_an_item_for_it(

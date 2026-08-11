@@ -5,15 +5,36 @@ from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from app.claude_client import IngredientParseError, parse_ingredients_for_nutrition
-from app.models import Ingredient, NutritionJob, NutritionJobStatus, Recipe, RecipeIngredientLink
+from app.models import Category, Ingredient, NutritionJob, NutritionJobStatus, Recipe, RecipeIngredientLink
 from app.nutrition_api_client import extract_nutrients_per_100g, lookup_nutrition
 from app.recipe_sections import is_section_header
 from app.settings_service import SettingsSnapshot, get_settings
 
 logger = logging.getLogger(__name__)
 
-# See the comment where this is used, in handle_nutrition_job, for the sourcing.
+# See the comment where this is used, in handle_nutrition_job, for the sourcing. This is the
+# fallback for any category not in _PORTION_GRAMS_BY_CATEGORY below, and the only value used
+# before that per-category table existed.
 STANDARD_PORTION_GRAMS = 475
+
+# A dessert or a soup isn't eaten in a main-course-sized portion — a muffin/cake slice weighs a
+# fraction of a bowl of stew, so reusing STANDARD_PORTION_GRAMS for every category understated
+# desserts' serving counts by 3-4x (found via a real muffin-and-frosting recipe whose 1170g total
+# came back as "2 servings" at ~585g each). Matched case-insensitively against the recipe's actual
+# category name, the same way handlers.py's _resolve_category_id matches Claude's suggested
+# category — an admin can rename/add categories at will (CategoryManager), so any name not listed
+# here just falls back to STANDARD_PORTION_GRAMS rather than erroring or silently misfiring. See
+# README Design Decisions, "Estimated servings".
+_PORTION_GRAMS_BY_CATEGORY = {
+    "desserts": 110,  # a muffin / cake slice / a couple of cookies, not a meal-sized bowl
+    "supe": 350,  # a bowl of soup — between the FDA's 245g soup RACC and a full main-course portion
+}
+
+
+def _portion_grams_for(category_name: str | None) -> float:
+    if category_name is None:
+        return STANDARD_PORTION_GRAMS
+    return _PORTION_GRAMS_BY_CATEGORY.get(category_name.strip().lower(), STANDARD_PORTION_GRAMS)
 
 
 def _get_ingredient_lines(recipe: Recipe, default_language: str) -> list[str]:
@@ -206,16 +227,16 @@ def handle_nutrition_job(body: bytes, db: Session) -> None:
         # Servings used to be a separate Claude guess, disconnected from the actual ingredient
         # weights — it visibly broke on recipes with a large stated liquid volume (a soup using
         # 2.5-2.8L of water guessed at 4 servings, implying a ~1kg bowl). Computed instead, from
-        # the finished dish's total weight divided by a single, source-backed average portion:
-        # 475g, the midpoint of the ~400-550g a full one-adult main-course portion weighs
-        # (https://www.foodspring.co.uk/magazine/serving-size), cross-checked against the ~450-900g
-        # (1-2 lb) typical whole-meal-including-beverage figure reported at
-        # https://www.thedonutwhole.com/how-many-pounds-is-the-average-meal/. Deliberately one
-        # constant applied to every recipe rather than a per-category table (e.g. FDA's 245g
-        # soup RACC): this app's categories are free-text, admin-created strings, not a fixed enum
-        # that could be reliably mapped to a food-labeling category.
+        # the finished dish's total weight divided by a source-backed average portion weight —
+        # STANDARD_PORTION_GRAMS (475g, the midpoint of the ~400-550g a full one-adult main-course
+        # portion weighs — https://www.foodspring.co.uk/magazine/serving-size, cross-checked
+        # against https://www.thedonutwhole.com/how-many-pounds-is-the-average-meal/) by default,
+        # or a smaller category-specific weight from _PORTION_GRAMS_BY_CATEGORY when the recipe's
+        # category has one (see that table's comment for why desserts/soups need their own figure).
         if total_grams > 0:
-            recipe.estimated_servings = max(1, round(total_grams / STANDARD_PORTION_GRAMS))
+            category = db.get(Category, recipe.category_id)
+            portion_grams = _portion_grams_for(category.name if category else None)
+            recipe.estimated_servings = max(1, round(total_grams / portion_grams))
 
         job.status = NutritionJobStatus.DONE
         db.commit()

@@ -1,4 +1,4 @@
-from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import Float, ForeignKey, Index, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -15,14 +15,15 @@ class RecipeIngredientLink(Base):
 
     `ingredient_index` ties back to the position in recipe_translations.ingredients — resolution
     runs once per recipe (not once per language) on the assumption that every language's
-    translation preserves ingredient order/count; see worker/app/nutrition_handlers.py.
+    translation preserves ingredient order/count; see worker/app/nutrition_handlers.py. Not unique
+    per recipe: a single line can legitimately name more than one food (e.g. "salt, black
+    pepper"), which Claude's nutrition parse correctly splits into two items sharing one
+    line_index — see README Design Decisions, "Ingredient nutrition".
     """
 
     __tablename__ = "recipe_ingredient_links"
     __table_args__ = (
-        UniqueConstraint(
-            "recipe_id", "ingredient_index", name="uq_recipe_ingredient_links_recipe_index"
-        ),
+        Index("ix_recipe_ingredient_links_recipe_index", "recipe_id", "ingredient_index"),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True)
