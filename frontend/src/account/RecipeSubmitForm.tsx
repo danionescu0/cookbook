@@ -98,7 +98,7 @@ export function RecipeSubmitForm() {
         <p role="status" className="mt-4 rounded-md bg-olive-light px-3 py-2 text-sm text-ink">
           {message}
         </p>
-        <Link to="/account" className="mt-4 inline-block text-sm text-terracotta hover:underline">
+        <Link to="/import" className="mt-4 inline-block text-sm text-terracotta hover:underline">
           {t.recipeSubmit.backLink}
         </Link>
       </section>

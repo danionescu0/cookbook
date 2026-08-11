@@ -207,6 +207,10 @@ def list_recipes(
     # powers the "From the community" infinite scroll, so an authenticated user can fetch just
     # the shared+approved pool instead of the mixed "mine + public" result the default gives them.
     only_public: bool = Query(default=False),
+    # Powers the front office's "Favorites" filter pill — combinable with category_id (both
+    # narrow the same query), mutually exclusive with owner/only_public in practice since the
+    # frontend never sends them together. Requires auth, same as owner="me".
+    favorites_only: bool = Query(default=False),
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -243,6 +247,21 @@ def list_recipes(
         clause = _is_public_clause()
         stmt = stmt.where(clause)
         count_stmt = count_stmt.where(clause)
+    elif favorites_only:
+        if current_user is None:
+            raise HTTPException(status_code=401, detail="Not authenticated")
+        stmt = stmt.join(RecipeFavorite, RecipeFavorite.recipe_id == Recipe.id).where(
+            RecipeFavorite.user_id == current_user.id
+        )
+        count_stmt = count_stmt.join(RecipeFavorite, RecipeFavorite.recipe_id == Recipe.id).where(
+            RecipeFavorite.user_id == current_user.id
+        )
+        # A favorite can outlive the recipe's visibility (e.g. the owner un-shares it after you
+        # favorited it) — same clause list_my_favorites already applies, kept here rather than
+        # leaking a since-hidden recipe back through this filter.
+        visibility = _visibility_clause(current_user)
+        stmt = stmt.where(visibility)
+        count_stmt = count_stmt.where(visibility)
     elif current_user is None or not current_user.is_admin:
         stmt = stmt.where(_visibility_clause(current_user))
         count_stmt = count_stmt.where(_visibility_clause(current_user))

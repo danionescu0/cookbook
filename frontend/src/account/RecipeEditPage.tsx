@@ -73,7 +73,7 @@ export function RecipeEditPage() {
         <p role="alert" className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-700">
           {error}
         </p>
-        <Link to="/account" className="mt-3 inline-block text-sm text-terracotta hover:underline">
+        <Link to="/import" className="mt-3 inline-block text-sm text-terracotta hover:underline">
           {t.account.backToAccount}
         </Link>
       </div>
@@ -136,7 +136,7 @@ export function RecipeEditPage() {
         },
         language
       );
-      navigate("/account");
+      navigate("/import");
     } catch (e) {
       setError(String(e));
     } finally {
@@ -146,7 +146,7 @@ export function RecipeEditPage() {
 
   return (
     <div className="rounded-lg bg-cream-card p-5 ring-1 ring-black/5">
-      <Link to="/account" className="text-sm text-terracotta hover:underline">
+      <Link to="/import" className="text-sm text-terracotta hover:underline">
         {t.account.backToAccount}
       </Link>
       <h2 className="mt-2 font-serif text-2xl font-semibold text-ink">
@@ -267,7 +267,7 @@ export function RecipeEditPage() {
           <button type="submit" disabled={saving} className={primaryButton}>
             {t.recipeManager.save}
           </button>
-          <Link to="/account" className={secondaryButton}>
+          <Link to="/import" className={secondaryButton}>
             {t.recipeManager.cancel}
           </Link>
         </div>

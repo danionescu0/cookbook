@@ -105,7 +105,7 @@ describe("RecipeEditPage", () => {
     expect(await screen.findByDisplayValue("Imported cake")).toBeInTheDocument();
   });
 
-  it("saves the edited fields and navigates back to the account page", async () => {
+  it("saves the edited fields and navigates back to the import page", async () => {
     logIn("someone");
     mockedApi.updateRecipe.mockResolvedValue({ ...cake, title: "Better cake" });
     const user = userEvent.setup();

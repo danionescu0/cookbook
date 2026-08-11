@@ -187,6 +187,9 @@ export const api = {
     // list_recipes.
     owner?: string;
     onlyPublic?: boolean;
+    // Combinable with categoryId (both narrow the same query) — powers the Favorites filter
+    // pill, mutually exclusive with owner/onlyPublic in practice.
+    favoritesOnly?: boolean;
     limit: number;
     offset: number;
   }): Promise<RecipesPage> => {
@@ -195,6 +198,7 @@ export const api = {
     if (params.language) query.set("language", params.language);
     if (params.owner) query.set("owner", params.owner);
     if (params.onlyPublic) query.set("only_public", "true");
+    if (params.favoritesOnly) query.set("favorites_only", "true");
     query.set("limit", String(params.limit));
     query.set("offset", String(params.offset));
     return requestRecipesPage(query);

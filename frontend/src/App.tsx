@@ -11,6 +11,7 @@ import {
   useParams,
 } from "react-router-dom";
 import { AccountPage } from "./account/AccountPage";
+import { ImportPage } from "./account/ImportPage";
 import { RecipeEditPage } from "./account/RecipeEditPage";
 import { RecipeSubmitForm } from "./account/RecipeSubmitForm";
 import { CategoryManager } from "./backoffice/CategoryManager";
@@ -227,6 +228,9 @@ export function App() {
               )}
               {isAuthenticated ? (
                 <>
+                  <NavLink to="/import" className={navLinkClasses}>
+                    {t.nav.import}
+                  </NavLink>
                   <NavLink to="/account" className={navLinkClasses}>
                     {t.nav.account}
                   </NavLink>
@@ -279,6 +283,14 @@ export function App() {
             element={
               <RequireAuth>
                 <AccountPage />
+              </RequireAuth>
+            }
+          />
+          <Route
+            path="/import"
+            element={
+              <RequireAuth>
+                <ImportPage />
               </RequireAuth>
             }
           />

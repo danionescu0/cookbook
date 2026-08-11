@@ -509,3 +509,55 @@ class TestListPagination:
 
         titles = [r["title"] for r in response.json()]
         assert titles == [shared["title"]]
+
+    def test_favorites_only_returns_only_the_callers_favorited_recipes(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        favorited = _create_recipe(client, category_id, title="Favorited", is_shared=True)
+        _create_recipe(client, category_id, title="Not favorited", is_shared=True)
+        user_client.post(f"/recipes/{favorited['id']}/favorite")
+
+        response = user_client.get("/recipes", params={"favorites_only": True})
+
+        assert response.status_code == 200
+        ids = [r["id"] for r in response.json()]
+        assert ids == [favorited["id"]]
+
+    def test_favorites_only_combines_with_category_id(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        desserts_id = _create_category(client, "Desserts")
+        mains_id = _create_category(client, "Mains")
+        dessert = _create_recipe(client, desserts_id, title="Favorited dessert", is_shared=True)
+        main = _create_recipe(client, mains_id, title="Favorited main", is_shared=True)
+        user_client.post(f"/recipes/{dessert['id']}/favorite")
+        user_client.post(f"/recipes/{main['id']}/favorite")
+
+        response = user_client.get(
+            "/recipes", params={"favorites_only": True, "category_id": desserts_id}
+        )
+
+        ids = [r["id"] for r in response.json()]
+        assert ids == [dessert["id"]]
+
+    def test_favorites_only_hides_a_favorite_that_lost_visibility(
+        self, client: TestClient, user_client: TestClient
+    ) -> None:
+        category_id = _create_category(client)
+        # Own-and-share, favorite it, then un-share it — the favorite outlives the recipe's
+        # public visibility, and favorites_only must not leak it back.
+        shared = _create_recipe(client, category_id, title="Now private", is_shared=True)
+        user_client.post(f"/recipes/{shared['id']}/favorite")
+        client.patch(f"/recipes/{shared['id']}/share", json={"is_shared": False})
+
+        response = user_client.get("/recipes", params={"favorites_only": True})
+
+        assert response.json() == []
+
+    def test_favorites_only_requires_authentication(
+        self, unauthenticated_client: TestClient
+    ) -> None:
+        response = unauthenticated_client.get("/recipes", params={"favorites_only": True})
+
+        assert response.status_code == 401

@@ -9,6 +9,8 @@ interface UseInfiniteRecipesParams {
   language: string;
   owner?: "me";
   onlyPublic?: boolean;
+  // Combinable with categoryId — see api/client.ts's listRecipesPage.
+  favoritesOnly?: boolean;
   // False skips fetching entirely (e.g. the "mine" list when nobody's logged in, since
   // owner="me" would 401) — recipes/loading/hasMore all read as empty/settled.
   enabled?: boolean;
@@ -31,6 +33,7 @@ export function useInfiniteRecipes({
   language,
   owner,
   onlyPublic,
+  favoritesOnly,
   enabled = true,
 }: UseInfiniteRecipesParams): UseInfiniteRecipesResult {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -54,7 +57,15 @@ export function useInfiniteRecipes({
     loadingRef.current = true;
 
     api
-      .listRecipesPage({ categoryId, language, owner, onlyPublic, limit: PAGE_SIZE, offset: 0 })
+      .listRecipesPage({
+        categoryId,
+        language,
+        owner,
+        onlyPublic,
+        favoritesOnly,
+        limit: PAGE_SIZE,
+        offset: 0,
+      })
       .then(({ items, total: newTotal }) => {
         if (cancelled) return;
         setRecipes(items);
@@ -73,7 +84,7 @@ export function useInfiniteRecipes({
     return () => {
       cancelled = true;
     };
-  }, [categoryId, language, owner, onlyPublic, enabled]);
+  }, [categoryId, language, owner, onlyPublic, favoritesOnly, enabled]);
 
   const hasMore = total !== null && recipes.length < total;
 
@@ -87,6 +98,7 @@ export function useInfiniteRecipes({
         language,
         owner,
         onlyPublic,
+        favoritesOnly,
         limit: PAGE_SIZE,
         offset: recipes.length,
       })
@@ -99,7 +111,7 @@ export function useInfiniteRecipes({
         loadingRef.current = false;
         setLoading(false);
       });
-  }, [categoryId, language, owner, onlyPublic, enabled, hasMore, recipes.length]);
+  }, [categoryId, language, owner, onlyPublic, favoritesOnly, enabled, hasMore, recipes.length]);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useCallback(

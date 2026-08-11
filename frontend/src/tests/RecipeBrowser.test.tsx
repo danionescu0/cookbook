@@ -206,4 +206,94 @@ describe("RecipeBrowser", () => {
 
     expect(screen.queryByRole("button", { name: "Save recipe" })).not.toBeInTheDocument();
   });
+
+  it("shows the Add or import recipes button when logged in, linking to /import", async () => {
+    mockFeeds([soup], [cake, soup]);
+    await logInAs("someone");
+
+    renderBrowser();
+
+    const link = await screen.findByRole("link", { name: "Add or import recipes" });
+    expect(link).toHaveAttribute("href", "/import");
+  });
+
+  it("does not show the Add or import recipes button when logged out", async () => {
+    renderBrowser();
+    await screen.findByText("Cake");
+
+    expect(screen.queryByRole("link", { name: "Add or import recipes" })).not.toBeInTheDocument();
+  });
+
+  it("does not show the Favorites filter when logged out", async () => {
+    renderBrowser();
+    await screen.findByText("Cake");
+
+    expect(screen.queryByRole("button", { name: /Favorites/ })).not.toBeInTheDocument();
+  });
+
+  it("shows a flat favorites list in place of the mine/community split when the Favorites filter is toggled on", async () => {
+    mockedApi.listRecipesPage.mockImplementation((params) => {
+      if (params.favoritesOnly) return Promise.resolve(page(params.offset === 0 ? [soup] : []));
+      if (params.owner === "me") return Promise.resolve(page([]));
+      // "Cake" (owned by a different user) is what's visible before toggling Favorites on.
+      return Promise.resolve(page(params.offset === 0 ? [cake] : []));
+    });
+    await logInAs("someone");
+    // Matches the favoritesOnly feed's own [soup] result above — the flat list is filtered
+    // against the live favoriteIds set (see RecipeBrowser's favoritesRecipes), so this has to
+    // agree with it for "Soup" to actually render.
+    mockedApi.listFavorites.mockResolvedValue([soup]);
+    const user = userEvent.setup();
+
+    renderBrowser();
+    await screen.findByText("Cake");
+
+    await user.click(screen.getByRole("button", { name: /Favorites/ }));
+
+    expect(await screen.findByText("Soup")).toBeInTheDocument();
+    expect(screen.queryByText("Cake")).not.toBeInTheDocument();
+    expect(screen.queryByText("From the community")).not.toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "Your favorites" })).toBeInTheDocument();
+  });
+
+  it("combines the Favorites filter with a selected category in the same request", async () => {
+    mockedApi.listRecipesPage.mockImplementation(() => Promise.resolve(page([])));
+    await logInAs("someone");
+    const user = userEvent.setup();
+
+    renderBrowser();
+    await screen.findByRole("button", { name: "Mains" });
+
+    await user.click(screen.getByRole("button", { name: "Mains" }));
+    await user.click(screen.getByRole("button", { name: /Favorites/ }));
+
+    await waitFor(() =>
+      expect(mockedApi.listRecipesPage).toHaveBeenCalledWith(
+        expect.objectContaining({ favoritesOnly: true, categoryId: 2 })
+      )
+    );
+  });
+
+  it("shows an empty state and reverts to the mine/community split when Favorites is toggled back off", async () => {
+    mockedApi.listRecipesPage.mockImplementation((params) => {
+      if (params.favoritesOnly) return Promise.resolve(page([]));
+      if (params.owner === "me") return Promise.resolve(page([soup]));
+      return Promise.resolve(page([cake, soup]));
+    });
+    await logInAs("someone");
+    const user = userEvent.setup();
+
+    renderBrowser();
+    await screen.findByText("Soup");
+
+    const favoritesButton = screen.getByRole("button", { name: /Favorites/ });
+    await user.click(favoritesButton);
+
+    expect(await screen.findByText("You haven't saved any recipes yet.")).toBeInTheDocument();
+
+    await user.click(favoritesButton);
+
+    expect(await screen.findByText("My recipes")).toBeInTheDocument();
+    expect(screen.getByText("From the community")).toBeInTheDocument();
+  });
 });
