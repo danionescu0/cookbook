@@ -1,13 +1,14 @@
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, delete, func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from app.auth import AuthUser, get_current_user, get_optional_current_user, require_admin
 from app.database import get_db
 from app.models.category import Category
+from app.models.import_job import ImportJob
 from app.models.nutrition_job import NutritionJob, NutritionJobStatus
 from app.models.recipe import Recipe, RecipeStatus
 from app.models.recipe_favorite import RecipeFavorite
@@ -500,10 +501,29 @@ def acknowledge_import(
     return _serialize(recipe, language or default_language, default_language, processing_status, current_user)
 
 
-@router.delete("/{recipe_id}", status_code=204, dependencies=[Depends(require_admin)])
-def delete_recipe(recipe_id: int, db: Session = Depends(get_db)) -> None:
+@router.delete("/{recipe_id}", status_code=204)
+def delete_recipe(
+    recipe_id: int, db: Session = Depends(get_db), current_user: AuthUser = Depends(get_current_user)
+) -> None:
+    # Owner-or-admin, same pattern as sharing/category/update above — a regular user can already
+    # do everything else to their own recipe, deleting it shouldn't be admin-only either.
     recipe = _get_or_404(db, recipe_id)
+    if not current_user.is_admin and recipe.owner_user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Only the owner or an admin can delete this recipe")
     images = list(recipe.images)
+    if recipe.source_url is not None:
+        # POST /imports' duplicate-URL guard checks for *any* existing ImportJob row for this
+        # URL/creator, regardless of whether its resulting recipe still exists — without this
+        # cleanup, deleting an imported recipe and trying to re-import the same URL would
+        # permanently 409 with "This URL is already in the import queue," even though nothing is
+        # actually queued or imported anymore. created_by_user_id, not current_user.id: an admin
+        # deleting someone else's import should free up *that owner's* URL, not the admin's own.
+        db.execute(
+            delete(ImportJob).where(
+                ImportJob.source == recipe.source_url,
+                ImportJob.created_by_user_id == recipe.owner_user_id,
+            )
+        )
     db.delete(recipe)
     db.commit()
     # After the commit, not before: if the DB delete somehow fails, the recipe (and its images)

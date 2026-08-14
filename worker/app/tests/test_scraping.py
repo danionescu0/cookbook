@@ -46,7 +46,9 @@ def test_fetch_page_returns_html_when_robots_allows(monkeypatch: pytest.MonkeyPa
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<html>hello</html>"
+    # lxml (unlike the stdlib html.parser) always builds a real <body> around bare content, per
+    # the HTML5 spec — see _clean_html's own comment for why lxml is used at all.
+    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>hello</body>"
 
 
 def test_fetch_page_raises_when_robots_disallows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -69,7 +71,7 @@ def test_fetch_page_allows_when_robots_txt_missing(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<html>ok</html>"
+    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>ok</body>"
 
 
 def test_fetch_page_allows_when_robots_txt_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -80,19 +82,20 @@ def test_fetch_page_allows_when_robots_txt_unreachable(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<html>ok</html>"
+    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>ok</body>"
 
 
 def test_fetch_page_truncates_html_to_max_chars(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_get(url: str, **kwargs: object) -> FakeResponse:
         if url.endswith("/robots.txt"):
             return FakeResponse(404, "")
-        return FakeResponse(200, "x" * 100)
+        return FakeResponse(200, "<p>" + "x" * 100 + "</p>")
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
     result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=10))
-    assert result == "x" * 10
+    assert len(result) == 10
+    assert result == "<body><p>x"
 
 
 def test_fetch_page_passes_current_rate_limit_to_rate_limiter(
@@ -190,6 +193,56 @@ def test_fetch_page_promotes_data_src_for_lazy_loaded_images(
     assert "data-original" not in result
 
 
+def test_fetch_page_widens_a_templated_lazy_src_using_data_widths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Real-world regression: mancaregatita.ro's theme puts a *template* URL in data-src, pre-filled
+    # with a tiny placeholder (width=1) rather than the real photo — promoting it as-is "succeeds"
+    # (a valid download) while actually fetching a 1x1 pixel. The real width to use is listed in
+    # the sibling data-widths attribute, the same source the page's own JS reads from.
+    page_html = (
+        "<html><body>"
+        "<img class='lazyloadt4s' data-src='https://example.com/hero.webp?v=1&width=1' "
+        "data-widths='[100,200,600,1600]'>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "width=1600" in result
+    assert "width=1&" not in result and not result.rstrip('"/>').endswith("width=1")
+
+
+def test_fetch_page_leaves_a_normal_lazy_src_alone_without_data_widths(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # The width-templating fix must not misfire on the common case (no data-widths at all) — a
+    # plain data-src is still promoted verbatim, unchanged.
+    page_html = (
+        "<html><body>"
+        "<img data-src='https://example.com/hero.jpg?width=1'>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "hero.jpg?width=1" in result
+
+
 def test_fetch_page_does_not_promote_a_real_src_onto_a_noise_data_attribute(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -252,6 +305,111 @@ def test_fetch_page_truncates_after_cleaning_not_before(monkeypatch: pytest.Monk
     result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=100))
 
     assert "short recipe text" in result
+
+
+def test_fetch_page_recovers_article_body_from_json_ld_on_a_js_rendered_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Real-world regression: mancaregatita.ro (a JS-rendered Shopify blog theme) renders the
+    # actual recipe text into <main> via JavaScript after load — a plain httpx fetch sees an
+    # empty shell there, even though a browser shows the recipe fine. The site's own SEO plugin
+    # had already embedded the full text in a JSON-LD Article's articleBody, meant for search
+    # engines, which this recovers instead of losing the recipe entirely.
+    page_html = (
+        "<html><body>"
+        "<main></main>"
+        '<script type="application/ld+json">'
+        '{"@context": "https://schema.org/", "@type": "Article", '
+        '"articleBody": "Tomato Soup\\n\\nIngredients\\n2 tomatoes\\n\\nSteps\\nBoil the tomatoes."}'
+        "</script>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "Ingredients" in result
+    assert "2 tomatoes" in result
+    assert "Boil the tomatoes" in result
+
+
+def test_fetch_page_prefers_the_longest_article_body_when_json_ld_has_duplicates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Some SEO plugins emit more than one near-duplicate Article block (a plainer summary
+    # alongside the full text) — the shorter one shouldn't win and truncate the real recipe.
+    page_html = (
+        "<html><body>"
+        '<script type="application/ld+json">'
+        '{"@type": "Article", "articleBody": "Short summary only."}'
+        "</script>"
+        '<script type="application/ld+json">'
+        '{"@type": "BlogPosting", "articleBody": "Full recipe: ingredients and every step."}'
+        "</script>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "Full recipe: ingredients and every step." in result
+
+
+def test_fetch_page_ignores_non_article_json_ld(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A BreadcrumbList (or any other schema.org type without articleBody) must not be treated as
+    # recovered page text — only Article/BlogPosting/NewsArticle blocks with real body text count.
+    page_html = (
+        "<html><body>"
+        '<script type="application/ld+json">'
+        '{"@type": "BreadcrumbList", "itemListElement": []}'
+        "</script>"
+        "<p>real page text</p>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "real page text" in result
+    assert "BreadcrumbList" not in result
+
+
+def test_fetch_page_tolerates_malformed_json_ld(monkeypatch: pytest.MonkeyPatch) -> None:
+    page_html = (
+        "<html><body>"
+        '<script type="application/ld+json">{not valid json</script>'
+        "<p>real page text</p>"
+        "</body></html>"
+    )
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, page_html)
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+
+    assert "real page text" in result
 
 
 def test_fetch_page_raises_on_http_error_status(monkeypatch: pytest.MonkeyPatch) -> None:

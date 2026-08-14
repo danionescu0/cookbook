@@ -2,7 +2,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 
-from app.models.import_job import ImportJob
+from app.models.import_job import ImportJob, ImportJobStatus
 from app.models.recipe import Recipe
 from app.models.recipe_translation import RecipeTranslation
 from app.models.user import User
@@ -85,6 +85,38 @@ def test_create_import_job_allows_resubmission_after_deleting_previous_job(
 ) -> None:
     created = client.post("/imports", json={"source": "https://example.com/recipe"}).json()
     client.delete(f"/imports/{created['id']}")
+
+    response = client.post("/imports", json={"source": "https://example.com/recipe"})
+
+    assert response.status_code == 201
+
+
+def test_create_import_job_allows_resubmission_after_deleting_the_resulting_recipe(
+    client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    # Real bug report: importing a URL, deleting the resulting recipe, then trying to import the
+    # same URL again permanently 409'd with "already in the import queue" — the completed
+    # ImportJob row from the first import was never cleaned up when the recipe it produced was
+    # deleted, so the duplicate-URL guard kept blocking the exact same URL forever, even though
+    # nothing was actually queued or imported any more.
+    category_id = _create_category(client)
+    recipe = Recipe(
+        category_id=category_id, source_url="https://example.com/recipe", owner_user_id=admin_user.id
+    )
+    recipe.translations.append(RecipeTranslation(language="en", title="Existing", slug="existing"))
+    db_session.add(recipe)
+    db_session.add(
+        ImportJob(
+            source="https://example.com/recipe",
+            status=ImportJobStatus.DONE,
+            created_by_user_id=admin_user.id,
+        )
+    )
+    db_session.commit()
+    db_session.refresh(recipe)
+
+    delete_response = client.delete(f"/recipes/{recipe.id}")
+    assert delete_response.status_code == 204
 
     response = client.post("/imports", json={"source": "https://example.com/recipe"})
 

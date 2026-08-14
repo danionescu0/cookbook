@@ -7,6 +7,7 @@ import { BookmarkImportPanel } from "../backoffice/BookmarkImportPanel";
 import { ImportManager } from "../backoffice/ImportManager";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
+import { useConfirm } from "../ui/useConfirm";
 import { PendingImportsPanel } from "./PendingImportsPanel";
 import { RecipeList } from "./RecipeList";
 import type { Category, Recipe } from "../types";
@@ -24,6 +25,7 @@ export function ImportPage() {
   // Bumped whenever ImportManager creates/approves a job — see PendingImportsPanel's
   // reloadTrigger prop for why this hand-off is needed.
   const [importTrigger, setImportTrigger] = useState(0);
+  const { confirm, confirmDialog } = useConfirm();
 
   const reloadSubmissions = () =>
     api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
@@ -53,6 +55,17 @@ export function ImportPage() {
     try {
       const updated = await api.updateRecipeCategory(recipe.id, categoryId);
       setSubmissions((current) => current.map((r) => (r.id === updated.id ? updated : r)));
+    } catch (e) {
+      setError(String(e));
+    }
+  };
+
+  const handleDelete = async (recipe: Recipe) => {
+    if (!(await confirm(t.recipeManager.confirmDelete))) return;
+    setError(null);
+    try {
+      await api.deleteRecipe(recipe.id);
+      setSubmissions((current) => current.filter((r) => r.id !== recipe.id));
     } catch (e) {
       setError(String(e));
     }
@@ -98,11 +111,13 @@ export function ImportPage() {
             showStatus
             showEditLink
             onToggleShare={handleToggleShare}
+            onDelete={handleDelete}
             categories={categories}
             onChangeCategory={handleChangeCategory}
           />
         )}
       </section>
+      {confirmDialog}
     </div>
   );
 }

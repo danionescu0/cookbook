@@ -15,6 +15,7 @@ vi.mock("../api/client", () => ({
     listCategories: vi.fn(),
     toggleShare: vi.fn(),
     updateRecipeCategory: vi.fn(),
+    deleteRecipe: vi.fn(),
     // ImportManager (rendered inside ImportPage) needs these too.
     listImportJobs: vi.fn(),
     createImportJob: vi.fn(),
@@ -146,6 +147,52 @@ describe("ImportPage", () => {
       "href",
       "/recipes/5/edit"
     );
+  });
+
+  it("asks for confirmation, then deletes an owned recipe once confirmed", async () => {
+    const user = userEvent.setup();
+    mockedApi.deleteRecipe.mockResolvedValue(undefined);
+
+    renderPage();
+    await findRecipeCategorySelect();
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    expect(mockedApi.deleteRecipe).not.toHaveBeenCalled();
+
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    await waitFor(() => expect(mockedApi.deleteRecipe).toHaveBeenCalledWith(5));
+    expect(screen.queryByText("Imported cake")).not.toBeInTheDocument();
+  });
+
+  it("does not delete a recipe when the confirm dialog is dismissed", async () => {
+    const user = userEvent.setup();
+
+    renderPage();
+    await findRecipeCategorySelect();
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(mockedApi.deleteRecipe).not.toHaveBeenCalled();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Imported cake").length).toBeGreaterThan(0);
+  });
+
+  it("shows an error when deleting a recipe fails", async () => {
+    const user = userEvent.setup();
+    mockedApi.deleteRecipe.mockRejectedValue(new Error("boom"));
+
+    renderPage();
+    await findRecipeCategorySelect();
+
+    await user.click(screen.getByRole("button", { name: "Delete" }));
+    const dialog = await screen.findByRole("alertdialog");
+    await user.click(within(dialog).getByRole("button", { name: "Delete" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("boom");
   });
 
   it("shows a freshly-submitted import's recipe once it's created, without a page reload", async () => {

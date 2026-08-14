@@ -10,6 +10,7 @@ interface RecipeListProps {
   // include other users' shared recipes) — gates the Edit link to /recipes/{id}/edit.
   showEditLink?: boolean;
   onToggleShare?: (recipe: Recipe) => void;
+  onDelete?: (recipe: Recipe) => void;
   categories?: Category[];
   onChangeCategory?: (recipe: Recipe, categoryId: number) => void;
 }
@@ -19,6 +20,7 @@ export function RecipeList({
   showStatus,
   showEditLink,
   onToggleShare,
+  onDelete,
   categories,
   onChangeCategory,
 }: RecipeListProps) {
@@ -59,6 +61,15 @@ export function RecipeList({
               >
                 {t.account.editRecipeLink}
               </Link>
+            )}
+            {onDelete && (
+              <button
+                type="button"
+                onClick={() => onDelete(recipe)}
+                className="block text-xs text-red-600 hover:underline"
+              >
+                {t.recipeManager.delete}
+              </button>
             )}
             {/* Imports (source_url set) never get a sharing control — always private. */}
             {onToggleShare && !recipe.source_url && (

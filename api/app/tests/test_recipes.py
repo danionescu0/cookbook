@@ -548,6 +548,57 @@ def test_delete_recipe_without_images_does_not_error(client: TestClient) -> None
     assert response.status_code == 204
 
 
+def test_owner_can_delete_their_own_recipe(client: TestClient, user_client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = user_client.post(
+        "/recipes", json={"title": "My soup", "category_id": category_id}
+    ).json()
+
+    delete_response = user_client.delete(f"/recipes/{created['id']}")
+    get_response = client.get(f"/recipes/{created['id']}")
+
+    assert delete_response.status_code == 204
+    assert get_response.status_code == 404
+
+
+def test_admin_can_delete_someone_elses_recipe(client: TestClient, user_client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = user_client.post(
+        "/recipes", json={"title": "Their soup", "category_id": category_id}
+    ).json()
+
+    response = client.delete(f"/recipes/{created['id']}")
+
+    assert response.status_code == 204
+
+
+def test_non_owner_non_admin_cannot_delete_a_recipe(
+    client: TestClient, user_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Admin's soup", "category_id": category_id}
+    ).json()
+
+    response = user_client.delete(f"/recipes/{created['id']}")
+
+    assert response.status_code == 403
+    assert client.get(f"/recipes/{created['id']}").status_code == 200
+
+
+def test_delete_recipe_requires_login(
+    client: TestClient, unauthenticated_client: TestClient
+) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Soup", "category_id": category_id}
+    ).json()
+
+    response = unauthenticated_client.delete(f"/recipes/{created['id']}")
+
+    assert response.status_code == 401
+
+
 def test_update_recipe_removes_files_for_images_dropped_from_the_list(
     client: TestClient, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 from urllib.parse import urlparse
@@ -48,6 +49,61 @@ _NOISE_ATTR_PREFIXES = ("data-", "on", "aria-")
 _LAZY_IMAGE_SRC_ATTRS = ("data-src", "data-lazy-src", "data-original", "data-srcset")
 
 
+# Real-world regression: some JS-rendered storefronts (Shopify blog themes especially) leave
+# the actual article/recipe text out of the raw HTML entirely — it's injected into the DOM by
+# JavaScript after load, so a visitor's browser shows it fine but a plain httpx fetch sees an
+# empty <main>. The same page's SEO plugin (e.g. "AVADA SEO Suite") often already embeds the full
+# article text in a JSON-LD Article/BlogPosting/NewsArticle block's `articleBody`, meant for
+# search engines rather than a browser DOM — that text is recovered below before <script> tags
+# are stripped as noise. See README Design Decisions, "Recovering recipe text from JSON-LD on
+# JS-rendered pages".
+_ARTICLE_JSON_LD_TYPES = frozenset({"Article", "BlogPosting", "NewsArticle"})
+
+
+def _extract_json_ld_article_bodies(soup: BeautifulSoup) -> list[str]:
+    bodies = []
+    for script in soup.find_all("script", type="application/ld+json"):
+        try:
+            data = json.loads(script.string or "")
+        except (TypeError, ValueError):
+            continue
+        for item in data if isinstance(data, list) else [data]:
+            if not isinstance(item, dict):
+                continue
+            item_types = item.get("@type")
+            item_types = item_types if isinstance(item_types, list) else [item_types]
+            if not any(t in _ARTICLE_JSON_LD_TYPES for t in item_types):
+                continue
+            body = item.get("articleBody")
+            if isinstance(body, str) and body.strip():
+                bodies.append(body.strip())
+    return bodies
+
+
+_WIDTH_QUERY_PARAM_RE = re.compile(r"([?&]width=)\d+")
+
+
+def _widen_templated_lazy_url(url: str, img) -> str:
+    # Real-world regression: some lazy-load libraries (seen on a Shopify theme) don't put the
+    # final image URL in data-src at all — they put a *template* there, pre-filled with a tiny
+    # placeholder width (width=1, a "load almost nothing yet" trick), and a sibling data-widths
+    # attribute lists the real candidate widths the page's own JS picks from once it decides what
+    # to render. Promoting data-src as-is "succeeds" (a valid, real image download) while actually
+    # producing a 1x1 placeholder pixel — no error anywhere, just a uselessly tiny photo. Detected
+    # here by the presence of both a `width=` query param and a `data-widths` list, and resolved
+    # by substituting in the largest available width, the same value the real page would settle on
+    # for a full-size display.
+    widths_json = img.get("data-widths")
+    if not widths_json or not _WIDTH_QUERY_PARAM_RE.search(url):
+        return url
+    try:
+        widths = json.loads(widths_json)
+        largest = max(int(w) for w in widths)
+    except (TypeError, ValueError):
+        return url
+    return _WIDTH_QUERY_PARAM_RE.sub(rf"\g<1>{largest}", url)
+
+
 def _promote_lazy_image_sources(soup: BeautifulSoup) -> None:
     for img in soup.find_all("img"):
         current_src = img.get("src", "")
@@ -60,7 +116,7 @@ def _promote_lazy_image_sources(soup: BeautifulSoup) -> None:
             # A srcset-shaped value is "url descriptor, url descriptor, ..." — take the first URL.
             first_url = value.split(",")[0].strip().split(" ")[0]
             if first_url:
-                img["src"] = first_url
+                img["src"] = _widen_templated_lazy_url(first_url, img)
                 break
 
 
@@ -69,7 +125,17 @@ class ScrapeDisallowedError(Exception):
 
 
 def _clean_html(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
+    # lxml, not the stdlib html.parser: a real page (mancaregatita.ro) had a malformed <link> tag
+    # deep in its <head> that desynced html.parser's open-tag stack, silently nesting the entire
+    # real article body (text *and* the hero <img>) inside spurious tags that got decompose()'d as
+    # noise below — the recipe wasn't JS-rendered after all, html.parser just corrupted the tree
+    # trying to parse it. lxml (libxml2-backed, spec-compliant on void elements like <link>) parses
+    # the same document correctly. See README Design Decisions, "Recovering recipe text from
+    # JSON-LD on JS-rendered pages" for the fuller story — that JSON-LD fallback stays in place
+    # too, for pages that really are JS-only.
+    soup = BeautifulSoup(html, "lxml")
+
+    article_bodies = _extract_json_ld_article_bodies(soup)
 
     for tag in soup.find_all(_NOISE_TAGS):
         tag.decompose()
@@ -85,6 +151,14 @@ def _clean_html(html: str) -> str:
                 del tag.attrs[attr]
 
     root = soup.body or soup
+    if article_bodies:
+        # Longest wins when a page embeds more than one near-duplicate Article block (seen in
+        # practice: one plainer summary variant alongside the full one) — cheap dedup without
+        # needing exact-match comparison.
+        recovered = soup.new_tag("div")
+        recovered.string = max(article_bodies, key=len)
+        root.append(recovered)
+
     return re.sub(r"\n{2,}", "\n", str(root)).strip()
 
 
