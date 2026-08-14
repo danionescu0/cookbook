@@ -104,7 +104,7 @@ def handle_reparse_job(body: bytes, db: Session) -> None:
                 provider=app_settings.preferred_ai_provider,
             )
         else:
-            html = fetch_page(recipe.source_url, app_settings)
+            _resolved_url, html = fetch_page(recipe.source_url, app_settings)
             extracted = extract_recipe(
                 html,
                 app_settings.supported_languages_list,

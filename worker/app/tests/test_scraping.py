@@ -22,9 +22,12 @@ def _snapshot(**overrides: object) -> SettingsSnapshot:
 
 
 class FakeResponse:
-    def __init__(self, status_code: int = 200, text: str = "") -> None:
+    # url defaults to "" (not a real URL, but empty netloc never matches the Google
+    # redirect-notice check) — only tests exercising that specific behavior need to set a real one.
+    def __init__(self, status_code: int = 200, text: str = "", url: str = "") -> None:
         self.status_code = status_code
         self.text = text
+        self.url = url
 
     def raise_for_status(self) -> None:
         if self.status_code >= 400:
@@ -48,7 +51,8 @@ def test_fetch_page_returns_html_when_robots_allows(monkeypatch: pytest.MonkeyPa
 
     # lxml (unlike the stdlib html.parser) always builds a real <body> around bare content, per
     # the HTML5 spec — see _clean_html's own comment for why lxml is used at all.
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>hello</body>"
+    _, html = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    assert html == "<body>hello</body>"
 
 
 def test_fetch_page_raises_when_robots_disallows(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -71,7 +75,8 @@ def test_fetch_page_allows_when_robots_txt_missing(monkeypatch: pytest.MonkeyPat
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>ok</body>"
+    _, html = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    assert html == "<body>ok</body>"
 
 
 def test_fetch_page_allows_when_robots_txt_unreachable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -82,7 +87,8 @@ def test_fetch_page_allows_when_robots_txt_unreachable(monkeypatch: pytest.Monke
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    assert scraping.fetch_page("https://example.com/recipe", _snapshot()) == "<body>ok</body>"
+    _, html = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    assert html == "<body>ok</body>"
 
 
 def test_fetch_page_truncates_html_to_max_chars(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -93,7 +99,7 @@ def test_fetch_page_truncates_html_to_max_chars(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=10))
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=10))
     assert len(result) == 10
     assert result == "<body><p>x"
 
@@ -139,7 +145,7 @@ def test_fetch_page_strips_boilerplate_before_returning(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "track()" not in result
     assert "color:red" not in result
@@ -179,7 +185,7 @@ def test_fetch_page_promotes_data_src_for_lazy_loaded_images(
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert 'src="https://example.com/hero.jpg"' in result
     assert 'src="https://example.com/step1.jpg"' in result
@@ -214,7 +220,7 @@ def test_fetch_page_widens_a_templated_lazy_src_using_data_widths(
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "width=1600" in result
     assert "width=1&" not in result and not result.rstrip('"/>').endswith("width=1")
@@ -238,7 +244,7 @@ def test_fetch_page_leaves_a_normal_lazy_src_alone_without_data_widths(
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "hero.jpg?width=1" in result
 
@@ -261,7 +267,7 @@ def test_fetch_page_does_not_promote_a_real_src_onto_a_noise_data_attribute(
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert 'src="https://example.com/already-real.jpg"' in result
     assert "should-not-be-used.jpg" not in result
@@ -285,7 +291,7 @@ def test_fetch_page_keeps_noscript_image_fallback(monkeypatch: pytest.MonkeyPatc
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "noscript-version.jpg" in result
 
@@ -302,7 +308,7 @@ def test_fetch_page_truncates_after_cleaning_not_before(monkeypatch: pytest.Monk
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=100))
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot(max_html_chars=100))
 
     assert "short recipe text" in result
 
@@ -332,7 +338,7 @@ def test_fetch_page_recovers_article_body_from_json_ld_on_a_js_rendered_page(
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "Ingredients" in result
     assert "2 tomatoes" in result
@@ -362,7 +368,7 @@ def test_fetch_page_prefers_the_longest_article_body_when_json_ld_has_duplicates
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "Full recipe: ingredients and every step." in result
 
@@ -386,7 +392,7 @@ def test_fetch_page_ignores_non_article_json_ld(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "real page text" in result
     assert "BreadcrumbList" not in result
@@ -407,9 +413,86 @@ def test_fetch_page_tolerates_malformed_json_ld(monkeypatch: pytest.MonkeyPatch)
 
     monkeypatch.setattr(scraping.httpx, "get", fake_get)
 
-    result = scraping.fetch_page("https://example.com/recipe", _snapshot())
+    _, result = scraping.fetch_page("https://example.com/recipe", _snapshot())
 
     assert "real page text" in result
+
+
+def test_fetch_page_resolves_a_google_amp_link_through_the_redirect_notice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Real-world regression: a Google AMP-viewer link (google.com/amp/s/<url>) whose target no
+    # longer has a live AMP page doesn't 3xx-redirect all the way to the real article — the
+    # request lands on a Google-served "click through to continue" notice page instead (a genuine
+    # 200 OK, google.com/url?q=<real-url>), which fetch_page used to hand to Claude as-is instead
+    # of the actual recipe. No robots.txt fetch for google.com itself (see
+    # _is_google_redirect_url) — only for the real target's domain once resolved, exercised here
+    # by *not* stubbing a google.com/robots.txt response at all: an unexpected fetch there would
+    # hit the catch-all below and fail the test.
+    real_page_html = "<html><body><h1>Tocănița de vinete</h1></body></html>"
+
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url == "https://www.gustos.ro/robots.txt":
+            return FakeResponse(404, "")
+        if "google.com/amp/s/" in url:
+            # The notice page's own URL (what response.url reports) carries the real target in q=.
+            return FakeResponse(
+                200,
+                "<html>Notă de redirecționare</html>",
+                url="https://www.google.com/url?q=https://www.gustos.ro/tocanita-de-vinete.html",
+            )
+        if url == "https://www.gustos.ro/tocanita-de-vinete.html":
+            return FakeResponse(200, real_page_html, url=url)
+        raise AssertionError(f"unexpected URL fetched: {url}")
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    final_url, html = scraping.fetch_page(
+        "https://www.google.com/amp/s/www.gustos.ro/amp/tocanita-de-vinete.html", _snapshot()
+    )
+
+    assert final_url == "https://www.gustos.ro/tocanita-de-vinete.html"
+    assert "Tocănița de vinete" in html
+
+
+def test_fetch_page_resolves_a_plain_google_url_redirect_link(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The same notice page shape shows up from a plain copy-pasted Google Search result link
+    # (google.com/url?q=...), not just the AMP case — same fix, same code path.
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        if "google.com/url" in url:
+            return FakeResponse(200, "<html>notice</html>", url=url)
+        if url == "https://example.com/real-recipe":
+            return FakeResponse(200, "<html>the real recipe</html>", url=url)
+        raise AssertionError(f"unexpected URL fetched: {url}")
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    final_url, html = scraping.fetch_page(
+        "https://www.google.com/url?q=https://example.com/real-recipe&sa=T", _snapshot()
+    )
+
+    assert final_url == "https://example.com/real-recipe"
+    assert "the real recipe" in html
+
+
+def test_fetch_page_does_not_treat_an_ordinary_page_as_a_google_redirect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A page that just happens to live at a path called /url on a non-Google domain must not be
+    # mistaken for the notice page — the host check matters, not just the path.
+    def fake_get(url: str, **kwargs: object) -> FakeResponse:
+        if url.endswith("/robots.txt"):
+            return FakeResponse(404, "")
+        return FakeResponse(200, "<p>a real recipe page</p>", url="https://example.com/url?q=1")
+
+    monkeypatch.setattr(scraping.httpx, "get", fake_get)
+
+    final_url, html = scraping.fetch_page("https://example.com/url?q=1", _snapshot())
+
+    assert final_url == "https://example.com/url?q=1"
+    assert "a real recipe page" in html
 
 
 def test_fetch_page_raises_on_http_error_status(monkeypatch: pytest.MonkeyPatch) -> None:

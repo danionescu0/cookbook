@@ -97,7 +97,7 @@ def test_handle_reparse_job_updates_existing_translation_in_place(
     _seed_app_settings(db_session)
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
-    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: (url, "<html></html>"))
     monkeypatch.setattr(
         reparse_handlers, "extract_recipe", lambda html, langs, key, category_names, **kwargs: _EXTRACTED
     )
@@ -131,7 +131,7 @@ def test_handle_reparse_job_fails_without_touching_the_recipe_when_extraction_co
     _seed_app_settings(db_session)
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
-    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: (url, "<html></html>"))
     monkeypatch.setattr(
         reparse_handlers,
         "extract_recipe",
@@ -174,7 +174,7 @@ def test_handle_reparse_job_gives_a_new_language_a_fresh_slug(
             },
         ],
     }
-    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: (url, "<html></html>"))
     monkeypatch.setattr(
         reparse_handlers, "extract_recipe", lambda html, langs, key, category_names, **kwargs: extracted_with_new_language
     )
@@ -195,7 +195,7 @@ def test_handle_reparse_job_enqueues_nutrition_job_after_success(
     _seed_app_settings(db_session)
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
-    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: (url, "<html></html>"))
     monkeypatch.setattr(
         reparse_handlers, "extract_recipe", lambda html, langs, key, category_names, **kwargs: _EXTRACTED
     )
@@ -308,7 +308,7 @@ def test_handle_reparse_job_still_succeeds_when_nutrition_enqueue_raises(
     _seed_app_settings(db_session)
     recipe = _create_recipe(db_session)
     job = _create_job(db_session, recipe.id)
-    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: "<html></html>")
+    monkeypatch.setattr(reparse_handlers, "fetch_page", lambda url, settings: (url, "<html></html>"))
     monkeypatch.setattr(
         reparse_handlers, "extract_recipe", lambda html, langs, key, category_names, **kwargs: _EXTRACTED
     )

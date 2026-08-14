@@ -96,7 +96,7 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
 ) -> None:
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
@@ -149,6 +149,43 @@ def test_handle_import_job_inserts_recipe_with_one_translation_per_language(
     assert published == [(nutrition_job.id, recipe.id)]
 
 
+def test_handle_import_job_stores_the_resolved_url_not_the_submitted_one(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A Google AMP-viewer link resolves to the real article's own URL (see
+    # scraping.fetch_page/_resolve_google_redirect_notice) — the recipe's source_url (and any
+    # relative image URL Claude returns) must reflect that real page, not the Google link the
+    # requester actually pasted, otherwise "View original recipe" would send a reader right back
+    # to Google's dead-end redirect notice instead of the actual site.
+    job = _create_job(db_session, source="https://www.google.com/amp/s/example.com/cake")
+    _seed_category(db_session)
+    monkeypatch.setattr(
+        handlers,
+        "fetch_page",
+        lambda url, app_settings: ("https://example.com/real-cake-page", "<html>raw</html>"),
+    )
+    monkeypatch.setattr(
+        handlers,
+        "extract_recipe",
+        lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION,
+    )
+    process_images_calls = []
+    monkeypatch.setattr(
+        handlers,
+        "process_images",
+        lambda urls, app_settings: process_images_calls.append(urls) or ["/images/stored.jpg"],
+    )
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    recipe = db_session.scalars(select(Recipe)).one()
+    assert recipe.source_url == "https://example.com/real-cake-page"
+    # extracted["images"] is ["cake.jpg"] (relative) — joined against the resolved page, not
+    # against job.source (the Google link), which has a different path entirely.
+    assert process_images_calls == [["https://example.com/cake.jpg"]]
+
+
 def test_handle_import_job_increments_owners_lifetime_import_count(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -158,7 +195,7 @@ def test_handle_import_job_increments_owners_lifetime_import_count(
 
     job = _create_job(db_session, created_by_user_id=user.id)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
@@ -186,7 +223,7 @@ def test_handle_import_job_does_not_increment_count_on_failure(
 
     job = _create_job(db_session, created_by_user_id=user.id)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
 
     def _raise(html: str, languages: list[str], api_key: str, category_names: list[str], **kwargs: object) -> dict:
         raise RecipeExtractionError("boom")
@@ -208,7 +245,7 @@ def test_handle_import_job_marks_nutrition_job_failed_when_publish_fails(
     # job must not turn a successful import into a reported failure.
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
@@ -235,7 +272,7 @@ def test_handle_import_job_still_succeeds_when_nutrition_enqueue_itself_raises(
 ) -> None:
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers, "extract_recipe", lambda html, languages, api_key, category_names, **kwargs: _TWO_LANGUAGE_EXTRACTION
     )
@@ -300,7 +337,7 @@ def test_handle_import_job_fails_on_extraction_error(
 ) -> None:
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
 
     def _raise(html: str, languages: list[str], api_key: str, category_names: list[str], **kwargs: object) -> dict:
         raise RecipeExtractionError("Claude did not return a structured recipe")
@@ -321,7 +358,7 @@ def test_handle_import_job_fails_when_translations_empty(
 ) -> None:
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
@@ -345,7 +382,7 @@ def test_handle_import_job_fails_as_not_a_recipe_when_every_translation_is_blank
     # here" other than returning empty fields.
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
@@ -374,7 +411,7 @@ def test_handle_import_job_succeeds_when_only_some_fields_are_blank(
     # "not a recipe" — only an *entirely* blank translation should trip the new guard.
     job = _create_job(db_session)
     _seed_category(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
@@ -406,7 +443,7 @@ def test_handle_import_job_fails_when_no_categories_exist(
     # DB has none — must fail cleanly with an actionable message rather than crash trying to pick
     # from an empty list.
     job = _create_job(db_session)
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
 
     handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
 
@@ -422,7 +459,7 @@ def test_handle_import_job_resolves_claudes_suggested_category_by_name(
     job = _create_job(db_session)
     _seed_category(db_session, name="Desserts")
     main_course = _seed_category(db_session, name="Main course")
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",
@@ -451,7 +488,7 @@ def test_handle_import_job_falls_back_to_first_category_when_claudes_suggestion_
     job = _create_job(db_session)
     first_category = _seed_category(db_session, name="Desserts")
     _seed_category(db_session, name="Main course")
-    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: "<html>raw</html>")
+    monkeypatch.setattr(handlers, "fetch_page", lambda url, app_settings: (url, "<html>raw</html>"))
     monkeypatch.setattr(
         handlers,
         "extract_recipe",

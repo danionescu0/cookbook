@@ -1,7 +1,7 @@
 import json
 import logging
 import re
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 from urllib.robotparser import RobotFileParser
 
 import httpx
@@ -124,6 +124,48 @@ class ScrapeDisallowedError(Exception):
     pass
 
 
+_GOOGLE_HOST_RE = re.compile(r"^(www\.)?google\.[a-z.]{2,24}$", re.IGNORECASE)
+
+
+def _resolve_google_redirect_notice(response: httpx.Response) -> str | None:
+    # Real-world regression: a Google AMP-viewer link (google.com/amp/s/<url>) whose target no
+    # longer has a live AMP page doesn't 3xx-redirect all the way to the real article — httpx (like
+    # any HTTP client, this isn't fixable with follow_redirects) follows the real redirect chain
+    # down to a Google-served interstitial "click through to continue" page instead
+    # (google.com/url?q=<real-url>&...), a genuine 200 OK with real (if useless) HTML, so there's
+    # no further redirect to follow automatically — fetch_page was handing Claude that notice page
+    # instead of the actual recipe. The real destination is the q= query param on that landing
+    # page's own URL, read directly rather than parsed out of the interstitial's HTML text (which
+    # is locale-dependent — "Notă de redirecționare" in Romanian, "Redirect Notice" in English,
+    # etc. — the URL shape is the one part of this that's stable across locales). Also fires for a
+    # plain google.com/url?q=... link pasted directly, a common copy-paste artifact from a Google
+    # Search results page — not just the AMP case.
+    parsed = urlparse(str(response.url))
+    if not _GOOGLE_HOST_RE.match(parsed.netloc) or parsed.path != "/url":
+        return None
+    target = parse_qs(parsed.query).get("q", [None])[0]
+    return target or None
+
+
+def _is_google_redirect_url(url: str) -> bool:
+    # Real-world regression, found *after* _resolve_google_redirect_notice above: Google's own
+    # robots.txt makes Python's stdlib urllib.robotparser mis-parse entirely for this domain —
+    # confirmed live, it disallows even a path Google's own file explicitly `Allow`s (e.g.
+    # /search/about). That's a genuine parser limitation (it doesn't correctly group multiple
+    # `User-agent:` lines sharing one rule block, which Google's robots.txt relies on), not
+    # something specific to this feature, and not worth risking a robots.txt parser swap for every
+    # other site over. Sidestepped narrowly here instead: an AMP-viewer or /url redirect link isn't
+    # a page to scrape in the first place — it's a redirect mechanism, the same as an ordinary HTTP
+    # 3xx, which this codebase already doesn't apply a fresh robots.txt check to per hop. The real
+    # destination's own domain still gets a full, fresh robots.txt + rate-limit check via the
+    # recursive fetch_page call once resolved — nothing about real content-scraping ethics is
+    # bypassed, only the mechanical hop through Google's own redirect page.
+    parsed = urlparse(url)
+    if not _GOOGLE_HOST_RE.match(parsed.netloc):
+        return False
+    return parsed.path == "/url" or parsed.path.startswith("/amp/")
+
+
 def _clean_html(html: str) -> str:
     # lxml, not the stdlib html.parser: a real page (mancaregatita.ro) had a malformed <link> tag
     # deep in its <head> that desynced html.parser's open-tag stack, silently nesting the entire
@@ -187,19 +229,29 @@ def _fetch_robots_txt(url: str, timeout_seconds: float) -> RobotFileParser:
     return parser
 
 
-def fetch_page(url: str, app_settings: SettingsSnapshot) -> str:
+def fetch_page(url: str, app_settings: SettingsSnapshot, _redirect_depth: int = 0) -> tuple[str, str]:
+    """Returns (final_url, cleaned_html). final_url is the page actually fetched — usually just
+    `url` back again, but can differ after a real HTTP redirect chain or a resolved Google
+    redirect-notice page (see _resolve_google_redirect_notice) — callers that resolve relative
+    URLs found on the page (images, etc.) should join against final_url, not the original url."""
     domain = urlparse(url).netloc
-    robots = _fetch_robots_txt(url, app_settings.scrape_timeout_seconds)
 
-    if not robots.can_fetch(settings.scrape_user_agent, url):
-        raise ScrapeDisallowedError(f"robots.txt on {domain} disallows fetching this page")
+    if _is_google_redirect_url(url):
+        # No robots.txt permission check for this one hop — see _is_google_redirect_url for why.
+        # Still rate-limited, same as any other domain.
+        _rate_limiter.wait(domain, None, app_settings.default_rate_limit_requests_per_minute)
+    else:
+        robots = _fetch_robots_txt(url, app_settings.scrape_timeout_seconds)
 
-    crawl_delay = robots.crawl_delay(settings.scrape_user_agent)
-    _rate_limiter.wait(
-        domain,
-        float(crawl_delay) if crawl_delay else None,
-        app_settings.default_rate_limit_requests_per_minute,
-    )
+        if not robots.can_fetch(settings.scrape_user_agent, url):
+            raise ScrapeDisallowedError(f"robots.txt on {domain} disallows fetching this page")
+
+        crawl_delay = robots.crawl_delay(settings.scrape_user_agent)
+        _rate_limiter.wait(
+            domain,
+            float(crawl_delay) if crawl_delay else None,
+            app_settings.default_rate_limit_requests_per_minute,
+        )
 
     response = httpx.get(
         url,
@@ -208,4 +260,13 @@ def fetch_page(url: str, app_settings: SettingsSnapshot) -> str:
         follow_redirects=True,
     )
     response.raise_for_status()
-    return _clean_html(response.text)[: app_settings.max_html_chars]
+
+    real_target = _resolve_google_redirect_notice(response)
+    if real_target is not None and _redirect_depth < 3:
+        # A fresh robots.txt check + rate limit for whatever domain this turns out to be, same as
+        # any other fetch — recursing into fetch_page rather than special-casing gets that for
+        # free. Depth-capped defensively; a chain of Google notices pointing at each other isn't a
+        # real scenario, but nothing should ever recurse unbounded on attacker-controlled input.
+        return fetch_page(real_target, app_settings, _redirect_depth=_redirect_depth + 1)
+
+    return str(response.url), _clean_html(response.text)[: app_settings.max_html_chars]

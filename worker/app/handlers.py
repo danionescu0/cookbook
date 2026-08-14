@@ -104,6 +104,7 @@ def _finish_import(
     stored_images: list[str],
     category_id: int,
     db: Session,
+    source_url: str,
 ) -> None:
     if not translations_data:
         raise RecipeExtractionError("Claude returned no translations")
@@ -122,7 +123,10 @@ def _finish_import(
     recipe = Recipe(
         category_id=category_id,
         images=stored_images,
-        source_url=job.source,
+        # The resolved URL actually fetched, not necessarily job.source — e.g. a Google
+        # AMP-viewer link resolves to the real article (see scraping.fetch_page), and the "View
+        # original recipe" link should point there, not back at a Google redirect page.
+        source_url=source_url,
         status=RecipeStatus.APPROVED,
         approved_at=datetime.now(timezone.utc),
         translations=translations,
@@ -199,8 +203,9 @@ def handle_import_job(body: bytes, db: Session) -> None:
             # Already resolved by fetch_instagram_post — nothing for Claude to find here, unlike
             # the HTML path where image URLs come out of the extraction itself.
             image_urls = [post.image_url] if post.image_url else []
+            resolved_source_url = job.source
         else:
-            html = fetch_page(job.source, app_settings)
+            resolved_source_url, html = fetch_page(job.source, app_settings)
             job.status = ImportJobStatus.PROCESSING
             db.commit()
 
@@ -211,12 +216,18 @@ def handle_import_job(body: bytes, db: Session) -> None:
                 category_names,
                 provider=app_settings.preferred_ai_provider,
             )
-            image_urls = [urljoin(job.source, image) for image in extracted.get("images", [])]
+            # Joined against the page actually fetched, not job.source — the two can differ after
+            # a redirect (e.g. a Google AMP-viewer link resolved to the real article, see
+            # scraping.fetch_page), and a relative image URL on the page is relative to that real
+            # article's own URL, not to whatever the requester originally pasted.
+            image_urls = [urljoin(resolved_source_url, image) for image in extracted.get("images", [])]
 
         stored_images = process_images(image_urls, app_settings)
         category_id = _resolve_category_id(extracted.get("category", ""), categories)
         job.category_id = category_id
-        _finish_import(job, extracted.get("translations", []), stored_images, category_id, db)
+        _finish_import(
+            job, extracted.get("translations", []), stored_images, category_id, db, resolved_source_url
+        )
     except InstagramFetchError as exc:
         job.status = ImportJobStatus.FAILED
         job.error = str(exc)
