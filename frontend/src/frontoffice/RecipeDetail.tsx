@@ -39,7 +39,7 @@ export function RecipeDetail() {
     return (
       <div>
         <p role="alert">{error}</p>
-        <Link to="/" className="text-terracotta hover:underline">
+        <Link to={`/${language}`} className="text-terracotta hover:underline">
           {t.detail.back}
         </Link>
       </div>
@@ -54,7 +54,7 @@ export function RecipeDetail() {
     return (
       <div>
         <p>{t.detail.notPublished}</p>
-        <Link to="/" className="text-terracotta hover:underline">
+        <Link to={`/${language}`} className="text-terracotta hover:underline">
           {t.detail.back}
         </Link>
       </div>
@@ -72,7 +72,7 @@ export function RecipeDetail() {
       isAuthenticated={isAuthenticated}
       isFavorited={favoriteIds.has(recipe.id)}
       onToggleFavorite={() => toggleFavorite(recipe.id)}
-      backTo="/"
+      backTo={`/${language}`}
       seo={{ canonical }}
     />
   );

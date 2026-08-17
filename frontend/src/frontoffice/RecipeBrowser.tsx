@@ -33,7 +33,7 @@ function RecipeGrid({ recipes, favoriteIds, onToggleFavorite }: RecipeGridProps)
 }
 
 export function RecipeBrowser() {
-  const { language, t } = useLanguage();
+  const { language, t, supportedLanguages } = useLanguage();
   const { user, isAuthenticated } = useAuth();
   const [categories, setCategories] = useState<Category[]>([]);
   const [selectedCategoryId, setSelectedCategoryId] = useState<number | null>(null);
@@ -43,7 +43,15 @@ export function RecipeBrowser() {
   const [favoritesActive, setFavoritesActive] = useState(false);
   const { favoriteIds, toggleFavorite } = useFavoriteIds();
 
-  useSeoMeta({ title: `${t.brand} — ${t.browser.heading}` });
+  useSeoMeta({
+    title: `${t.brand} — ${t.browser.heading}`,
+    // Same page also renders at the unprefixed "/recipes" (kept for internal nav) — canonicalize
+    // to the language-prefixed URL that's actually in the sitemap, same reasoning as LandingPage.
+    canonical: `${window.location.origin}/${language}/recipes`,
+    hreflangAlternates: Object.fromEntries(
+      supportedLanguages.map((lang) => [lang, `${window.location.origin}/${lang}/recipes`])
+    ),
+  });
 
   useEffect(() => {
     api.listCategories().then(setCategories);

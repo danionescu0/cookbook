@@ -10,7 +10,7 @@ import type { Recipe } from "../types";
 const COMMUNITY_PREVIEW_COUNT = 8;
 
 export function LandingPage() {
-  const { t, language } = useLanguage();
+  const { t, language, supportedLanguages } = useLanguage();
   const [communityRecipes, setCommunityRecipes] = useState<Recipe[]>([]);
 
   useSeoMeta({
@@ -19,6 +19,9 @@ export function LandingPage() {
     // Points at the language-prefixed canonical entry point even when rendered at bare "/" —
     // avoids the two URLs reading as duplicate content to a crawler.
     canonical: `${window.location.origin}/${language}`,
+    hreflangAlternates: Object.fromEntries(
+      supportedLanguages.map((lang) => [lang, `${window.location.origin}/${lang}`])
+    ),
   });
 
   useEffect(() => {
@@ -39,7 +42,7 @@ export function LandingPage() {
           </h1>
           <p className="mt-4 max-w-md text-base text-ink/70">{t.landing.tagline}</p>
           <div className="mt-6 flex flex-wrap gap-3">
-            <Link to="/recipes" className={primaryButton}>
+            <Link to={`/${language}/recipes`} className={primaryButton}>
               {t.landing.ctaBrowse}
             </Link>
             <Link to="/signup" className={secondaryButton}>
@@ -96,7 +99,7 @@ export function LandingPage() {
             <h2 className="font-serif text-2xl font-semibold text-ink">
               {t.landing.communityHeading}
             </h2>
-            <Link to="/recipes" className="text-sm text-terracotta hover:underline">
+            <Link to={`/${language}/recipes`} className="text-sm text-terracotta hover:underline">
               {t.landing.ctaBrowse}
             </Link>
           </div>
@@ -115,7 +118,7 @@ export function LandingPage() {
           <Link to="/signup" className={primaryButton}>
             {t.landing.ctaSignup}
           </Link>
-          <Link to="/recipes" className={secondaryButton}>
+          <Link to={`/${language}/recipes`} className={secondaryButton}>
             {t.landing.ctaBrowse}
           </Link>
         </div>

@@ -3108,6 +3108,27 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   (not Google), a real photo downloaded (not a broken link), and both language translations landed
   correctly — then confirmed in the browser that the recipe rendered with a working "View original
   recipe" link.
+- **Internal links must agree with the declared canonical, or Google overrides it.** Google Search
+  Console flagged `https://easy2cook.app/ro` as "Duplicate, Google chose different canonical than
+  user": the page's own `useSeoMeta` call already declared a correct, self-referencing canonical
+  (`/ro`), so the mismatch wasn't a missing tag — it was the site's own internal link graph voting
+  against it. This app has no SSR, so every route's raw `index.html` is byte-identical (no
+  route-specific canonical exists until client JS runs); Google leans more heavily on other signals
+  — chiefly internal links — when a site's raw HTML can't distinguish pages, and the header logo
+  (`<Link to="/">`, rendered on literally every page) plus the "Recipes" nav link and several
+  in-page CTAs (`<Link to="/recipes">`) were all pointing at the bare, unprefixed routes instead of
+  the language-prefixed ones actually listed in `sitemap.xml` — the single largest internal-linking
+  signal on the whole site was reinforcing exactly the URL we didn't want indexed. Fixed by pointing
+  every one of those links at `/${language}` / `/${language}/recipes` instead (same target content,
+  since `/` and `/{lang}` both render through `HomeRoute`), and by giving `RecipeBrowser` (rendered
+  at both `/recipes` and `/{lang}/recipes`) the self-referencing canonical + hreflang alternates it
+  was missing entirely — it had no `canonical` in its `useSeoMeta` call before this, so navigating
+  there after visiting another page didn't just fail to help, it actively stripped any previously
+  set canonical tag from the DOM. `LandingPage` also gained `hreflangAlternates` matching what
+  `sitemap.xml` already declares for the home entries, so the language variants are unambiguously
+  signaled as alternates rather than left for Google to infer from content similarity alone. The
+  unprefixed routes themselves are deliberately kept working (see `RecipeDetail`'s own comment) —
+  only which URL the site *points at itself* changed, not what still resolves.
 
 ## Original Spec
 

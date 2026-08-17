@@ -203,19 +203,24 @@ function LanguageRouteSync() {
 }
 
 export function App() {
-  const { t } = useLanguage();
+  const { t, language } = useLanguage();
   const { isAuthenticated, user, logout } = useAuth();
 
   return (
     <div className="flex min-h-screen flex-col bg-cream text-ink">
       <header className="border-b border-olive-light bg-cream-card">
         <div className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-y-2 px-4 py-4 sm:px-6">
-          <Link to="/" className="font-serif text-2xl font-semibold text-ink">
+          {/* Points at the language-prefixed home path (not bare "/") so the site's own internal
+              link graph agrees with LandingPage's declared canonical — every page links here, so
+              this is the single biggest internal-linking signal on the whole site. Google was
+              seen picking "/" over the declared "/{lang}" canonical for exactly this reason (GSC:
+              "Duplicate, Google chose different canonical than user" on /ro). */}
+          <Link to={`/${language}`} className="font-serif text-2xl font-semibold text-ink">
             {t.brand}
           </Link>
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
             <nav className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
-              <NavLink to="/recipes" className={navLinkClasses}>
+              <NavLink to={`/${language}/recipes`} className={navLinkClasses}>
                 {t.nav.recipes}
               </NavLink>
               <NavLink to="/contact" className={navLinkClasses}>
