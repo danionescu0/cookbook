@@ -9,6 +9,7 @@ import { primaryButton } from "../ui/buttonStyles";
 import { CategoryNav } from "./CategoryNav";
 import { RecipeCard } from "./RecipeCard";
 import { useInfiniteRecipes } from "./useInfiniteRecipes";
+import { useRecipeSearch } from "../ui/useRecipeSearch";
 import type { Category, Recipe } from "../types";
 
 interface RecipeGridProps {
@@ -42,6 +43,7 @@ export function RecipeBrowser() {
   // toggle it isn't rendered), but the fallback keeps every feed's `enabled` expression honest.
   const [favoritesActive, setFavoritesActive] = useState(false);
   const { favoriteIds, toggleFavorite } = useFavoriteIds();
+  const { text: searchText, setText: setSearchText, search } = useRecipeSearch();
 
   useSeoMeta({
     title: `${t.brand} — ${t.browser.heading}`,
@@ -69,12 +71,14 @@ export function RecipeBrowser() {
     categoryId: selectedCategoryId ?? undefined,
     language,
     owner: "me",
+    search,
     enabled: isAuthenticated && !favoritesMode,
   });
   const publicFeed = useInfiniteRecipes({
     categoryId: selectedCategoryId ?? undefined,
     language,
     onlyPublic: true,
+    search,
     enabled: !favoritesMode,
   });
   // Favorites already cuts across ownership (a favorite can be your own recipe or someone
@@ -83,6 +87,7 @@ export function RecipeBrowser() {
     categoryId: selectedCategoryId ?? undefined,
     language,
     favoritesOnly: true,
+    search,
     enabled: favoritesMode,
   });
   // Reconciled against the live favoriteIds set (not just what was true when the page fetched)
@@ -131,6 +136,15 @@ export function RecipeBrowser() {
           </div>
         </div>
 
+        <input
+          type="search"
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          placeholder={t.browser.searchPlaceholder}
+          aria-label={t.browser.searchPlaceholder}
+          className="w-full max-w-sm rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+        />
+
         <CategoryNav
           categories={categories}
           selectedCategoryId={selectedCategoryId}
@@ -148,7 +162,9 @@ export function RecipeBrowser() {
               </p>
             )}
             {favoritesRecipes.length === 0 && !favorites.loading ? (
-              <p className="text-ink/60">{t.browser.noFavorites}</p>
+              <p className="text-ink/60">
+                {search ? t.browser.noSearchResults : t.browser.noFavorites}
+              </p>
             ) : (
               <>
                 <RecipeGrid
@@ -172,7 +188,7 @@ export function RecipeBrowser() {
             )}
 
             {primaryRecipes.length === 0 && !primary.loading ? (
-              <p className="text-ink/60">{t.browser.empty}</p>
+              <p className="text-ink/60">{search ? t.browser.noSearchResults : t.browser.empty}</p>
             ) : (
               <>
                 <RecipeGrid

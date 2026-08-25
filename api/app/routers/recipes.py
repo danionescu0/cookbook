@@ -59,6 +59,20 @@ def _visibility_clause(viewer: AuthUser | None):
     return or_(Recipe.owner_user_id == viewer.id, public)
 
 
+def _escape_like(value: str) -> str:
+    # Postgres ILIKE treats "%"/"_" as wildcards — escape them (and the escape char itself) so a
+    # literal "%" typed by a user is matched literally, not as "anything".
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _unaccent_lower(expr):
+    # f_unaccent is a DB-side function (Postgres: the IMMUTABLE wrapper created by migration 0036
+    # around the unaccent extension; SQLite tests: a registered Python equivalent, see conftest.py)
+    # so "Briose" and "Brioșe" match each other regardless of which side has the diacritics — see
+    # README Design Decisions, "Recipe search".
+    return func.lower(func.f_unaccent(expr))
+
+
 def _get_visible_or_404(db: Session, recipe_id: int, viewer: AuthUser | None) -> Recipe:
     recipe = _get_or_404(db, recipe_id)
     if not _is_visible(recipe, viewer):
@@ -212,6 +226,11 @@ def list_recipes(
     # narrow the same query), mutually exclusive with owner/only_public in practice since the
     # frontend never sends them together. Requires auth, same as owner="me".
     favorites_only: bool = Query(default=False),
+    # Title-only substring filter, scoped to whichever language is actually being displayed (the
+    # same `language or default_language` fallback _serialize uses) — see README Design
+    # Decisions, "Recipe search". min_length is defense in depth; the frontend never sends fewer
+    # than 3 characters either.
+    search: str | None = Query(default=None, min_length=3),
     limit: int | None = Query(default=None, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     db: Session = Depends(get_db),
@@ -266,6 +285,22 @@ def list_recipes(
     elif current_user is None or not current_user.is_admin:
         stmt = stmt.where(_visibility_clause(current_user))
         count_stmt = count_stmt.where(_visibility_clause(current_user))
+
+    if search and search.strip():
+        # AND, not OR: every word must appear somewhere in the title (any order) — see README
+        # Design Decisions, "Recipe search". Each word is its own .any() clause rather than one
+        # combined ILIKE so "chicken soup" also matches "Soup with Chicken". Both sides go through
+        # _unaccent_lower so a search matches regardless of which side (query or title) has
+        # diacritics — "Briose" matches "Brioșe" and vice versa.
+        search_language = language or default_language
+        for word in search.strip().split():
+            pattern = _unaccent_lower(f"%{_escape_like(word)}%")
+            clause = Recipe.translations.any(
+                (RecipeTranslation.language == search_language)
+                & (_unaccent_lower(RecipeTranslation.title).ilike(pattern, escape="\\"))
+            )
+            stmt = stmt.where(clause)
+            count_stmt = count_stmt.where(clause)
 
     response.headers["X-Total-Count"] = str(db.scalar(count_stmt) or 0)
 

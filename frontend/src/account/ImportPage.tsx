@@ -10,6 +10,8 @@ import { primaryButton } from "../ui/buttonStyles";
 import { useConfirm } from "../ui/useConfirm";
 import { PendingImportsPanel } from "./PendingImportsPanel";
 import { RecipeList } from "./RecipeList";
+import { matchesSearchWords } from "../ui/searchMatch";
+import { useRecipeSearch } from "../ui/useRecipeSearch";
 import type { Category, Recipe } from "../types";
 
 // Reachable via the "Add or import recipes" button on the recipes page (and the header nav) —
@@ -26,9 +28,16 @@ export function ImportPage() {
   // reloadTrigger prop for why this hand-off is needed.
   const [importTrigger, setImportTrigger] = useState(0);
   const { confirm, confirmDialog } = useConfirm();
+  const { text: searchText, setText: setSearchText, search } = useRecipeSearch();
 
   const reloadSubmissions = () =>
     api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
+
+  // The full list is already loaded unpaginated (see api.listMySubmissions) — filtering
+  // client-side avoids a backend change for a list that never had pagination to begin with.
+  const filteredSubmissions = search
+    ? submissions.filter((recipe) => matchesSearchWords(recipe.title, search))
+    : submissions;
 
   useEffect(() => {
     reloadSubmissions();
@@ -106,15 +115,29 @@ export function ImportPage() {
         {submissions.length === 0 ? (
           <p className="mt-2 text-sm text-ink/60">{t.account.noRecipes}</p>
         ) : (
-          <RecipeList
-            recipes={submissions}
-            showStatus
-            showEditLink
-            onToggleShare={handleToggleShare}
-            onDelete={handleDelete}
-            categories={categories}
-            onChangeCategory={handleChangeCategory}
-          />
+          <>
+            <input
+              type="search"
+              value={searchText}
+              onChange={(e) => setSearchText(e.target.value)}
+              placeholder={t.account.searchPlaceholder}
+              aria-label={t.account.searchPlaceholder}
+              className="mt-2 w-full max-w-sm rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+            />
+            {filteredSubmissions.length === 0 ? (
+              <p className="mt-2 text-sm text-ink/60">{t.account.noSearchResults}</p>
+            ) : (
+              <RecipeList
+                recipes={filteredSubmissions}
+                showStatus
+                showEditLink
+                onToggleShare={handleToggleShare}
+                onDelete={handleDelete}
+                categories={categories}
+                onChangeCategory={handleChangeCategory}
+              />
+            )}
+          </>
         )}
       </section>
       {confirmDialog}

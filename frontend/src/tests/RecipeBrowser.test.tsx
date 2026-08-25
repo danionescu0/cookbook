@@ -296,4 +296,42 @@ describe("RecipeBrowser", () => {
     expect(await screen.findByText("My recipes")).toBeInTheDocument();
     expect(screen.getByText("From the community")).toBeInTheDocument();
   });
+
+  it("sends the search text 1.5s after typing stops, ignoring anything under 3 characters", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderBrowser();
+    await screen.findByText("Cake");
+    mockedApi.listRecipesPage.mockClear();
+
+    await user.type(screen.getByPlaceholderText("Search by title…"), "ca");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(mockedApi.listRecipesPage).not.toHaveBeenCalledWith(
+      expect.objectContaining({ search: expect.anything() })
+    );
+
+    await user.type(screen.getByPlaceholderText("Search by title…"), "ke");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+    expect(mockedApi.listRecipesPage).toHaveBeenCalledWith(
+      expect.objectContaining({ search: "cake" })
+    );
+
+    vi.useRealTimers();
+  });
+
+  it("shows a no-results message in place of the grid when the search matches nothing", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockFeeds([], [cake]);
+    renderBrowser();
+    await screen.findByText("Cake");
+
+    mockFeeds([], []);
+    await user.type(screen.getByPlaceholderText("Search by title…"), "xyz");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    expect(await screen.findByText("No recipes match your search.")).toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
 });

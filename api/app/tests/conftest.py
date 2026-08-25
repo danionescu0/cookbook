@@ -1,8 +1,9 @@
+import unicodedata
 from collections.abc import Generator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -10,6 +11,13 @@ from app.auth import create_access_token
 from app.database import Base, get_db
 from app.main import app
 from app.models.user import User
+
+
+def _strip_diacritics(value: str | None) -> str | None:
+    if value is None:
+        return None
+    decomposed = unicodedata.normalize("NFKD", value)
+    return "".join(ch for ch in decomposed if not unicodedata.combining(ch))
 
 
 @pytest.fixture()
@@ -23,6 +31,14 @@ def db_session() -> Generator[Session, None, None]:
         connect_args={"check_same_thread": False},
         poolclass=StaticPool,
     )
+
+    # SQLite has no unaccent() — registers f_unaccent as a plain Python function so
+    # routers/recipes.py's diacritic-insensitive title search (migration 0036) works the same way
+    # here as it does against the real Postgres f_unaccent wrapper.
+    @event.listens_for(engine, "connect")
+    def _register_f_unaccent(dbapi_connection, _connection_record) -> None:
+        dbapi_connection.create_function("f_unaccent", 1, _strip_diacritics)
+
     Base.metadata.create_all(bind=engine)
     TestingSessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

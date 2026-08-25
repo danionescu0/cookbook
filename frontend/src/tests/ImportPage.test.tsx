@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -233,5 +233,58 @@ describe("ImportPage", () => {
 
     expect((await screen.findAllByText("Rulada de dovlecei"))[0]).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "OK, got it" })).toBeInTheDocument();
+  });
+
+  it("filters the recipe list client-side 1.5s after typing 3+ characters", async () => {
+    const soup: Recipe = { ...importedRecipe, id: 6, title: "Soup deluxe" };
+    mockedApi.listMySubmissions.mockResolvedValue([importedRecipe, soup]);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    renderPage();
+    await screen.findAllByText("Imported cake");
+    expect(screen.getAllByText("Soup deluxe").length).toBeGreaterThan(0);
+
+    await user.type(screen.getByPlaceholderText("Search by title…"), "sou");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    expect(screen.queryByText("Imported cake")).not.toBeInTheDocument();
+    expect(screen.getAllByText("Soup deluxe").length).toBeGreaterThan(0);
+
+    vi.useRealTimers();
+  });
+
+  it("ignores diacritics in both directions", async () => {
+    const cake: Recipe = { ...importedRecipe, id: 7, title: "Brioșe cu dovleac" };
+    mockedApi.listMySubmissions.mockResolvedValue([cake]);
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    renderPage();
+    await screen.findAllByText("Brioșe cu dovleac");
+
+    await user.type(screen.getByPlaceholderText("Search by title…"), "briose");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    expect(screen.getAllByText("Brioșe cu dovleac").length).toBeGreaterThan(0);
+    expect(screen.queryByText("No recipes match your search.")).not.toBeInTheDocument();
+
+    vi.useRealTimers();
+  });
+
+  it("shows a no-results message when the search matches nothing, keeping the recipes present", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+
+    renderPage();
+    await screen.findAllByText("Imported cake");
+
+    await user.type(screen.getByPlaceholderText("Search by title…"), "xyz");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    expect(await screen.findByText("No recipes match your search.")).toBeInTheDocument();
+    expect(screen.queryByText("Imported cake")).not.toBeInTheDocument();
+
+    vi.useRealTimers();
   });
 });

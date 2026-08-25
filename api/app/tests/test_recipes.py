@@ -192,6 +192,107 @@ def test_list_recipes_filtered_by_category(client: TestClient) -> None:
     assert titles == ["Cake"]
 
 
+def test_list_recipes_search_matches_title_case_insensitively(client: TestClient) -> None:
+    category_id = _create_category(client)
+    client.post(
+        "/recipes", json={"title": "Chocolate Cake", "category_id": category_id, "language": "en"}
+    )
+    client.post("/recipes", json={"title": "Beef Stew", "category_id": category_id, "language": "en"})
+
+    response = client.get("/recipes", params={"search": "CHOC", "language": "en"})
+
+    assert response.status_code == 200
+    titles = [r["title"] for r in response.json()]
+    assert titles == ["Chocolate Cake"]
+
+
+def test_list_recipes_search_requires_all_words_in_any_order(client: TestClient) -> None:
+    category_id = _create_category(client)
+    client.post(
+        "/recipes", json={"title": "Soup with Chicken", "category_id": category_id, "language": "en"}
+    )
+    client.post("/recipes", json={"title": "Chicken Wings", "category_id": category_id, "language": "en"})
+    client.post("/recipes", json={"title": "Tomato Soup", "category_id": category_id, "language": "en"})
+
+    response = client.get("/recipes", params={"search": "chicken soup", "language": "en"})
+
+    assert response.status_code == 200
+    titles = [r["title"] for r in response.json()]
+    assert titles == ["Soup with Chicken"]
+
+
+def test_list_recipes_search_is_scoped_to_the_requested_language(client: TestClient) -> None:
+    category_id = _create_category(client)
+    created = client.post(
+        "/recipes", json={"title": "Chocolate Cake", "category_id": category_id, "language": "en"}
+    ).json()
+    client.put(
+        f"/recipes/{created['id']}",
+        json={"translation": {"title": "Prăjitură cu ciocolată"}},
+        params={"language": "ro"},
+    )
+
+    en_response = client.get("/recipes", params={"search": "choc", "language": "en"})
+    ro_response = client.get("/recipes", params={"search": "choc", "language": "ro"})
+
+    assert [r["title"] for r in en_response.json()] == ["Chocolate Cake"]
+    assert ro_response.json() == []
+
+
+def test_list_recipes_search_ignores_diacritics_in_both_directions(client: TestClient) -> None:
+    category_id = _create_category(client)
+    client.post(
+        "/recipes",
+        json={
+            "title": "Brioșe cu dovleac și glazură",
+            "category_id": category_id,
+            "language": "ro",
+        },
+    )
+    client.post(
+        "/recipes", json={"title": "Tocanita simpla de vinete", "category_id": category_id, "language": "ro"}
+    )
+
+    # Plain "briose" (typed without diacritics) matches the accented title...
+    without_diacritics = client.get("/recipes", params={"search": "briose", "language": "ro"})
+    assert [r["title"] for r in without_diacritics.json()] == ["Brioșe cu dovleac și glazură"]
+
+    # ...and the reverse: a query typed with diacritics still matches a title that has none.
+    with_diacritics = client.get("/recipes", params={"search": "tocăniță", "language": "ro"})
+    assert [r["title"] for r in with_diacritics.json()] == ["Tocanita simpla de vinete"]
+
+
+def test_list_recipes_search_rejects_fewer_than_three_characters(client: TestClient) -> None:
+    response = client.get("/recipes", params={"search": "ca"})
+
+    assert response.status_code == 422
+
+
+def test_list_recipes_search_combines_with_category_filter(client: TestClient) -> None:
+    desserts_id = _create_category(client, "Desserts")
+    mains_id = _create_category(client, "Main Courses")
+    client.post("/recipes", json={"title": "Chocolate Cake", "category_id": desserts_id, "language": "en"})
+    client.post("/recipes", json={"title": "Chocolate Stew", "category_id": mains_id, "language": "en"})
+
+    response = client.get(
+        "/recipes", params={"search": "chocolate", "category_id": desserts_id, "language": "en"}
+    )
+
+    assert [r["title"] for r in response.json()] == ["Chocolate Cake"]
+
+
+def test_list_recipes_search_treats_percent_and_underscore_literally(client: TestClient) -> None:
+    category_id = _create_category(client)
+    client.post(
+        "/recipes", json={"title": "50% Off Pancakes", "category_id": category_id, "language": "en"}
+    )
+    client.post("/recipes", json={"title": "Waffles", "category_id": category_id, "language": "en"})
+
+    response = client.get("/recipes", params={"search": "50%", "language": "en"})
+
+    assert [r["title"] for r in response.json()] == ["50% Off Pancakes"]
+
+
 def test_update_recipe_status(client: TestClient) -> None:
     category_id = _create_category(client)
     created = client.post(

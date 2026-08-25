@@ -372,4 +372,47 @@ describe("RecipeManager", () => {
 
     expect(screen.queryByRole("navigation", { name: "Recipe pages" })).not.toBeInTheDocument();
   });
+
+  it("sends the search text 1.5s after typing stops and resets to page 1", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.getPublicSettings.mockResolvedValue({
+      turnstile_site_key: "",
+      google_client_id: "",
+      backoffice_recipes_page_size: 1,
+      max_imports_per_user: 30,
+    });
+    mockedApi.listRecipesPage.mockImplementation((params) =>
+      Promise.resolve({ items: params.offset === 0 ? [cake] : [pendingSoup], total: 2 })
+    );
+
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    const nav = screen.getByRole("navigation", { name: "Recipe pages" });
+    await user.click(within(nav).getByRole("button", { name: "2" }));
+    await screen.findByText(/Soup/);
+
+    mockedApi.listRecipesPage.mockClear();
+    mockRecipeList([cake]);
+    await user.type(screen.getByPlaceholderText("Search by title…"), "cak");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    await waitFor(() =>
+      expect(mockedApi.listRecipesPage).toHaveBeenCalledWith(
+        expect.objectContaining({ search: "cak", offset: 0 })
+      )
+    );
+  });
+
+  it("shows a no-results message in place of the list when the search matches nothing", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    renderManager();
+    await screen.findByText(/Cake/);
+
+    mockRecipeList([]);
+    await user.type(screen.getByPlaceholderText("Search by title…"), "xyz");
+    await act(() => vi.advanceTimersByTimeAsync(1500));
+
+    expect(await screen.findByText("No recipes match your search.")).toBeInTheDocument();
+  });
 });

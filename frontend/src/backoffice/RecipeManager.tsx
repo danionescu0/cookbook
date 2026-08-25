@@ -6,6 +6,7 @@ import { dangerButton, primaryButton, secondaryButton } from "../ui/buttonStyles
 import { hostnameOf } from "../ui/hostnameOf";
 import { Pagination } from "../ui/Pagination";
 import { useConfirm } from "../ui/useConfirm";
+import { useRecipeSearch } from "../ui/useRecipeSearch";
 import type { Category, Recipe } from "../types";
 
 function toLines(text: string): string[] {
@@ -54,10 +55,16 @@ export function RecipeManager() {
   const [pageSize, setPageSize] = useState(10);
   const [currentPage, setCurrentPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const { text: searchText, setText: setSearchText, search } = useRecipeSearch();
 
   const reload = () =>
     api
-      .listRecipesPage({ language, limit: pageSize, offset: (currentPage - 1) * pageSize })
+      .listRecipesPage({
+        language,
+        search,
+        limit: pageSize,
+        offset: (currentPage - 1) * pageSize,
+      })
       .then(({ items, total: newTotal }) => {
         setRecipes(items);
         setTotal(newTotal);
@@ -77,7 +84,13 @@ export function RecipeManager() {
   useEffect(() => {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [language, currentPage, pageSize]);
+  }, [language, currentPage, pageSize, search]);
+
+  // Same reset-to-page-1 behavior a category/filter change gets elsewhere (useInfiniteRecipes) —
+  // otherwise a narrower search could leave currentPage past the new, smaller totalPages.
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [search]);
 
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   useEffect(() => {
@@ -290,7 +303,19 @@ export function RecipeManager() {
         </p>
       )}
 
-      <ul className="mt-8 divide-y divide-olive-light">
+      <input
+        type="search"
+        value={searchText}
+        onChange={(e) => setSearchText(e.target.value)}
+        placeholder={t.recipeManager.searchPlaceholder}
+        aria-label={t.recipeManager.searchPlaceholder}
+        className="mt-8 w-full max-w-sm rounded-md border border-olive/30 bg-white px-3 py-2 text-sm text-ink focus:border-terracotta focus:outline-none"
+      />
+
+      {recipes.length === 0 && search ? (
+        <p className="mt-4 text-ink/60">{t.recipeManager.noSearchResults}</p>
+      ) : (
+      <ul className="mt-4 divide-y divide-olive-light">
         {recipes.map((recipe) => (
           <li key={recipe.id} className="py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
@@ -578,6 +603,7 @@ export function RecipeManager() {
           </li>
         ))}
       </ul>
+      )}
 
       <Pagination
         currentPage={currentPage}

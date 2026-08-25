@@ -11,6 +11,8 @@ interface UseInfiniteRecipesParams {
   onlyPublic?: boolean;
   // Combinable with categoryId — see api/client.ts's listRecipesPage.
   favoritesOnly?: boolean;
+  // Title-only substring filter — see useRecipeSearch. Composes with every other filter here.
+  search?: string;
   // False skips fetching entirely (e.g. the "mine" list when nobody's logged in, since
   // owner="me" would 401) — recipes/loading/hasMore all read as empty/settled.
   enabled?: boolean;
@@ -34,6 +36,7 @@ export function useInfiniteRecipes({
   owner,
   onlyPublic,
   favoritesOnly,
+  search,
   enabled = true,
 }: UseInfiniteRecipesParams): UseInfiniteRecipesResult {
   const [recipes, setRecipes] = useState<Recipe[]>([]);
@@ -63,6 +66,7 @@ export function useInfiniteRecipes({
         owner,
         onlyPublic,
         favoritesOnly,
+        search,
         limit: PAGE_SIZE,
         offset: 0,
       })
@@ -84,7 +88,7 @@ export function useInfiniteRecipes({
     return () => {
       cancelled = true;
     };
-  }, [categoryId, language, owner, onlyPublic, favoritesOnly, enabled]);
+  }, [categoryId, language, owner, onlyPublic, favoritesOnly, search, enabled]);
 
   const hasMore = total !== null && recipes.length < total;
 
@@ -99,6 +103,7 @@ export function useInfiniteRecipes({
         owner,
         onlyPublic,
         favoritesOnly,
+        search,
         limit: PAGE_SIZE,
         offset: recipes.length,
       })
@@ -111,7 +116,17 @@ export function useInfiniteRecipes({
         loadingRef.current = false;
         setLoading(false);
       });
-  }, [categoryId, language, owner, onlyPublic, favoritesOnly, enabled, hasMore, recipes.length]);
+  }, [
+    categoryId,
+    language,
+    owner,
+    onlyPublic,
+    favoritesOnly,
+    search,
+    enabled,
+    hasMore,
+    recipes.length,
+  ]);
 
   const observerRef = useRef<IntersectionObserver | null>(null);
   const sentinelRef = useCallback(

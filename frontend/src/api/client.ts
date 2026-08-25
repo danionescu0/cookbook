@@ -190,6 +190,9 @@ export const api = {
     // Combinable with categoryId (both narrow the same query) — powers the Favorites filter
     // pill, mutually exclusive with owner/onlyPublic in practice.
     favoritesOnly?: boolean;
+    // Title-only substring filter, scoped server-side to `language` — see useRecipeSearch, which
+    // already withholds anything under 3 characters, so whatever arrives here is meant to filter.
+    search?: string;
     limit: number;
     offset: number;
   }): Promise<RecipesPage> => {
@@ -199,6 +202,7 @@ export const api = {
     if (params.owner) query.set("owner", params.owner);
     if (params.onlyPublic) query.set("only_public", "true");
     if (params.favoritesOnly) query.set("favorites_only", "true");
+    if (params.search) query.set("search", params.search);
     query.set("limit", String(params.limit));
     query.set("offset", String(params.offset));
     return requestRecipesPage(query);
