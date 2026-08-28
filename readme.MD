@@ -19,6 +19,7 @@ go live.
 - [Debug](#debug)
 - [Testing](#testing)
 - [Design Decisions](#design-decisions)
+- [License](#license)
 - [Original Spec](#original-spec)
 
 ## Screenshots
@@ -3194,6 +3195,19 @@ Resolved answers to the earlier open questions, now reflected in the sections ab
   already go through the paginated `GET /recipes`, so they search server-side via the new `search`
   param there instead, composing with whatever other filter (category, Favorites) is already
   active exactly like those filters already compose with each other.
+
+## License
+
+Cookbook is licensed under the [GNU Affero General Public License v3.0](LICENSE) (AGPL-3.0).
+
+Because this is self-hosted, network-facing software, AGPL was chosen over MIT/Apache-2.0/GPL
+specifically to close the "SaaS loophole" plain GPL leaves open: under GPL, someone could take a
+modified copy of Cookbook, run it as a paid hosted service, and never publish their changes, since
+GPL's copyleft only triggers on *distributing* the software, not on running it as a network
+service. AGPL adds that trigger — anyone who runs a modified version of Cookbook and lets others
+use it over a network must also make that version's source available to those users.
+
+Copyright (C) 2026 Dan Ionescu.
 
 ## Original Spec
 
