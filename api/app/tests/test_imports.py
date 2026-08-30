@@ -80,6 +80,34 @@ def test_create_import_job_rejects_url_already_in_the_queue(client: TestClient) 
     assert response.status_code == 409
 
 
+def test_create_import_job_normalizes_instagram_tracking_params_before_storing(
+    client: TestClient,
+) -> None:
+    response = client.post(
+        "/imports", json={"source": "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=MTRtY2"}
+    )
+
+    assert response.status_code == 201
+    assert response.json()["source"] == "https://www.instagram.com/reel/DaPg51KNxhk/"
+
+
+def test_create_import_job_rejects_a_re_shared_instagram_link_to_an_already_queued_reel(
+    client: TestClient,
+) -> None:
+    # Real prod report: Instagram appends a different ?igsi=... tracking token every time a link
+    # is re-shared/re-copied, so re-submitting "the same" reel used to look like a brand-new URL
+    # and silently create a duplicate recipe instead of the expected "already imported" 409.
+    client.post(
+        "/imports", json={"source": "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=MTRtY2xsZ3RhMTB2NA=="}
+    )
+
+    response = client.post(
+        "/imports", json={"source": "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=someOtherToken"}
+    )
+
+    assert response.status_code == 409
+
+
 def test_create_import_job_allows_resubmission_after_deleting_previous_job(
     client: TestClient,
 ) -> None:
@@ -637,6 +665,26 @@ def test_parse_bookmark_file_flags_a_link_already_imported_as_a_recipe(
     assert by_url["https://example.com/soup"]["already_imported"] is False
 
 
+def test_parse_bookmark_file_flags_a_re_shared_instagram_link_as_already_imported(
+    client: TestClient,
+) -> None:
+    client.post(
+        "/imports", json={"source": "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=MTRtY2xsZ3RhMTB2NA=="}
+    )
+    html = """
+    <!DOCTYPE NETSCAPE-Bookmark-file-1>
+    <DL><p>
+        <DT><A HREF="https://www.instagram.com/reel/DaPg51KNxhk/?igsi=aDifferentToken">Reel</A>
+    </DL><p>
+    """
+
+    response = _upload_bookmarks(client, html)
+
+    link = response.json()["links"][0]
+    assert link["url"] == "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=aDifferentToken"
+    assert link["already_imported"] is True
+
+
 def test_parse_bookmark_file_flags_a_link_already_queued(client: TestClient) -> None:
     client.post("/imports", json={"source": "https://example.com/soup"})
 
@@ -771,6 +819,32 @@ def test_import_bookmark_selection_skips_already_imported_urls_without_erroring(
     body = response.json()
     assert body["skipped_duplicate"] == ["https://example.com/cake"]
     assert [job["source"] for job in body["created"]] == ["https://example.com/soup"]
+
+
+def test_import_bookmark_selection_dedupes_re_shared_instagram_links_within_one_batch(
+    client: TestClient,
+) -> None:
+    # Same real-world case as the single-URL test above, but for a bookmark file that happens to
+    # contain two different share-link variants of the same reel in one batch — without a second,
+    # normalized-value dedup pass, both would have created a separate job/recipe for identical
+    # content.
+    response = client.post(
+        "/imports/bookmark",
+        json={
+            "urls": [
+                "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=MTRtY2xsZ3RhMTB2NA==",
+                "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=someOtherToken",
+            ]
+        },
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert len(body["created"]) == 1
+    assert body["created"][0]["source"] == "https://www.instagram.com/reel/DaPg51KNxhk/"
+    assert body["skipped_duplicate"] == [
+        "https://www.instagram.com/reel/DaPg51KNxhk/?igsi=someOtherToken"
+    ]
 
 
 def test_import_bookmark_selection_skipped_duplicates_do_not_count_against_quota(

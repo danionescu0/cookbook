@@ -20,6 +20,7 @@ from app.schemas.bookmark import (
 )
 from app.schemas.import_job import ImportJobCreate, ImportJobRead
 from app.settings_service import get_settings
+from app.url_normalize import INSTAGRAM_HOSTS, normalize_source_url
 
 # Any logged-in user can import for themselves (imports are always private to whoever ran them —
 # see routers/recipes.py's visibility rule) — gated per-route below, not at the router level.
@@ -27,16 +28,16 @@ router = APIRouter(prefix="/imports", tags=["imports"])
 
 _APPROVABLE_STATUSES = {ImportJobStatus.PENDING, ImportJobStatus.FAILED}
 
-_INSTAGRAM_HOSTS = {"instagram.com", "www.instagram.com", "instagr.am"}
-
 
 def _detect_job_type(source: str) -> ImportJobType:
     # Instagram posts need a different fetch path entirely (headless-browser rendering rather
     # than a plain HTML GET — see worker/app/instagram_client.py) since Instagram serves mostly
     # client-side-rendered content. Detected here, once, at creation time so the rest of the
-    # pipeline (approval, queueing, the worker's dispatch) just branches on job.type.
+    # pipeline (approval, queueing, the worker's dispatch) just branches on job.type. Called with
+    # an already-normalized source (see normalize_source_url) — host detection is unaffected
+    # either way, but keeping to one canonical form end to end avoids two sources of truth.
     host = (urlparse(source).hostname or "").lower()
-    return ImportJobType.INSTAGRAM if host in _INSTAGRAM_HOSTS else ImportJobType.SINGLE
+    return ImportJobType.INSTAGRAM if host in INSTAGRAM_HOSTS else ImportJobType.SINGLE
 
 
 def _get_or_404(db: Session, job_id: int) -> ImportJob:
@@ -58,9 +59,10 @@ def _get_owned_or_404(db: Session, job_id: int, current_user: AuthUser) -> Impor
 def _ensure_source_not_already_imported(db: Session, source: str, owner_id: int) -> None:
     # Scoped to this user, not global — imports are private per owner now, so two different
     # users importing the same public URL each get their own private copy; that's not a
-    # duplicate. Exact string match only — not normalized (trailing slash, tracking query
-    # params, www. prefix, etc. all count as different URLs). Good enough for "I pasted the same
-    # link twice"; revisit if that turns out to be too naive in practice.
+    # duplicate. Exact string match against `source`, which the caller has already run through
+    # normalize_source_url — for most sites that's still just "pasted the same link twice", but
+    # for Instagram it also catches a re-shared/re-copied link to a reel already imported (see
+    # README Design Decisions, "Instagram URL normalization").
     if (
         db.scalar(
             select(Recipe).where(Recipe.source_url == source, Recipe.owner_user_id == owner_id)
@@ -111,19 +113,26 @@ def _already_imported_urls(db: Session, urls: list[str], owner_id: int) -> set[s
     # Single bulk query per table rather than one _ensure_source_not_already_imported() call per
     # URL — a bookmark file can carry dozens of links, and this only ever runs against this one
     # user's own rows (recipes/import_jobs are both private-per-owner, see the module docstring).
+    # Returns a subset of the *raw* input `urls` (matching what the caller passed in, e.g. for a
+    # per-link `already_imported` flag) — the comparison itself is done on normalized values,
+    # since stored source/source_url rows are normalized (see normalize_source_url) but the raw
+    # input here may not be (a bookmark file's links are never normalized before this call).
     if not urls:
         return set()
+    normalized_by_raw = {url: normalize_source_url(url) for url in urls}
+    normalized_values = set(normalized_by_raw.values())
     from_recipes = db.scalars(
         select(Recipe.source_url).where(
-            Recipe.source_url.in_(urls), Recipe.owner_user_id == owner_id
+            Recipe.source_url.in_(normalized_values), Recipe.owner_user_id == owner_id
         )
     )
     from_jobs = db.scalars(
         select(ImportJob.source).where(
-            ImportJob.source.in_(urls), ImportJob.created_by_user_id == owner_id
+            ImportJob.source.in_(normalized_values), ImportJob.created_by_user_id == owner_id
         )
     )
-    return {url for url in from_recipes if url is not None} | set(from_jobs)
+    already_normalized = {url for url in from_recipes if url is not None} | set(from_jobs)
+    return {raw for raw, normalized in normalized_by_raw.items() if normalized in already_normalized}
 
 
 def _queue_and_publish(db: Session, job: ImportJob) -> None:
@@ -217,14 +226,15 @@ def create_import_job(
     if user is None:
         raise HTTPException(status_code=404, detail="User not found")
     _ensure_import_limit_not_reached(db, user)
-    _ensure_source_not_already_imported(db, payload.source, current_user.id)
+    source = normalize_source_url(payload.source)
+    _ensure_source_not_already_imported(db, source, current_user.id)
 
     # category_id starts null — the worker resolves it from Claude's own suggestion once
     # extraction succeeds (see worker/app/handlers.py's _resolve_category_id), rather than the
     # requester picking one up front.
     job = ImportJob(
-        source=payload.source,
-        type=_detect_job_type(payload.source),
+        source=source,
+        type=_detect_job_type(source),
         created_by_user_id=current_user.id,
     )
     db.add(job)
@@ -288,7 +298,22 @@ def import_bookmark_selection(
     # remaining quota just because it happened to be selected again.
     requested = list(dict.fromkeys(payload.urls))  # de-dupe within the request, preserve order
     already_imported = _already_imported_urls(db, requested, current_user.id)
-    to_create = [url for url in requested if url not in already_imported]
+    not_yet_imported = [url for url in requested if url not in already_imported]
+
+    # A second dedup pass, this time by *normalized* value: two raw URLs in the same batch can be
+    # different Instagram share links to the same reel (see normalize_source_url) — without this,
+    # selecting both would create two jobs for identical content in one request, the same bug
+    # this whole normalization effort exists to close.
+    seen_normalized: set[str] = set()
+    to_create: list[str] = []
+    duplicate_within_batch: list[str] = []
+    for url in not_yet_imported:
+        normalized = normalize_source_url(url)
+        if normalized in seen_normalized:
+            duplicate_within_batch.append(url)
+        else:
+            seen_normalized.add(normalized)
+            to_create.append(url)
 
     remaining = _remaining_quota(db, user)
     if remaining is not None and len(to_create) > remaining:
@@ -303,7 +328,7 @@ def import_bookmark_selection(
     created: list[ImportJob] = []
     for url in to_create:
         job = ImportJob(
-            source=url, type=ImportJobType.BOOKMARK, created_by_user_id=current_user.id
+            source=normalize_source_url(url), type=ImportJobType.BOOKMARK, created_by_user_id=current_user.id
         )
         db.add(job)
         db.commit()
@@ -317,7 +342,7 @@ def import_bookmark_selection(
 
     return BookmarkImportResult(
         created=[_serialize(job, current_user) for job in created],
-        skipped_duplicate=[url for url in requested if url in already_imported],
+        skipped_duplicate=[url for url in requested if url in already_imported] + duplicate_within_batch,
     )
 
 
