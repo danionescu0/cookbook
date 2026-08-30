@@ -5,6 +5,9 @@ const en = {
     delete: "Delete",
     close: "Close",
   },
+  footer: {
+    githubLink: "Open source (AGPL-3.0) — view the code on GitHub",
+  },
   nav: {
     recipes: "Recipes",
     contact: "Contact",

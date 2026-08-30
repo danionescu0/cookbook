@@ -9,6 +9,9 @@ const ro: Translation = {
     delete: "Șterge",
     close: "Închide",
   },
+  footer: {
+    githubLink: "Proiect open source (AGPL-3.0) — vezi codul pe GitHub",
+  },
   nav: {
     recipes: "Rețete",
     contact: "Contact",

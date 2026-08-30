@@ -4,6 +4,9 @@ A self-hosted recipe website with a public front office, an admin back office, a
 pipeline that scrapes, translates, and cleans up recipes from other sites using Claude before they
 go live.
 
+**Live at [easy2cook.app](https://easy2cook.app)** — the site itself links back here from its
+footer on every page (AGPL-3.0, see [License](#license)).
+
 ## Contents
 
 - [Screenshots](#screenshots)

@@ -381,6 +381,15 @@ export function App() {
         <Link to="/privacy" className="hover:text-ink hover:underline">
           {t.privacy.navLink}
         </Link>
+        <span className="mx-2">·</span>
+        <a
+          href="https://github.com/danionescu0/cookbook"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="hover:text-ink hover:underline"
+        >
+          {t.footer.githubLink}
+        </a>
       </footer>
     </div>
   );
