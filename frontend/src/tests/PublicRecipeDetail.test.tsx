@@ -1,4 +1,5 @@
 import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { MemoryRouter, Route, Routes, useLocation } from "react-router-dom";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { PublicRecipeDetail } from "../frontoffice/PublicRecipeDetail";
@@ -44,6 +45,7 @@ const lemonTart: Recipe = {
   owner_email: null,
   is_shared: true,
   import_reviewed_at: null,
+  shared_from_recipe_id: null,
 };
 
 function LocationDisplay() {
@@ -175,6 +177,21 @@ describe("PublicRecipeDetail", () => {
     const data = JSON.parse(jsonLd!.textContent ?? "{}");
     expect(data.recipeYield).toBeUndefined();
     expect(data.nutrition).toBeUndefined();
+  });
+
+  it("opens the send-to-a-friend dialog with the permanent public link, no sign-up needed", async () => {
+    mockedApi.getRecipe.mockResolvedValue(lemonTart);
+    const user = userEvent.setup();
+
+    renderAt("/en/recipes/1-lemon-tart");
+    await screen.findByRole("heading", { name: "Lemon Tart" });
+
+    await user.click(screen.getByRole("button", { name: "Send to a friend" }));
+
+    expect(await screen.findByText(/This recipe is public/)).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue(`${window.location.origin}/en/recipes/1-lemon-tart`)
+    ).toBeInTheDocument();
   });
 
   it("omits JSON-LD and sets noindex for a private recipe (visible only to its owner)", async () => {

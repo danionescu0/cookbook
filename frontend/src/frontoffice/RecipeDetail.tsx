@@ -3,6 +3,7 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import { useFavoriteIds } from "../auth/useFavoriteIds";
 import { useLanguage } from "../i18n/LanguageContext";
+import { ShareRecipeDialog } from "../sharing/ShareRecipeDialog";
 import { RecipeDetailView } from "./RecipeDetailView";
 import type { Nutrition, Recipe } from "../types";
 
@@ -16,6 +17,7 @@ export function RecipeDetail() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [nutrition, setNutrition] = useState<Nutrition | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const { isAuthenticated, favoriteIds, toggleFavorite } = useFavoriteIds();
 
   useEffect(() => {
@@ -66,14 +68,18 @@ export function RecipeDetail() {
     : undefined;
 
   return (
-    <RecipeDetailView
-      recipe={recipe}
-      nutrition={nutrition}
-      isAuthenticated={isAuthenticated}
-      isFavorited={favoriteIds.has(recipe.id)}
-      onToggleFavorite={() => toggleFavorite(recipe.id)}
-      backTo={`/${language}`}
-      seo={{ canonical }}
-    />
+    <>
+      <RecipeDetailView
+        recipe={recipe}
+        nutrition={nutrition}
+        isAuthenticated={isAuthenticated}
+        isFavorited={favoriteIds.has(recipe.id)}
+        onToggleFavorite={() => toggleFavorite(recipe.id)}
+        backTo={`/${language}`}
+        seo={{ canonical }}
+        onSend={() => setSending(true)}
+      />
+      {sending && <ShareRecipeDialog recipe={recipe} onClose={() => setSending(false)} />}
+    </>
   );
 }

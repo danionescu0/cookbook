@@ -34,6 +34,13 @@ class Recipe(Base):
     # get a sharing UI/endpoint, so this stays False for them by construction, not a DB
     # constraint. A shared+approved recipe is visible to everyone, not just its owner.
     is_shared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    # Provenance only, not a live link: set once, at creation, when this recipe was produced by
+    # copying someone else's recipe_shares link (see routers/recipe_shares.py's copy endpoint).
+    # SET NULL rather than CASCADE — the original being deleted later shouldn't take this copy
+    # down with it, just forget where it came from.
+    shared_from_recipe_id: Mapped[int | None] = mapped_column(
+        ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True
+    )
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

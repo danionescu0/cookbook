@@ -7,6 +7,7 @@ const ro: Translation = {
   common: {
     cancel: "Anulează",
     delete: "Șterge",
+    close: "Închide",
   },
   nav: {
     recipes: "Rețete",
@@ -126,6 +127,33 @@ const ro: Translation = {
     errorTechnical: "Ceva nu a mers bine din partea noastră — un admin se va uita peste asta.",
     dismissImport: "OK",
     addManuallyInstead: "Adaug-o manual în schimb",
+  },
+  sharing: {
+    sendAction: "Trimite unui prieten",
+    dialogHeading: "Trimite această rețetă",
+    generateButton: "Creează un link",
+    generatingButton: "Se creează…",
+    linkExpiryNotice:
+      "Oricine are linkul îl poate vedea sau copia — nu mai funcționează după 24 de ore.",
+    publicLinkNotice:
+      "Această rețetă este publică — oricine are acest link o poate vedea, fără cont, iar linkul nu expiră niciodată.",
+    noSharesYet: "Niciun link încă — creează unul pentru a trimite această rețetă.",
+    expiresLabel: "Expiră {time}",
+    copyLinkButton: "Copiază linkul",
+    copiedConfirmation: "Copiat!",
+    revokeAction: "Revocă",
+    linkExpired: "Acest link a expirat.",
+    linkRevoked: "Acest link a fost revocat de expeditor.",
+    teaserTitle: "Ai primit o rețetă",
+    expiresInHours: "Expiră în aproximativ {hours}h",
+    signInPrompt: "Conectează-te pentru a vedea rețeta completă.",
+    createAccountLink: "Creează un cont",
+    createAccountHint: "Vei ajunge direct înapoi aici imediat ce te conectezi.",
+    logInLink: "Ai deja cont? Conectează-te",
+    sharedByLabel: "Trimisă de {email}",
+    copyToMyRecipes: "Copiază în rețetele mele",
+    ownRecipeNotice: "Aceasta este propria ta rețetă.",
+    copyingButton: "Se copiază…",
   },
   recipeSubmit: {
     heading: "Adaugă o rețetă",

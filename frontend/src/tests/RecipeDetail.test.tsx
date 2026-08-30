@@ -16,6 +16,7 @@ vi.mock("../api/client", () => ({
     listFavorites: vi.fn(),
     favoriteRecipe: vi.fn(),
     unfavoriteRecipe: vi.fn(),
+    listRecipeShares: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
   setAuthToken: vi.fn(),
@@ -45,6 +46,7 @@ const cake: Recipe = {
   owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-07-23T00:00:00Z",
+  shared_from_recipe_id: null,
 };
 
 beforeEach(() => {
@@ -164,6 +166,20 @@ describe("RecipeDetail", () => {
 
     await screen.findByRole("heading", { name: "Cake" });
     expect(screen.queryByRole("button", { name: "Save recipe" })).not.toBeInTheDocument();
+  });
+
+  it("opens the send-to-a-friend dialog from the detail page", async () => {
+    mockedApi.getRecipe.mockResolvedValue(cake);
+    mockedApi.listRecipeShares.mockResolvedValue([]);
+    const user = userEvent.setup();
+
+    renderDetail();
+    await screen.findByRole("heading", { name: "Cake" });
+
+    await user.click(screen.getByRole("button", { name: "Send to a friend" }));
+
+    expect(await screen.findByRole("button", { name: "Create a link" })).toBeInTheDocument();
+    expect(mockedApi.listRecipeShares).toHaveBeenCalledWith(1);
   });
 
   it("renders a '### ' sub-group label as a heading, not a bullet/numbered item", async () => {

@@ -17,6 +17,7 @@ vi.mock("../api/client", () => ({
     listFavorites: vi.fn(),
     favoriteRecipe: vi.fn(),
     unfavoriteRecipe: vi.fn(),
+    listRecipeShares: vi.fn(),
   },
   BASE_URL: "http://localhost:8000",
   setAuthToken: vi.fn(),
@@ -49,6 +50,7 @@ const cake: Recipe = {
   owner_email: null,
   is_shared: true,
   import_reviewed_at: null,
+  shared_from_recipe_id: null,
 };
 
 const soup: Recipe = {
@@ -112,6 +114,34 @@ describe("RecipeBrowser", () => {
 
     const link = (await screen.findByText("Cake")).closest("a");
     expect(link).toHaveAttribute("href", "/en/recipes/1-cake");
+  });
+
+  it("opens the send-to-a-friend dialog with a permanent no-expiry link for a public recipe card", async () => {
+    mockFeeds([], [cake]);
+    const user = userEvent.setup();
+    renderBrowser();
+    await screen.findByText("Cake");
+
+    await user.click(screen.getByRole("button", { name: "Send to a friend" }));
+
+    expect(await screen.findByText(/This recipe is public/)).toBeInTheDocument();
+    expect(
+      screen.getByDisplayValue(`${window.location.origin}/en/recipes/1-cake`)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Create a link" })).not.toBeInTheDocument();
+  });
+
+  it("opens the send-to-a-friend dialog with the generate/list flow for a private recipe card", async () => {
+    mockFeeds([], [soup]);
+    mockedApi.listRecipeShares.mockResolvedValue([]);
+    const user = userEvent.setup();
+    renderBrowser();
+    await screen.findByText("Soup");
+
+    await user.click(screen.getByRole("button", { name: "Send to a friend" }));
+
+    expect(await screen.findByRole("button", { name: "Create a link" })).toBeInTheDocument();
+    expect(screen.queryByText(/This recipe is public/)).not.toBeInTheDocument();
   });
 
   it("filters by category when a pill is clicked", async () => {

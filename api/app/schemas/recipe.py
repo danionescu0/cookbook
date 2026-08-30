@@ -92,3 +92,34 @@ class RecipeRead(BaseModel):
     # routers/recipes.py's acknowledge_import) — drives the post-import review panel. Always null
     # for a manually-added recipe (source_url is None), which never shows that panel.
     import_reviewed_at: datetime | None
+    # Set once, at creation, when this recipe was produced by copying someone else's recipe_shares
+    # link — see routers/recipe_shares.py's copy endpoint. Lets the frontend show "Copied from a
+    # shared recipe" provenance; never changes afterward.
+    shared_from_recipe_id: int | None = None
+
+
+class RecipeShareRead(BaseModel):
+    id: int
+    token: str
+    created_at: datetime
+    expires_at: datetime
+    revoked_at: datetime | None
+
+
+class RecipeShareTeaser(BaseModel):
+    title: str
+    image: str | None
+    # Server-truncated (see routers/recipe_shares.py) — a real teaser, not the full description.
+    description: str
+
+
+class RecipeShareDetail(BaseModel):
+    # Computed from expires_at/revoked_at at request time, not stored.
+    status: str
+    expires_at: datetime
+    # Only non-null when status == "active" — never leak recipe content past expiry/revocation.
+    teaser: RecipeShareTeaser | None
+    # Only populated when status == "active" AND the caller is authenticated — an anonymous
+    # visitor gets the teaser above but not who sent it or the full recipe below.
+    shared_by_email: str | None = None
+    recipe: RecipeRead | None = None

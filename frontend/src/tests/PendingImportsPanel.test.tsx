@@ -43,6 +43,7 @@ const baseRecipe: Recipe = {
   owner_email: null,
   is_shared: false,
   import_reviewed_at: null,
+  shared_from_recipe_id: null,
 };
 
 const categories: Category[] = [

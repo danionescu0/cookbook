@@ -4,6 +4,7 @@ import { api } from "../api/client";
 import { useFavoriteIds } from "../auth/useFavoriteIds";
 import { isLanguage } from "../i18n/config";
 import { useLanguage } from "../i18n/LanguageContext";
+import { ShareRecipeDialog } from "../sharing/ShareRecipeDialog";
 import { RecipeDetailView } from "./RecipeDetailView";
 import type { Nutrition, Recipe } from "../types";
 
@@ -21,6 +22,7 @@ export function PublicRecipeDetail() {
   const [recipe, setRecipe] = useState<Recipe | null>(null);
   const [nutrition, setNutrition] = useState<Nutrition | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const { isAuthenticated, favoriteIds, toggleFavorite } = useFavoriteIds();
 
   const match = idSlug?.match(ID_SLUG_RE);
@@ -83,14 +85,18 @@ export function PublicRecipeDetail() {
   }
 
   return (
-    <RecipeDetailView
-      recipe={recipe}
-      nutrition={nutrition}
-      isAuthenticated={isAuthenticated}
-      isFavorited={favoriteIds.has(recipe.id)}
-      onToggleFavorite={() => toggleFavorite(recipe.id)}
-      backTo={`/${lang}`}
-      seo={{ canonical: `${window.location.origin}/${lang}/recipes/${recipe.id}-${recipe.slug}` }}
-    />
+    <>
+      <RecipeDetailView
+        recipe={recipe}
+        nutrition={nutrition}
+        isAuthenticated={isAuthenticated}
+        isFavorited={favoriteIds.has(recipe.id)}
+        onToggleFavorite={() => toggleFavorite(recipe.id)}
+        backTo={`/${lang}`}
+        seo={{ canonical: `${window.location.origin}/${lang}/recipes/${recipe.id}-${recipe.slug}` }}
+        onSend={() => setSending(true)}
+      />
+      {sending && <ShareRecipeDialog recipe={recipe} onClose={() => setSending(false)} />}
+    </>
   );
 }

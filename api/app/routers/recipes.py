@@ -204,6 +204,7 @@ def _serialize(
         owner_email=recipe.owner.email if current_user and current_user.is_admin else None,
         is_shared=recipe.is_shared,
         import_reviewed_at=recipe.import_reviewed_at,
+        shared_from_recipe_id=recipe.shared_from_recipe_id,
     )
 
 

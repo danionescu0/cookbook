@@ -5,6 +5,7 @@ import { useAuth } from "../auth/AuthContext";
 import { useFavoriteIds } from "../auth/useFavoriteIds";
 import { useLanguage } from "../i18n/LanguageContext";
 import { useSeoMeta } from "../seo/useSeoMeta";
+import { ShareRecipeDialog } from "../sharing/ShareRecipeDialog";
 import { primaryButton } from "../ui/buttonStyles";
 import { CategoryNav } from "./CategoryNav";
 import { RecipeCard } from "./RecipeCard";
@@ -16,9 +17,10 @@ interface RecipeGridProps {
   recipes: Recipe[];
   favoriteIds: Set<number>;
   onToggleFavorite?: (recipeId: number) => void;
+  onSend: (recipe: Recipe) => void;
 }
 
-function RecipeGrid({ recipes, favoriteIds, onToggleFavorite }: RecipeGridProps) {
+function RecipeGrid({ recipes, favoriteIds, onToggleFavorite, onSend }: RecipeGridProps) {
   return (
     <div className="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3">
       {recipes.map((recipe) => (
@@ -27,6 +29,7 @@ function RecipeGrid({ recipes, favoriteIds, onToggleFavorite }: RecipeGridProps)
           recipe={recipe}
           isFavorited={favoriteIds.has(recipe.id)}
           onToggleFavorite={onToggleFavorite}
+          onSend={onSend}
         />
       ))}
     </div>
@@ -44,6 +47,7 @@ export function RecipeBrowser() {
   const [favoritesActive, setFavoritesActive] = useState(false);
   const { favoriteIds, toggleFavorite } = useFavoriteIds();
   const { text: searchText, setText: setSearchText, search } = useRecipeSearch();
+  const [sendingRecipe, setSendingRecipe] = useState<Recipe | null>(null);
 
   useSeoMeta({
     title: `${t.brand} — ${t.browser.heading}`,
@@ -171,6 +175,7 @@ export function RecipeBrowser() {
                   recipes={favoritesRecipes}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={toggleFavorite}
+                  onSend={setSendingRecipe}
                 />
                 {favorites.loading && <p className="text-sm text-ink/50">{t.browser.loadingMore}</p>}
                 {favorites.hasMore && (
@@ -195,6 +200,7 @@ export function RecipeBrowser() {
                   recipes={primaryRecipes}
                   favoriteIds={favoriteIds}
                   onToggleFavorite={isAuthenticated ? toggleFavorite : undefined}
+                  onSend={setSendingRecipe}
                 />
                 {primary.loading && <p className="text-sm text-ink/50">{t.browser.loadingMore}</p>}
                 {primary.hasMore && (
@@ -216,12 +222,21 @@ export function RecipeBrowser() {
               {publicFeed.error}
             </p>
           )}
-          <RecipeGrid recipes={community} favoriteIds={favoriteIds} onToggleFavorite={toggleFavorite} />
+          <RecipeGrid
+            recipes={community}
+            favoriteIds={favoriteIds}
+            onToggleFavorite={toggleFavorite}
+            onSend={setSendingRecipe}
+          />
           {publicFeed.loading && <p className="text-sm text-ink/50">{t.browser.loadingMore}</p>}
           {publicFeed.hasMore && (
             <div ref={publicFeed.sentinelRef} aria-hidden="true" className="h-1" />
           )}
         </section>
+      )}
+
+      {sendingRecipe && (
+        <ShareRecipeDialog recipe={sendingRecipe} onClose={() => setSendingRecipe(null)} />
       )}
     </div>
   );

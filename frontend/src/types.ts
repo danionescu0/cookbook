@@ -39,6 +39,31 @@ export interface Recipe {
   // Null until the owner acknowledges a just-finished import on the account page — drives the
   // post-import review panel. Always null for a manually-added recipe (source_url is null).
   import_reviewed_at: string | null;
+  // Set once, at creation, when this recipe was produced by copying someone else's
+  // recipe-sharing link (see sharing/SharePage.tsx) — never changes afterward.
+  shared_from_recipe_id: number | null;
+}
+
+export interface RecipeShare {
+  id: number;
+  token: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+}
+
+export interface RecipeShareTeaser {
+  title: string;
+  image: string | null;
+  description: string;
+}
+
+export interface RecipeShareDetail {
+  status: "active" | "expired" | "revoked";
+  expires_at: string;
+  teaser: RecipeShareTeaser | null;
+  shared_by_email: string | null;
+  recipe: Recipe | null;
 }
 
 export interface RecipesPage {

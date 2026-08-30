@@ -15,6 +15,7 @@ from app.routers import (
     languages,
     nutrition,
     public_settings,
+    recipe_shares,
     recipes,
     settings as settings_router,
     sitemap,
@@ -39,6 +40,8 @@ app.include_router(users.router)
 app.include_router(categories.router)
 app.include_router(recipes.router)
 app.include_router(recipes.me_router)
+app.include_router(recipe_shares.router)
+app.include_router(recipe_shares.token_router)
 app.include_router(images.router)
 app.include_router(imports.router)
 app.include_router(languages.router)

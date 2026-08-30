@@ -47,6 +47,7 @@ const cake: Recipe = {
   owner_email: null,
   is_shared: false,
   import_reviewed_at: null,
+  shared_from_recipe_id: null,
 };
 const pendingSoup: Recipe = {
   id: 2,
@@ -69,6 +70,7 @@ const pendingSoup: Recipe = {
   owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-07-23T00:00:00Z",
+  shared_from_recipe_id: null,
 };
 
 function page(items: Recipe[]): RecipesPage {

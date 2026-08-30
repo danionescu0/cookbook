@@ -68,6 +68,7 @@ const importedRecipe: Recipe = {
   owner_email: null,
   is_shared: false,
   import_reviewed_at: "2026-08-04T00:00:00Z",
+  shared_from_recipe_id: null,
 };
 
 function renderPage() {

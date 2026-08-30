@@ -14,6 +14,8 @@ import type {
   Recipe,
   RecipeDraft,
   RecipesPage,
+  RecipeShare,
+  RecipeShareDetail,
   RecipeUpdate,
   Settings,
   SettingsUpdate,
@@ -235,6 +237,15 @@ export const api = {
       method: "PATCH",
       body: JSON.stringify({ category_id: categoryId }),
     }),
+  createRecipeShare: (recipeId: number) =>
+    request<RecipeShare>(`/recipes/${recipeId}/shares`, { method: "POST" }),
+  listRecipeShares: (recipeId: number) => request<RecipeShare[]>(`/recipes/${recipeId}/shares`),
+  revokeRecipeShare: (recipeId: number, shareId: number) =>
+    request<void>(`/recipes/${recipeId}/shares/${shareId}`, { method: "DELETE" }),
+  getRecipeShare: (token: string) => request<RecipeShareDetail>(`/recipe-shares/${token}`),
+  copyRecipeShare: (token: string) =>
+    request<Recipe>(`/recipe-shares/${token}/copy`, { method: "POST" }),
+
   favoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "POST" }),
   unfavoriteRecipe: (id: number) => request<void>(`/recipes/${id}/favorite`, { method: "DELETE" }),
   listFavorites: () => request<Recipe[]>("/users/me/favorites"),

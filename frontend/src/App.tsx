@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   Link,
   Navigate,
@@ -36,6 +36,8 @@ import { isLanguage, type Language } from "./i18n/config";
 import { useLanguage } from "./i18n/LanguageContext";
 import { TermsPage } from "./legal/TermsPage";
 import { PrivacyPage } from "./legal/PrivacyPage";
+import { SharePage } from "./sharing/SharePage";
+import { clearPendingShareToken, getPendingShareToken } from "./sharing/pendingShare";
 import { secondaryButton } from "./ui/buttonStyles";
 
 function navLinkClasses({ isActive }: { isActive: boolean }): string {
@@ -180,6 +182,35 @@ function HomeRoute() {
   return isAuthenticated ? <RecipeBrowser /> : <LandingPage />;
 }
 
+// Replaces the plain `<Navigate to="/" replace />` the /login and /signup routes render once
+// authenticated — completes the return trip for someone who opened a /share/:token link while
+// logged out (that page stashes its token, see sharing/pendingShare.ts, before sending them here
+// to sign up/log in). Deliberately a route-level replacement rather than a separate ancestor
+// effect: an earlier version used an App()-level effect for this, but effect-ordering between it
+// and this same route's own <Navigate to="/"> raced — whichever fired last inside the same commit
+// won, and "/" wins more often than not. Owning the redirect target at the one place that
+// actually decides it removes the race entirely. A no-op read (pendingShareToken is null) for
+// every other login/signup, so this behaves exactly like the plain redirect it replaces.
+function PostAuthRedirect() {
+  const navigate = useNavigate();
+  // Computed once, from a lazy initializer, rather than re-read inside the effect below: in
+  // StrictMode (dev), React runs this component's effect twice (mount -> cleanup -> mount) to
+  // surface exactly this class of bug — an effect that reads-then-clears external state isn't
+  // idempotent, so its second invocation would see the token already gone (cleared by the
+  // first) and silently redirect to "/" instead, undoing the first navigation. The lazy
+  // initializer itself is pure (a plain read, no clearing), so calling it twice is harmless and
+  // both invocations agree on the same target.
+  const [target] = useState(() => {
+    const token = getPendingShareToken();
+    return token ? `/share/${token}` : "/";
+  });
+  useEffect(() => {
+    clearPendingShareToken();
+    navigate(target, { replace: true });
+  }, [target, navigate]);
+  return null;
+}
+
 // Parent of the public, language-prefixed subtree (/{lang}, /{lang}/recipes,
 // /{lang}/recipes/{idSlug}) — these are additive canonical/SEO entry points alongside the
 // original unprefixed routes (still used for internal nav), not a replacement for them; see
@@ -269,8 +300,8 @@ export function App() {
             <Route path="recipes" element={<RecipeBrowser />} />
             <Route path="recipes/:idSlug" element={<PublicRecipeDetail />} />
           </Route>
-          <Route path="/login" element={isAuthenticated ? <Navigate to="/" replace /> : <LoginForm />} />
-          <Route path="/signup" element={isAuthenticated ? <Navigate to="/" replace /> : <SignupForm />} />
+          <Route path="/login" element={isAuthenticated ? <PostAuthRedirect /> : <LoginForm />} />
+          <Route path="/signup" element={isAuthenticated ? <PostAuthRedirect /> : <SignupForm />} />
           <Route
             path="/forgot-password"
             element={isAuthenticated ? <Navigate to="/" replace /> : <ForgotPasswordPage />}
@@ -280,6 +311,10 @@ export function App() {
             element={isAuthenticated ? <Navigate to="/" replace /> : <ResetPasswordPage />}
           />
           <Route path="/verify-email" element={<VerifyEmailPage />} />
+          {/* Top-level, not under /:lang — a private utility link, not an indexable content
+              page (see SharePage's noindex). Reachable whether authenticated or not; the page
+              itself gates on the fetched share status/auth state. */}
+          <Route path="/share/:token" element={<SharePage />} />
           <Route path="/terms" element={<TermsPage />} />
           <Route path="/privacy" element={<PrivacyPage />} />
           <Route path="/contact" element={<ContactPage />} />

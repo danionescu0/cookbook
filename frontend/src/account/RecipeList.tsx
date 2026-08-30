@@ -11,6 +11,7 @@ interface RecipeListProps {
   showEditLink?: boolean;
   onToggleShare?: (recipe: Recipe) => void;
   onDelete?: (recipe: Recipe) => void;
+  onSend?: (recipe: Recipe) => void;
   categories?: Category[];
   onChangeCategory?: (recipe: Recipe, categoryId: number) => void;
 }
@@ -21,6 +22,7 @@ export function RecipeList({
   showEditLink,
   onToggleShare,
   onDelete,
+  onSend,
   categories,
   onChangeCategory,
 }: RecipeListProps) {
@@ -69,6 +71,15 @@ export function RecipeList({
                 className="block text-xs text-red-600 hover:underline"
               >
                 {t.recipeManager.delete}
+              </button>
+            )}
+            {onSend && (
+              <button
+                type="button"
+                onClick={() => onSend(recipe)}
+                className="block text-xs text-terracotta hover:underline"
+              >
+                {t.sharing.sendAction}
               </button>
             )}
             {/* Imports (source_url set) never get a sharing control — always private. */}

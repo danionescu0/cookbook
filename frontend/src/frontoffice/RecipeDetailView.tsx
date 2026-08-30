@@ -25,6 +25,9 @@ interface RecipeDetailViewProps {
   onToggleFavorite: () => void;
   backTo: string;
   seo: RecipeDetailSeo;
+  // Omitted (not just falsy) hides the button entirely — SharePage.tsx deliberately doesn't pass
+  // this on the pre-copy recipient view, since re-sharing only makes sense once they own a copy.
+  onSend?: () => void;
 }
 
 export function RecipeDetailView({
@@ -35,6 +38,7 @@ export function RecipeDetailView({
   onToggleFavorite,
   backTo,
   seo,
+  onSend,
 }: RecipeDetailViewProps) {
   const { t } = useLanguage();
   const imageUrl = recipe.images[0] ? `${BASE_URL}${recipe.images[0]}` : undefined;
@@ -115,6 +119,31 @@ export function RecipeDetailView({
             <span className="sr-only">
               {isFavorited ? t.detail.removeFavorite : t.detail.addFavorite}
             </span>
+          </button>
+        )}
+        {onSend && (
+          <button
+            type="button"
+            onClick={onSend}
+            aria-label={t.sharing.sendAction}
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-cream-card text-ink/60 ring-1 ring-black/5 transition-colors hover:text-terracotta"
+          >
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="h-4 w-4"
+              aria-hidden="true"
+            >
+              <circle cx="18" cy="5" r="3" />
+              <circle cx="6" cy="12" r="3" />
+              <circle cx="18" cy="19" r="3" />
+              <line x1="8.59" y1="10.51" x2="15.42" y2="6.49" />
+              <line x1="8.59" y1="13.49" x2="15.42" y2="17.51" />
+            </svg>
           </button>
         )}
       </div>

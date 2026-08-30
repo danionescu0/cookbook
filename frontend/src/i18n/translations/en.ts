@@ -3,6 +3,7 @@ const en = {
   common: {
     cancel: "Cancel",
     delete: "Delete",
+    close: "Close",
   },
   nav: {
     recipes: "Recipes",
@@ -122,6 +123,35 @@ const en = {
     errorTechnical: "Something went wrong on our side — an admin will take a look.",
     dismissImport: "OK",
     addManuallyInstead: "Add it manually instead",
+  },
+  // Person-to-person recipe links — distinct from account.shareAction ("Share with community"),
+  // which makes a recipe publicly browsable to everyone instead. See README Design Decisions
+  // ("Recipe sharing").
+  sharing: {
+    sendAction: "Send to a friend",
+    dialogHeading: "Send this recipe",
+    generateButton: "Create a link",
+    generatingButton: "Creating…",
+    linkExpiryNotice: "Anyone with the link can view or copy it — it stops working after 24 hours.",
+    publicLinkNotice:
+      "This recipe is public — anyone with this link can view it, no account needed, and it never expires.",
+    noSharesYet: "No links yet — create one to send this recipe.",
+    expiresLabel: "Expires {time}",
+    copyLinkButton: "Copy link",
+    copiedConfirmation: "Copied!",
+    revokeAction: "Revoke",
+    linkExpired: "This link has expired.",
+    linkRevoked: "This link was revoked by its sender.",
+    teaserTitle: "A recipe was shared with you",
+    expiresInHours: "Expires in about {hours}h",
+    signInPrompt: "Sign in to see the full recipe.",
+    createAccountLink: "Create an account",
+    createAccountHint: "You'll land right back here once you're signed in.",
+    logInLink: "Already have an account? Log in",
+    sharedByLabel: "Shared by {email}",
+    copyToMyRecipes: "Copy to my recipes",
+    ownRecipeNotice: "This is your own recipe.",
+    copyingButton: "Copying…",
   },
   recipeSubmit: {
     heading: "Add a recipe",

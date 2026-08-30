@@ -12,6 +12,7 @@ import { PendingImportsPanel } from "./PendingImportsPanel";
 import { RecipeList } from "./RecipeList";
 import { matchesSearchWords } from "../ui/searchMatch";
 import { useRecipeSearch } from "../ui/useRecipeSearch";
+import { ShareRecipeDialog } from "../sharing/ShareRecipeDialog";
 import type { Category, Recipe } from "../types";
 
 // Reachable via the "Add or import recipes" button on the recipes page (and the header nav) —
@@ -29,6 +30,7 @@ export function ImportPage() {
   const [importTrigger, setImportTrigger] = useState(0);
   const { confirm, confirmDialog } = useConfirm();
   const { text: searchText, setText: setSearchText, search } = useRecipeSearch();
+  const [sendingRecipe, setSendingRecipe] = useState<Recipe | null>(null);
 
   const reloadSubmissions = () =>
     api.listMySubmissions().then(setSubmissions).catch((e) => setError(String(e)));
@@ -133,6 +135,7 @@ export function ImportPage() {
                 showEditLink
                 onToggleShare={handleToggleShare}
                 onDelete={handleDelete}
+                onSend={setSendingRecipe}
                 categories={categories}
                 onChangeCategory={handleChangeCategory}
               />
@@ -141,6 +144,9 @@ export function ImportPage() {
         )}
       </section>
       {confirmDialog}
+      {sendingRecipe && (
+        <ShareRecipeDialog recipe={sendingRecipe} onClose={() => setSendingRecipe(null)} />
+      )}
     </div>
   );
 }

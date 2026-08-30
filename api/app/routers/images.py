@@ -36,6 +36,26 @@ def upload_image(
     return {"url": f"/images/{filename}"}
 
 
+def copy_images(image_urls: list[str]) -> list[str]:
+    """Physically duplicates each file under a fresh filename, returning the new URL list — used
+    by recipe_shares.py's copy endpoint so a copied recipe owns its own image files rather than
+    pointing at the original's. Without this, the original owner deleting their recipe later
+    would call delete_images on files the copy still references (delete_recipe has no way to know
+    another recipe now shares them), silently breaking the copy's photos. A missing source file is
+    skipped rather than raised — best-effort, same spirit as delete_images.
+    """
+    images_dir = Path(settings.images_dir)
+    new_urls: list[str] = []
+    for url in image_urls:
+        source = images_dir / Path(url).name
+        if not source.exists():
+            continue
+        filename = f"{uuid.uuid4().hex}.jpg"
+        (images_dir / filename).write_bytes(source.read_bytes())
+        new_urls.append(f"/images/{filename}")
+    return new_urls
+
+
 def delete_images(image_urls: list[str]) -> None:
     """Best-effort cleanup of files written by upload_image (or the worker's import pipeline,
     same "/images/{uuid}.jpg" naming) — a missing file (already gone, or never existed) is not
