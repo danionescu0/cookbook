@@ -28,18 +28,18 @@ export function RecipeList({
 }: RecipeListProps) {
   const { t } = useLanguage();
   return (
-    <ul className="mt-3 flex flex-wrap items-stretch gap-4">
+    <ul className="mt-3 grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5">
       {recipes.map((recipe) => (
-        <li key={recipe.id} className="flex w-40 flex-col">
+        <li key={recipe.id} className="flex flex-col">
           <Link to={`/recipes/${recipe.id}`} className="block">
             {recipe.images[0] ? (
               <img
                 src={`${BASE_URL}${recipe.images[0]}`}
                 alt={recipe.title}
-                className="h-28 w-40 rounded-md object-cover"
+                className="aspect-4/3 w-full rounded-md object-cover"
               />
             ) : (
-              <div className="flex h-28 w-40 items-center justify-center rounded-md bg-olive-light text-xs text-ink/50">
+              <div className="aspect-4/3 flex w-full items-center justify-center rounded-md bg-olive-light text-xs text-ink/50">
                 {recipe.title}
               </div>
             )}
