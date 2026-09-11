@@ -126,6 +126,34 @@ describe("ImportManager", () => {
     );
   });
 
+  it("auto-approves a newly submitted job that lands pending (admin), so it starts right away", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.createImportJob.mockResolvedValue(pendingJob);
+    mockedApi.approveImportJob.mockResolvedValue({ ...pendingJob, status: "queued" });
+
+    renderManager();
+    await screen.findByText("https://example.com/recipe");
+
+    await user.type(screen.getByLabelText("Recipe URL"), "https://example.com/new");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(mockedApi.approveImportJob).toHaveBeenCalledWith(pendingJob.id));
+  });
+
+  it("does not call approve for a newly submitted job that's already queued (non-admin)", async () => {
+    const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
+    mockedApi.createImportJob.mockResolvedValue(queuedJob);
+
+    renderManager();
+    await screen.findByText("https://example.com/recipe");
+
+    await user.type(screen.getByLabelText("Recipe URL"), "https://example.com/new");
+    await user.click(screen.getByRole("button", { name: "Add" }));
+
+    await waitFor(() => expect(mockedApi.createImportJob).toHaveBeenCalled());
+    expect(mockedApi.approveImportJob).not.toHaveBeenCalled();
+  });
+
   it("calls onJobCreated after successfully submitting a new import", async () => {
     const user = userEvent.setup({ advanceTimers: vi.advanceTimersByTime });
     const onJobCreated = vi.fn();

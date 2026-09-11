@@ -75,8 +75,16 @@ export function ImportManager({ onJobCreated, reloadTrigger }: ImportManagerProp
     if (!source.trim() || atLimit) return;
     setError(null);
     try {
-      await api.createImportJob(source.trim());
+      const job = await api.createImportJob(source.trim());
       setSource("");
+      // A non-admin's job is already queued at this point (see api's routers/imports.py) — this
+      // only fires for an admin, whose job still lands `pending`. Approving it immediately here
+      // removes the extra click that used to sit between "submit a URL" and "it actually starts":
+      // an admin typing/pasting a URL has already made the same call an Approve click used to
+      // confirm, so the manual step was pure friction, not an extra safety check.
+      if (job.status === "pending") {
+        await api.approveImportJob(job.id);
+      }
       await reload();
       onJobCreated?.();
     } catch (e) {
