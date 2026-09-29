@@ -352,10 +352,15 @@ state:
       [Design Decisions](#design-decisions), "Contact page".
 - [x] Local backups (`scripts/backup.sh`, cron-driven): Postgres + the `images_data` volume,
       dated and compressed under `./backups/`, pruned to keep today's, yesterday's, and one
-      oldest-survivor each from a ~4-day and a ~8-day window (at most 4 backups of each kind).
-      Getting a copy off the VPS is left to an external tool the operator already has, not baked
-      into this repo. See [Deployment](#deployment) for setup + restore, and
-      [Design Decisions](#design-decisions), "Local backup strategy".
+      oldest-survivor each from a ~4-day and a ~8-day window (at most 4 backups of each kind). See
+      [Deployment](#deployment) for setup + restore, and [Design Decisions](#design-decisions),
+      "Local backup strategy".
+- [x] Offsite backup pull (`maintenance/pull-cookbook-backups.sh`, meant to run on a separate
+      machine the operator controls — a Raspberry Pi, a NAS, anywhere with `rsync`/`ssh`): pulls
+      the VPS's own `./backups/db`/`./backups/images` down over SSH on its own schedule, with an
+      independent local retention (`KEEP_COUNT`, defaults to 50 per kind) so this copy outlives
+      the VPS's own ~4-per-kind pruning. No VPS host/user/path is hardcoded — all configured via
+      env vars/script variables, kept out of git. See `maintenance/README.md` for setup.
 - [x] DeepSeek as an alternate AI provider: an admin-editable `app_settings.preferred_ai_provider`
       (Settings page) switches every Claude call site (extraction, ingredient parsing,
       translation) to DeepSeek instead, reached through DeepSeek's own Anthropic-API-compatible
@@ -655,6 +660,10 @@ cookbook/
 │   └── backup.sh                   # cron-driven: pg_dump + tar of images_data into ./backups/,
 │                                    #   kept-oldest-in-range retention (~4-day/~8-day slots,
 │                                    #   see Design Decisions) — see Deployment
+├── maintenance/                    # ops tooling that runs OFF the VPS, not part of the app itself
+│   ├── README.md                   # setup steps for pull-cookbook-backups.sh
+│   └── pull-cookbook-backups.sh    # rsync/ssh pull of ./backups/{db,images} onto a separate
+│                                    #   machine (e.g. a Raspberry Pi), own KEEP_COUNT retention
 ├── frontend/                       # React + TypeScript SPA (front office + back office)
 │   ├── src/
 │   │   ├── frontoffice/             # LandingPage (logged-out home + "From the community" section),
@@ -1609,9 +1618,11 @@ until it ages out of its range, at which point the slot goes briefly empty and g
 whatever next reaches that age — see [Design Decisions](#design-decisions), "Local backup
 strategy", for why this has to work by picking the oldest survivor in a range rather than matching
 an exact age. This is a local-only, on-VPS backup; it does not protect against losing the VPS
-itself. Getting a copy safely off the server (e.g. an external tool pulling `./backups/` via
-`rsync`/`scp` on its own schedule) is intentionally left to whatever the operator already has
-for that, rather than baking a specific offsite destination/credential into this repo.
+itself. `maintenance/pull-cookbook-backups.sh` pulls a copy off the server over SSH/rsync onto a
+separate machine the operator controls, on its own schedule and its own local retention — see
+`maintenance/README.md` for setup. No specific offsite destination/credential is baked into this
+repo, deliberately — that script's VPS host/user/path are all set via environment variables/script
+config, not hardcoded here.
 
 **Restore**:
 
