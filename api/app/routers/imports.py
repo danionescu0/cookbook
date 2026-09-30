@@ -18,7 +18,7 @@ from app.schemas.bookmark import (
     BookmarkLinkRead,
     BookmarkParseResponse,
 )
-from app.schemas.import_job import ImportJobCreate, ImportJobRead
+from app.schemas.import_job import ImportJobCreate, ImportJobRead, TextImportJobCreate
 from app.settings_service import get_settings
 from app.url_normalize import INSTAGRAM_HOSTS, normalize_source_url
 
@@ -27,6 +27,17 @@ from app.url_normalize import INSTAGRAM_HOSTS, normalize_source_url
 router = APIRouter(prefix="/imports", tags=["imports"])
 
 _APPROVABLE_STATUSES = {ImportJobStatus.PENDING, ImportJobStatus.FAILED}
+
+# Below this, there's not enough for Claude to extract a meaningful recipe from — matches the
+# frontend's own client-side minimum so the 422 is a defense-in-depth backstop, not the normal
+# path.
+_MIN_PASTE_TEXT_LENGTH = 30
+# A sane upper bound on what gets sent to Claude / stored — generous for even a long, rambling
+# WhatsApp message or notebook page, but not unbounded.
+_MAX_PASTE_TEXT_LENGTH = 20_000
+# import_jobs.source is String(2048), but the in-progress list only needs a short preview —
+# see models/import_job.py's source_text docstring.
+_PASTE_EXCERPT_LENGTH = 120
 
 
 def _detect_job_type(source: str) -> ImportJobType:
@@ -245,6 +256,49 @@ def create_import_job(
         # A regular user's import is always private to them — no public-exposure review is
         # needed, so it queues immediately instead of waiting on an admin's approval click. An
         # admin's own job keeps the existing pending -> approve step.
+        _queue_and_publish(db, job)
+
+    return _serialize(job, current_user)
+
+
+@router.post("/text", response_model=ImportJobRead, status_code=201)
+def create_text_import_job(
+    payload: TextImportJobCreate,
+    db: Session = Depends(get_db),
+    current_user: AuthUser = Depends(get_current_user),
+) -> ImportJobRead:
+    # No fetch step for a paste job — there's nothing to fetch — so this mirrors
+    # create_import_job minus URL detection/normalization/dedup, and stores the full text
+    # separately from the short display excerpt. See models/import_job.py's source_text.
+    user = db.get(User, current_user.id)
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    _ensure_import_limit_not_reached(db, user)
+
+    text = payload.text.strip()
+    if len(text) < _MIN_PASTE_TEXT_LENGTH:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Pasted text must be at least {_MIN_PASTE_TEXT_LENGTH} characters long.",
+        )
+    text = text[:_MAX_PASTE_TEXT_LENGTH]
+    excerpt = text[:_PASTE_EXCERPT_LENGTH]
+    if len(text) > _PASTE_EXCERPT_LENGTH:
+        excerpt = excerpt.rstrip() + "…"
+
+    job = ImportJob(
+        source=excerpt,
+        source_text=text,
+        enrich_from_web=payload.enrich_from_web,
+        type=ImportJobType.PASTE,
+        created_by_user_id=current_user.id,
+    )
+    db.add(job)
+    db.commit()
+    db.refresh(job)
+
+    if not current_user.is_admin:
+        # Same immediate-queue behavior as every other non-admin import — see create_import_job.
         _queue_and_publish(db, job)
 
     return _serialize(job, current_user)

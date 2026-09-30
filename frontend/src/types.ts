@@ -37,11 +37,16 @@ export interface Recipe {
   // shareable. A shared recipe is only actually visible to everyone once status is "approved."
   is_shared: boolean;
   // Null until the owner acknowledges a just-finished import on the account page — drives the
-  // post-import review panel. Always null for a manually-added recipe (source_url is null).
+  // post-import review panel (see PendingImportsPanel's is_from_import predicate). Always null
+  // for a manually-added recipe; also set for a paste import, which has no source_url at all.
   import_reviewed_at: string | null;
   // Set once, at creation, when this recipe was produced by copying someone else's
   // recipe-sharing link (see sharing/SharePage.tsx) — never changes afterward.
   shared_from_recipe_id: number | null;
+  // True for any recipe produced by the import pipeline (URL, bookmark, Instagram, or paste),
+  // false for a manually-added one. Distinct from `source_url === null`: a paste import has no
+  // source_url yet is still an import — see PendingImportsPanel's predicate.
+  is_from_import: boolean;
 }
 
 export interface RecipeShare {
@@ -121,7 +126,7 @@ export interface ImportJob {
   // PendingImportsPanel, which displays whatever Claude picked). Stays null forever for a job
   // that never gets that far (e.g. a failed fetch).
   category_id: number | null;
-  type: "single" | "bulk" | "bookmark" | "instagram";
+  type: "single" | "bulk" | "bookmark" | "instagram" | "paste";
   source: string;
   status: ImportJobStatus;
   // Raw technical text — null for a non-admin caller (see api's routers/imports.py _serialize);

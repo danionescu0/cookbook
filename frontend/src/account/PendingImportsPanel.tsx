@@ -91,7 +91,7 @@ export function PendingImportsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs]);
 
-  const pendingRecipes = submissions.filter((recipe) => recipe.source_url && !recipe.import_reviewed_at);
+  const pendingRecipes = submissions.filter((recipe) => recipe.is_from_import && !recipe.import_reviewed_at);
   const failedJobs = myJobs.filter((job) => job.status === "failed" && !job.dismissed_at);
 
   const handleAcknowledge = async (recipe: Recipe) => {

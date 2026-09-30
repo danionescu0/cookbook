@@ -150,6 +150,136 @@ def test_parse_recipe_from_text_raises_when_no_tool_use_block(
         claude_client.parse_recipe_from_text("caption text here", ["ro"], "test-key", ["Desserts"])
 
 
+def test_parse_recipe_from_pasted_text_returns_tool_input_and_forces_its_tool_choice(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    expected = {
+        "images": ["https://example.com/dish.jpg"],
+        "translations": [
+            {
+                "language": "ro",
+                "title": "Batoane cu mere",
+                "description": "",
+                "ingredients": ["mere", "fulgi de ovaz"],
+                "steps": ["amestecă", "coace"],
+                "tips": [],
+            }
+        ],
+    }
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_pasted_recipe", expected)]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    result = claude_client.parse_recipe_from_pasted_text(
+        "pasted recipe text", ["ro"], "test-key", ["Desserts"]
+    )
+
+    assert result == expected
+    assert fake_client.messages.received_kwargs["tool_choice"] == {
+        "type": "tool",
+        "name": "extracted_pasted_recipe",
+    }
+    assert fake_client.messages.received_kwargs["tools"] == [claude_client._PASTE_RECIPE_TOOL]
+
+
+def test_parse_recipe_from_pasted_text_includes_reference_when_given(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_pasted_recipe", {})]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.parse_recipe_from_pasted_text(
+        "pasted recipe text",
+        ["ro"],
+        "test-key",
+        ["Desserts"],
+        reference="Typical versions bake at 180C for 35 minutes.",
+    )
+
+    prompt = fake_client.messages.received_kwargs["messages"][0]["content"]
+    assert "Here is some reference material about similar dishes found via web search" in prompt
+    assert "Typical versions bake at 180C for 35 minutes." in prompt
+
+
+def test_parse_recipe_from_pasted_text_omits_reference_block_when_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(
+        content=[FakeBlock("tool_use", "extracted_pasted_recipe", {})]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    claude_client.parse_recipe_from_pasted_text(
+        "pasted recipe text", ["ro"], "test-key", ["Desserts"]
+    )
+
+    prompt = fake_client.messages.received_kwargs["messages"][0]["content"]
+    assert "Here is some reference material about similar dishes found via web search" not in prompt
+
+
+def test_parse_recipe_from_pasted_text_raises_when_no_tool_use_block(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(content=[FakeBlock("text")])
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: FakeClient(fake_response))
+
+    with pytest.raises(claude_client.RecipeExtractionError):
+        claude_client.parse_recipe_from_pasted_text(
+            "pasted recipe text", ["ro"], "test-key", ["Desserts"]
+        )
+
+
+def test_research_recipe_context_returns_empty_immediately_for_deepseek(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _fail_if_called(provider: str, api_key: str) -> FakeClient:
+        raise AssertionError("_client should not be constructed for deepseek web research")
+
+    monkeypatch.setattr(claude_client, "_client", _fail_if_called)
+
+    assert claude_client.research_recipe_context("apple cake", "test-key", provider="deepseek") == ""
+
+
+def test_research_recipe_context_returns_empty_when_call_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _raise(provider: str, api_key: str) -> FakeClient:
+        raise RuntimeError("network boom")
+
+    monkeypatch.setattr(claude_client, "_client", _raise)
+
+    assert claude_client.research_recipe_context("apple cake", "test-key") == ""
+
+
+def test_research_recipe_context_returns_concatenated_text_content(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake_response = SimpleNamespace(
+        content=[
+            SimpleNamespace(type="text", text="First paragraph."),
+            FakeBlock("web_search_tool_result"),
+            SimpleNamespace(type="text", text="Second paragraph."),
+        ]
+    )
+    fake_client = RecordingFakeClient(fake_response)
+    monkeypatch.setattr(claude_client, "_client", lambda provider, api_key: fake_client)
+
+    result = claude_client.research_recipe_context("apple cake", "test-key")
+
+    assert result == "First paragraph.\nSecond paragraph."
+    assert fake_client.messages.received_kwargs["tools"] == [
+        {"type": "web_search_20250305", "name": "web_search"}
+    ]
+    assert "tool_choice" not in fake_client.messages.received_kwargs
+    assert fake_client.messages.received_kwargs["model"] == claude_client.MODEL
+
+
 def test_translate_recipe_returns_tool_input(monkeypatch: pytest.MonkeyPatch) -> None:
     expected = {
         "translations": [

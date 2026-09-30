@@ -1,7 +1,7 @@
 import enum
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, ForeignKey, String, Text, func
+from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, String, Text, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
@@ -12,6 +12,9 @@ class ImportJobType(str, enum.Enum):
     BULK = "bulk"
     BOOKMARK = "bookmark"
     INSTAGRAM = "instagram"
+    # No source_url ever (see Recipe.is_from_import) — the fetch/robots.txt step is skipped
+    # entirely by the worker, straight to extraction. See handlers.py's PASTE branch.
+    PASTE = "paste"
 
 
 class ImportErrorKind(str, enum.Enum):
@@ -55,6 +58,15 @@ class ImportJob(Base):
         Enum(ImportJobType, native_enum=False), default=ImportJobType.SINGLE
     )
     source: Mapped[str] = mapped_column(String(2048), nullable=False)
+    # The full pasted text for a PASTE job — `source` above holds only a short display excerpt
+    # (the in-progress list renders `source`, which is capped at 2048 chars and used for the URL
+    # duplicate check on other job types; that check is skipped entirely for paste jobs). Null for
+    # every non-paste job type.
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # The user's opt-in checkbox: before extraction, let the worker make one preceding freeform
+    # Claude call with server-side web search to gather reference material for filling gaps in a
+    # pasted recipe. Read only for PASTE jobs; silently skipped when the provider is DeepSeek.
+    enrich_from_web: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[ImportJobStatus] = mapped_column(
         Enum(ImportJobStatus, native_enum=False), default=ImportJobStatus.PENDING
     )

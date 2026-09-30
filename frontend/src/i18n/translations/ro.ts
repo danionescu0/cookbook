@@ -342,6 +342,17 @@ const ro: Translation = {
     resultSummaryNoSkipped: "Au pornit {created} importuri.",
     chooseAnotherFileButton: "Alege alt fișier",
   },
+  pasteImport: {
+    heading: "Adaugă rețetă din text",
+    description:
+      "Lipește un text pe care îl ai deja — un mesaj, un email, o poză cu o pagină de caiet — și lasă aplicația să îl transforme într-o rețetă structurată.",
+    textLabel: "Textul rețetei",
+    placeholder: "Lipește aici ingredientele, pașii sau orice alte detalii despre rețetă…",
+    tooShortHint: "Este nevoie de puțin mai multe detalii pentru a putea importa.",
+    enrichFromWebLabel:
+      "Completează detaliile lipsă de pe internet (caută și o fotografie a preparatului)",
+    submitButton: "Importă textul lipit",
+  },
   howToImportBookmarks: {
     title: "Cum îți exporți marcajele (bookmarks)",
     closeButton: "OK",

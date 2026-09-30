@@ -205,6 +205,7 @@ def _serialize(
         is_shared=recipe.is_shared,
         import_reviewed_at=recipe.import_reviewed_at,
         shared_from_recipe_id=recipe.shared_from_recipe_id,
+        is_from_import=recipe.is_from_import,
     )
 
 
@@ -527,7 +528,7 @@ def acknowledge_import(
     recipe = _get_or_404(db, recipe_id)
     if not current_user.is_admin and recipe.owner_user_id != current_user.id:
         raise HTTPException(status_code=403, detail="Only the owner or an admin can do this")
-    if recipe.source_url is None:
+    if recipe.is_from_import is False:
         raise HTTPException(status_code=400, detail="This recipe wasn't imported — nothing to acknowledge")
 
     recipe.import_reviewed_at = datetime.now(timezone.utc)

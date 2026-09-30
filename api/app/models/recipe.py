@@ -49,6 +49,15 @@ class Recipe(Base):
     # import (source_url is not None); stays null forever for a manually-added recipe, which never
     # shows that panel, so there's no need for a DB constraint tying the two together.
     import_reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # True for any recipe produced by the import pipeline (URL, bookmark, Instagram, or paste),
+    # false for one typed by hand on /submit-recipe. Backfilled `= source_url IS NOT NULL` by
+    # migration 0039; kept as its own column (rather than continuing to infer from source_url)
+    # because a paste import has no source_url at all yet is still an import — see
+    # routers/recipes.py's acknowledge_import and PendingImportsPanel.tsx, both of which switched
+    # from testing source_url to testing this column. The community-share gate deliberately keeps
+    # testing source_url instead (see is_shared above) — a pasted recipe is the user's own text,
+    # not a scrape of someone else's page, so it stays shareable like a manual recipe.
+    is_from_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category: Mapped["Category"] = relationship(back_populates="recipes")
     translations: Mapped[list["RecipeTranslation"]] = relationship(

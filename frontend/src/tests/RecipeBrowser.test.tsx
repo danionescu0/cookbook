@@ -41,6 +41,7 @@ const cake: Recipe = {
   language: "en",
   category_id: 1,
   source_url: null,
+  is_from_import: false,
   status: "approved",
   added_at: "2026-07-23T00:00:00Z",
   approved_at: "2026-07-23T00:00:00Z",

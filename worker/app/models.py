@@ -20,6 +20,7 @@ class ImportJobType(str, enum.Enum):
     BULK = "bulk"
     BOOKMARK = "bookmark"
     INSTAGRAM = "instagram"
+    PASTE = "paste"
 
 
 class ImportErrorKind(str, enum.Enum):
@@ -52,6 +53,8 @@ class ImportJob(Base):
         Enum(ImportJobType, native_enum=False), default=ImportJobType.SINGLE
     )
     source: Mapped[str] = mapped_column(String(2048), nullable=False)
+    source_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    enrich_from_web: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     status: Mapped[ImportJobStatus] = mapped_column(
         Enum(ImportJobStatus, native_enum=False), default=ImportJobStatus.QUEUED
     )
@@ -83,6 +86,7 @@ class Recipe(Base):
     )
     owner_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False)
     is_shared: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_from_import: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     added_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     approved_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

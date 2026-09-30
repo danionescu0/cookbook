@@ -280,6 +280,11 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ source }),
     }),
+  createTextImportJob: (text: string, enrichFromWeb: boolean) =>
+    request<ImportJob>("/imports/text", {
+      method: "POST",
+      body: JSON.stringify({ text, enrich_from_web: enrichFromWeb }),
+    }),
   approveImportJob: (id: number) =>
     request<ImportJob>(`/imports/${id}/approve`, { method: "POST" }),
   deleteImportJob: (id: number) => request<void>(`/imports/${id}`, { method: "DELETE" }),

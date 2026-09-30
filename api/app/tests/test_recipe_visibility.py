@@ -331,6 +331,7 @@ class TestAcknowledgeImportEndpoint:
             category_id=category_id,
             source_url="https://example.com/imported-recipe",
             owner_user_id=owner.id,
+            is_from_import=True,
         )
         recipe.translations.append(RecipeTranslation(language="en", title="Imported", slug="imported"))
         db_session.add(recipe)
@@ -380,6 +381,28 @@ class TestAcknowledgeImportEndpoint:
         response = user_client.post(f"/recipes/{recipe['id']}/acknowledge-import")
 
         assert response.status_code == 400
+
+    def test_owner_can_acknowledge_a_paste_import_with_no_source_url(
+        self, client: TestClient, user_client: TestClient, db_session: Session, regular_user: User
+    ) -> None:
+        # A paste import has no source_url at all — is_from_import is what must gate this, not
+        # "source_url is not None" (see routers/recipes.py's acknowledge_import).
+        category_id = _create_category(client)
+        recipe = Recipe(
+            category_id=category_id,
+            source_url=None,
+            owner_user_id=regular_user.id,
+            is_from_import=True,
+        )
+        recipe.translations.append(RecipeTranslation(language="en", title="Pasted", slug="pasted"))
+        db_session.add(recipe)
+        db_session.commit()
+        db_session.refresh(recipe)
+
+        response = user_client.post(f"/recipes/{recipe.id}/acknowledge-import")
+
+        assert response.status_code == 200
+        assert response.json()["import_reviewed_at"] is not None
 
 
 class TestListPagination:

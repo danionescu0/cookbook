@@ -1,6 +1,10 @@
+import logging
+
 import anthropic
 
 from app.recipe_sections import SECTION_HEADER_PREFIX
+
+logger = logging.getLogger(__name__)
 
 # Structured extraction/parsing from raw scraped content (extract_recipe, parse_recipe_from_text,
 # parse_ingredients_for_nutrition) is a mechanical forced-tool-call task, not open-ended reasoning,
@@ -270,6 +274,81 @@ _PARSE_RECIPE_TEXT_TOOL = {
 }
 
 
+_PASTE_RECIPE_TOOL = {
+    "name": "extracted_pasted_recipe",
+    "description": (
+        "The cleaned-up recipe extracted from user-pasted free-form recipe text, translated into "
+        "each requested language. May also include real dish-photo URLs found via web search if "
+        "reference research was used."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "category": {
+                "type": "string",
+                "description": (
+                    "The single best-matching category name, chosen from the exact list of "
+                    "existing category names given in the prompt. Always return one of those "
+                    "exact names verbatim, even if the match is only approximate — never invent "
+                    "a new one. Empty string if no recipe is present in the text at all."
+                ),
+            },
+            "images": {
+                "type": "array",
+                "items": {"type": "string"},
+                "description": (
+                    "Absolute URLs of real photos of this specific dish that you found via web "
+                    "search (e.g. from a recipe blog, food site) — only include URLs you "
+                    "actually saw returned by a search, never invented ones. Empty array if none "
+                    "were found or web search wasn't used."
+                ),
+            },
+            "translations": {
+                "type": "array",
+                "description": (
+                    "One entry per requested language code. Empty array if no recipe is "
+                    "present in the text at all."
+                ),
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "language": {"type": "string"},
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                        "ingredients": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
+                        "steps": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": (
+                                f"May include sub-group labels prefixed with "
+                                f"{SECTION_HEADER_PREFIX!r} — see the sub-group instructions."
+                            ),
+                        },
+                        "tips": {"type": "array", "items": {"type": "string"}},
+                    },
+                    "required": [
+                        "language",
+                        "title",
+                        "description",
+                        "ingredients",
+                        "steps",
+                        "tips",
+                    ],
+                },
+            },
+        },
+        "required": ["category", "translations"],
+    },
+}
+
+
 _TRANSLATE_RECIPE_TOOL = {
     "name": "translated_recipe",
     "description": (
@@ -455,6 +534,90 @@ def parse_recipe_from_text(
 
     for block in response.content:
         if block.type == "tool_use" and block.name == "extracted_recipe_text":
+            return block.input
+
+    raise RecipeExtractionError("Claude did not return a structured recipe")
+
+
+def research_recipe_context(dish_hint: str, api_key: str, provider: str = "claude") -> str:
+    if provider == "deepseek":
+        return ""
+
+    try:
+        response = _client(provider, api_key).messages.create(
+            model=_model_for(provider, "translate"),
+            max_tokens=2048,
+            tools=[{"type": "web_search_20250305", "name": "web_search"}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Research this dish and summarize typical ingredients, preparation steps, "
+                        "and any common timing/temperature tips as plain reference notes. This is "
+                        "only background material to help fill small gaps in an already-mostly-"
+                        "complete pasted recipe; it must not be presented as the recipe itself, "
+                        "and it should stay concise (a few short paragraphs).\n\n"
+                        f"Dish hint: {dish_hint}"
+                    ),
+                }
+            ],
+        )
+    except Exception:
+        logger.warning("failed to research recipe context for %r", dish_hint, exc_info=True)
+        return ""
+
+    return "\n".join(
+        block.text.strip()
+        for block in response.content
+        if block.type == "text" and getattr(block, "text", "").strip()
+    )
+
+
+def parse_recipe_from_pasted_text(
+    text: str,
+    languages: list[str],
+    api_key: str,
+    category_names: list[str],
+    provider: str = "claude",
+    reference: str = "",
+) -> dict:
+    languages_str = ", ".join(languages)
+    reference_block = ""
+    if reference:
+        reference_block = (
+            "\n\nHere is some reference material about similar dishes found via web search — use "
+            "it ONLY to fill in gaps the pasted text leaves incomplete (e.g. a missing bake "
+            "time/temperature, or a plausible missing step); never let it contradict or override "
+            f"anything the pasted text actually says:\n\n{reference}"
+        )
+
+    response = _client(provider, api_key).messages.create(
+        model=_model_for(provider, "extraction"),
+        max_tokens=_TRANSLATIONS_MAX_TOKENS,
+        tools=[_PASTE_RECIPE_TOOL],
+        tool_choice={"type": "tool", "name": "extracted_pasted_recipe"},
+        **_thinking_kwargs(provider),
+        messages=[
+            {
+                "role": "user",
+                "content": (
+                    "You are extracting a cooking recipe from free-form text pasted by a user "
+                    "(e.g. a chat message, OCR output, personal notes, or copied text from "
+                    "somewhere else). Clean it up into a structured recipe while preserving what "
+                    "the pasted text actually says. "
+                    f"{_SECTION_HEADER_INSTRUCTION} Produce one translation for each of these "
+                    f"language codes: {languages_str}. {_category_instruction(category_names)} "
+                    "If no recipe is present anywhere in the text, return an empty translations "
+                    "array and an empty `category` string. Only include `images` if they are real "
+                    "dish-photo URLs you actually found via web search; otherwise omit the field "
+                    f"or return an empty array. Here is the pasted text:\n\n{text}{reference_block}"
+                ),
+            }
+        ],
+    )
+
+    for block in response.content:
+        if block.type == "tool_use" and block.name == "extracted_pasted_recipe":
             return block.input
 
     raise RecipeExtractionError("Claude did not return a structured recipe")

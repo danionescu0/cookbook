@@ -5,6 +5,7 @@ import { api } from "../api/client";
 // caller (and "everyone's" for an admin), so the same component works unmodified in both places.
 import { BookmarkImportPanel } from "../backoffice/BookmarkImportPanel";
 import { ImportManager } from "../backoffice/ImportManager";
+import { PasteImportPanel } from "../backoffice/PasteImportPanel";
 import { useLanguage } from "../i18n/LanguageContext";
 import { primaryButton } from "../ui/buttonStyles";
 import { useConfirm } from "../ui/useConfirm";
@@ -110,6 +111,7 @@ export function ImportPage() {
           reloadTrigger={importTrigger}
         />
         <BookmarkImportPanel onJobCreated={() => setImportTrigger((t) => t + 1)} />
+        <PasteImportPanel onJobCreated={() => setImportTrigger((t) => t + 1)} />
 
         <h3 className="mt-6 font-serif text-xl font-semibold text-ink">
           {t.account.myRecipesHeading}

@@ -60,6 +60,7 @@ function recipe(overrides: Partial<Recipe> = {}): Recipe {
     is_shared: false,
     import_reviewed_at: null,
     shared_from_recipe_id: null,
+    is_from_import: false,
     ...overrides,
   };
 }

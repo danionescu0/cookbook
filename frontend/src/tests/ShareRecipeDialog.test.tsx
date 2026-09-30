@@ -28,6 +28,7 @@ const recipe: Recipe = {
   language: "en",
   category_id: 1,
   source_url: null,
+  is_from_import: false,
   status: "approved",
   added_at: "2026-08-20T00:00:00Z",
   approved_at: "2026-08-20T00:00:00Z",

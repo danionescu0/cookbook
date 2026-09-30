@@ -340,6 +340,17 @@ const en = {
     resultSummaryNoSkipped: "Started {created} imports.",
     chooseAnotherFileButton: "Choose another file",
   },
+  pasteImport: {
+    heading: "Paste a recipe",
+    description:
+      "Paste text you already have — a message, an email, a photo of a notebook page — and let the app turn it into a structured recipe.",
+    textLabel: "Recipe text",
+    placeholder: "Paste ingredients, steps, or anything else about the recipe here…",
+    tooShortHint: "A little more detail is needed before this can be imported.",
+    enrichFromWebLabel:
+      "Fill in missing details from the web (also looks for a photo of the dish)",
+    submitButton: "Import pasted text",
+  },
   howToImportBookmarks: {
     title: "How to export your bookmarks",
     closeButton: "OK",

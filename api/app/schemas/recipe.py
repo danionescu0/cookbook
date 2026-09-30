@@ -96,6 +96,10 @@ class RecipeRead(BaseModel):
     # link — see routers/recipe_shares.py's copy endpoint. Lets the frontend show "Copied from a
     # shared recipe" provenance; never changes afterward.
     shared_from_recipe_id: int | None = None
+    # True for any recipe produced by the import pipeline (URL, bookmark, Instagram, or paste),
+    # false for a manually-added one. Distinct from `source_url is not None`: a paste import has
+    # no source_url yet is still an import — see routers/recipes.py's acknowledge_import.
+    is_from_import: bool
 
 
 class RecipeShareRead(BaseModel):

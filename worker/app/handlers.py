@@ -7,7 +7,13 @@ import httpx
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.claude_client import RecipeExtractionError, extract_recipe, parse_recipe_from_text
+from app.claude_client import (
+    RecipeExtractionError,
+    extract_recipe,
+    parse_recipe_from_pasted_text,
+    parse_recipe_from_text,
+    research_recipe_context,
+)
 from app.images import process_images
 from app.instagram_client import InstagramFetchError, fetch_instagram_post
 from app.models import (
@@ -104,7 +110,8 @@ def _finish_import(
     stored_images: list[str],
     category_id: int,
     db: Session,
-    source_url: str,
+    source_url: str | None,
+    is_from_import: bool = True,
 ) -> None:
     if not translations_data:
         raise RecipeExtractionError("Claude returned no translations")
@@ -130,6 +137,7 @@ def _finish_import(
         status=RecipeStatus.APPROVED,
         approved_at=datetime.now(timezone.utc),
         translations=translations,
+        is_from_import=is_from_import,
         # Imports are always private to whoever ran them — never shareable, see
         # routers/recipes.py's visibility rule and README migration 0020.
         owner_user_id=job.created_by_user_id,
@@ -171,7 +179,9 @@ def handle_import_job(body: bytes, db: Session) -> None:
     # Read once per job (not once per HTTP call within it) — see settings_service.get_settings.
     app_settings = get_settings(db)
 
-    job.status = ImportJobStatus.FETCHING
+    job.status = (
+        ImportJobStatus.PROCESSING if job.type == ImportJobType.PASTE else ImportJobStatus.FETCHING
+    )
     db.commit()
 
     try:
@@ -184,7 +194,34 @@ def handle_import_job(body: bytes, db: Session) -> None:
             raise RecipeExtractionError("No categories exist yet — create one in the back office first")
         category_names = [c.name for c in categories]
 
-        if job.type == ImportJobType.INSTAGRAM:
+        if job.type == ImportJobType.PASTE:
+            # The first non-empty line is usually the closest thing pasted free-form text has to a
+            # title; if OCR/chat formatting collapsed everything into one blob, fall back to the
+            # first 80 chars so web research still gets a concise dish hint.
+            first_non_empty_line = next(
+                (line.strip() for line in (job.source_text or "").splitlines() if line.strip()),
+                "",
+            )
+            dish_hint = (first_non_empty_line or (job.source_text or "").strip())[:80]
+            research_text = ""
+            if job.enrich_from_web:
+                research_text = research_recipe_context(
+                    dish_hint,
+                    app_settings.ai_api_key,
+                    provider=app_settings.preferred_ai_provider,
+                )
+
+            extracted = parse_recipe_from_pasted_text(
+                job.source_text or "",
+                app_settings.supported_languages_list,
+                app_settings.ai_api_key,
+                category_names,
+                provider=app_settings.preferred_ai_provider,
+                reference=research_text,
+            )
+            image_urls = extracted.get("images", [])
+            resolved_source_url = None
+        elif job.type == ImportJobType.INSTAGRAM:
             post = fetch_instagram_post(job.source, app_settings.scrape_timeout_seconds)
             job.status = ImportJobStatus.PROCESSING
             db.commit()

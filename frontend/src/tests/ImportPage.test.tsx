@@ -59,6 +59,7 @@ const importedRecipe: Recipe = {
   language: "en",
   category_id: 1,
   source_url: "https://example.com/cake",
+  is_from_import: true,
   status: "approved",
   added_at: "2026-08-04T00:00:00Z",
   approved_at: "2026-08-04T00:00:00Z",

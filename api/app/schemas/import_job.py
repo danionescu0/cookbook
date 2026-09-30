@@ -9,6 +9,14 @@ class ImportJobCreate(BaseModel):
     source: str
 
 
+class TextImportJobCreate(BaseModel):
+    text: str
+    # Both default off — the paste form's checkboxes for "fill gaps from the web" and "find
+    # pictures" (the latter piggybacks on this same flag; see worker/app/claude_client.py's
+    # _PASTE_RECIPE_TOOL) — so the default paste import costs the same as an Instagram import.
+    enrich_from_web: bool = False
+
+
 class ImportJobRead(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 

@@ -49,11 +49,19 @@ def _create_job(
     source: str = "https://example.com/recipe",
     type: ImportJobType = ImportJobType.SINGLE,
     created_by_user_id: int = 1,
+    source_text: str | None = None,
+    enrich_from_web: bool = False,
 ) -> ImportJob:
     # category_id starts null now — the handler resolves it from Claude's own suggestion once
     # extraction succeeds (see _resolve_category_id), rather than the requester picking one up
     # front. See _seed_category for populating the list the handler resolves against.
-    job = ImportJob(source=source, type=type, created_by_user_id=created_by_user_id)
+    job = ImportJob(
+        source=source,
+        type=type,
+        created_by_user_id=created_by_user_id,
+        source_text=source_text,
+        enrich_from_web=enrich_from_web,
+    )
     db.add(job)
     db.commit()
     db.refresh(job)
@@ -520,6 +528,20 @@ _ONE_LANGUAGE_TEXT_EXTRACTION = {
     ]
 }
 
+_ONE_LANGUAGE_PASTE_EXTRACTION = {
+    "images": ["https://images.example.com/cake.jpg"],
+    "translations": [
+        {
+            "language": "ro",
+            "title": "Prajitură de mere",
+            "description": "",
+            "ingredients": ["mere", "făină"],
+            "steps": ["amestecă", "coace"],
+            "tips": [],
+        }
+    ],
+}
+
 
 def test_handle_import_job_instagram_inserts_recipe_from_caption_text(
     db_session: Session, monkeypatch: pytest.MonkeyPatch
@@ -608,3 +630,150 @@ def test_handle_import_job_instagram_fails_when_no_recipe_in_text(
     assert job.status == ImportJobStatus.FAILED
     assert job.error == "Claude returned no translations"
     assert db_session.scalars(select(Recipe)).first() is None
+
+
+def test_handle_import_job_paste_never_calls_fetch_page_and_sets_import_fields(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session,
+        source="Apple cake from WhatsApp",
+        type=ImportJobType.PASTE,
+        source_text="Apple cake\n2 apples\nBake it",
+    )
+    _seed_category(db_session)
+    monkeypatch.setattr(
+        handlers,
+        "fetch_page",
+        lambda url, app_settings: (_ for _ in ()).throw(
+            AssertionError("fetch_page should not be called for paste imports")
+        ),
+    )
+    monkeypatch.setattr(
+        handlers,
+        "parse_recipe_from_pasted_text",
+        lambda text, languages, api_key, category_names, **kwargs: _ONE_LANGUAGE_PASTE_EXTRACTION,
+    )
+    monkeypatch.setattr(
+        handlers, "process_images", lambda urls, app_settings: ["/images/paste.jpg"]
+    )
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    recipe = db_session.scalars(select(Recipe)).one()
+    assert recipe.source_url is None
+    assert recipe.is_from_import is True
+    assert recipe.images == ["/images/paste.jpg"]
+
+
+def test_handle_import_job_paste_without_web_enrichment_never_calls_research(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session,
+        source="Apple cake from notes",
+        type=ImportJobType.PASTE,
+        source_text="Apple cake\n2 apples\nBake it",
+        enrich_from_web=False,
+    )
+    _seed_category(db_session)
+    monkeypatch.setattr(
+        handlers,
+        "research_recipe_context",
+        lambda dish_hint, api_key, provider="claude": (_ for _ in ()).throw(
+            AssertionError("research_recipe_context should not be called when enrich_from_web=False")
+        ),
+    )
+    monkeypatch.setattr(
+        handlers,
+        "parse_recipe_from_pasted_text",
+        lambda text, languages, api_key, category_names, **kwargs: _ONE_LANGUAGE_PASTE_EXTRACTION,
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+
+
+def test_handle_import_job_paste_passes_research_text_into_reference(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session,
+        source="Apple cake from OCR",
+        type=ImportJobType.PASTE,
+        source_text="Apple cake\n2 apples\nBake it",
+        enrich_from_web=True,
+    )
+    _seed_category(db_session)
+    research_calls = []
+    parse_calls = []
+    monkeypatch.setattr(
+        handlers,
+        "research_recipe_context",
+        lambda dish_hint, api_key, provider="claude": research_calls.append(
+            {"dish_hint": dish_hint, "api_key": api_key, "provider": provider}
+        ) or "Typical versions bake at 180C.",
+    )
+    monkeypatch.setattr(
+        handlers,
+        "parse_recipe_from_pasted_text",
+        lambda text, languages, api_key, category_names, **kwargs: parse_calls.append(
+            {
+                "text": text,
+                "languages": languages,
+                "api_key": api_key,
+                "category_names": category_names,
+                **kwargs,
+            }
+        ) or _ONE_LANGUAGE_PASTE_EXTRACTION,
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert len(research_calls) == 1
+    assert research_calls[0]["dish_hint"] == "Apple cake"
+    assert len(parse_calls) == 1
+    assert parse_calls[0]["reference"] == "Typical versions bake at 180C."
+
+
+def test_handle_import_job_paste_research_failure_still_succeeds(
+    db_session: Session, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    job = _create_job(
+        db_session,
+        source="Apple cake from OCR",
+        type=ImportJobType.PASTE,
+        source_text="Apple cake\n2 apples\nBake it",
+        enrich_from_web=True,
+    )
+    _seed_category(db_session)
+    parse_calls = []
+    monkeypatch.setattr(handlers, "research_recipe_context", lambda *args, **kwargs: "")
+    monkeypatch.setattr(
+        handlers,
+        "parse_recipe_from_pasted_text",
+        lambda text, languages, api_key, category_names, **kwargs: parse_calls.append(kwargs)
+        or _ONE_LANGUAGE_PASTE_EXTRACTION,
+    )
+    monkeypatch.setattr(handlers, "process_images", lambda urls, app_settings: [])
+    monkeypatch.setattr(handlers, "publish_nutrition_job", lambda job_id, recipe_id: None)
+
+    handle_import_job(json.dumps({"job_id": job.id}).encode(), db_session)
+
+    db_session.refresh(job)
+    assert job.status == ImportJobStatus.DONE
+    assert parse_calls == [
+        {"provider": "claude", "reference": ""}
+    ]
+    assert db_session.scalars(select(Recipe)).one().source_url is None

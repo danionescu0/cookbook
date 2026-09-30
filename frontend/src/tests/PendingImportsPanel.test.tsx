@@ -44,6 +44,7 @@ const baseRecipe: Recipe = {
   is_shared: false,
   import_reviewed_at: null,
   shared_from_recipe_id: null,
+  is_from_import: true,
 };
 
 const categories: Category[] = [
@@ -51,7 +52,7 @@ const categories: Category[] = [
   { id: 2, name: "Main course", slug: "main-course" },
 ];
 
-const manualRecipe: Recipe = { ...baseRecipe, id: 2, source_url: null };
+const manualRecipe: Recipe = { ...baseRecipe, id: 2, source_url: null, is_from_import: false };
 const alreadyReviewedImport: Recipe = { ...baseRecipe, id: 3, import_reviewed_at: "2026-08-05T00:00:00Z" };
 const instagramImport: Recipe = { ...baseRecipe, id: 4, source_url: "https://www.instagram.com/p/xyz/" };
 

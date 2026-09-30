@@ -886,3 +886,111 @@ def test_import_bookmark_selection_requires_auth(unauthenticated_client: TestCli
     )
 
     assert response.status_code == 401
+
+
+_SAMPLE_PASTE_TEXT = (
+    "Grandma's Lemon Tart\n\nIngredients:\n- 2 cups flour\n- 1 cup butter\n- 3 lemons\n\n"
+    "Steps:\n1. Mix the dough.\n2. Bake at 180C for 25 minutes.\n3. Let cool before serving."
+)
+
+
+def test_create_text_import_job_stores_full_text_and_excerpt(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = []
+    monkeypatch.setattr(
+        imports_router,
+        "publish_import_job",
+        lambda job_id, job_type, source: published.append((job_id, job_type, source)),
+    )
+
+    response = client.post("/imports/text", json={"text": _SAMPLE_PASTE_TEXT})
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["type"] == "paste"
+    # Admin jobs stay pending, same as any other import type — not published/queued yet.
+    assert body["status"] == "pending"
+    assert body["source"] == _SAMPLE_PASTE_TEXT[:120] + "…"
+    assert published == []
+
+
+def test_create_text_import_job_non_admin_queues_immediately(
+    user_client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    published = []
+    monkeypatch.setattr(
+        imports_router,
+        "publish_import_job",
+        lambda job_id, job_type, source: published.append((job_id, job_type, source)),
+    )
+
+    response = user_client.post(
+        "/imports/text", json={"text": _SAMPLE_PASTE_TEXT, "enrich_from_web": True}
+    )
+
+    assert response.status_code == 201
+    body = response.json()
+    assert body["status"] == "queued"
+    assert len(published) == 1
+
+
+def test_create_text_import_job_persists_source_text_and_enrich_flag(
+    client: TestClient, db_session: Session
+) -> None:
+    response = client.post(
+        "/imports/text", json={"text": _SAMPLE_PASTE_TEXT, "enrich_from_web": True}
+    )
+
+    job = db_session.get(ImportJob, response.json()["id"])
+    assert job is not None
+    assert job.source_text == _SAMPLE_PASTE_TEXT
+    assert job.enrich_from_web is True
+
+
+def test_create_text_import_job_rejects_text_too_short(client: TestClient) -> None:
+    response = client.post("/imports/text", json={"text": "too short"})
+
+    assert response.status_code == 422
+
+
+def test_create_text_import_job_truncates_overlong_text(client: TestClient, db_session: Session) -> None:
+    huge_text = _SAMPLE_PASTE_TEXT * 2000  # comfortably over the 20,000-char cap
+
+    response = client.post("/imports/text", json={"text": huge_text})
+
+    job = db_session.get(ImportJob, response.json()["id"])
+    assert job is not None
+    assert len(job.source_text) == 20_000
+
+
+def test_create_text_import_job_rejects_when_lifetime_limit_reached(
+    user_client: TestClient, client: TestClient, db_session: Session, regular_user: User
+) -> None:
+    client.patch("/settings", json={"max_imports_per_user": 2})
+    regular_user.imported_recipes_count = 2
+    db_session.commit()
+
+    response = user_client.post("/imports/text", json={"text": _SAMPLE_PASTE_TEXT})
+
+    assert response.status_code == 403
+
+
+def test_create_text_import_job_allows_pasting_the_same_text_twice(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # No URL-style duplicate check for paste jobs — pasting the exact same text twice is a
+    # deliberate, ordinary use case (e.g. re-importing after tweaking the enrich checkbox).
+    monkeypatch.setattr(imports_router, "publish_import_job", lambda *args: None)
+
+    first = client.post("/imports/text", json={"text": _SAMPLE_PASTE_TEXT})
+    second = client.post("/imports/text", json={"text": _SAMPLE_PASTE_TEXT})
+
+    assert first.status_code == 201
+    assert second.status_code == 201
+
+
+def test_create_text_import_job_requires_auth(unauthenticated_client: TestClient) -> None:
+    response = unauthenticated_client.post("/imports/text", json={"text": _SAMPLE_PASTE_TEXT})
+
+    assert response.status_code == 401
