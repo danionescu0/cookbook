@@ -153,6 +153,30 @@ def test_change_password_succeeds_and_old_password_stops_working(
     assert new_login.status_code == 200
 
 
+def test_change_password_invalidates_a_token_issued_before_the_change(
+    unauthenticated_client: TestClient, db_session: Session
+) -> None:
+    user = User(
+        email="pwtest3@example.com",
+        password_hash=bcrypt.hashpw(b"old-password", bcrypt.gensalt()).decode(),
+        is_admin=False,
+        is_verified=True,
+    )
+    db_session.add(user)
+    db_session.commit()
+    stale_token = create_access_token(user)
+
+    unauthenticated_client.headers["Authorization"] = f"Bearer {stale_token}"
+    change_response = unauthenticated_client.patch(
+        "/users/me/password", json={"current_password": "old-password", "new_password": "new-password"}
+    )
+    assert change_response.status_code == 204
+
+    # Same token used to make the change above — now rejected, same as any other pre-change token.
+    protected = unauthenticated_client.get("/users/me")
+    assert protected.status_code == 401
+
+
 def test_change_password_rejects_wrong_current_password(
     unauthenticated_client: TestClient, db_session: Session
 ) -> None:

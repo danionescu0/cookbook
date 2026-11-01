@@ -7,7 +7,8 @@ from sqlalchemy.orm import Session
 import bcrypt
 
 import app.routers.auth as auth_router
-from app.auth import create_access_token
+from app.auth import ALGORITHM, create_access_token
+from app.config import settings
 from app.models.email_verification_token import EmailVerificationToken
 from app.models.password_reset_token import PasswordResetToken
 from app.models.user import User
@@ -301,6 +302,27 @@ def test_reset_password_succeeds_and_old_password_stops_working(
     assert new_login.status_code == 200
 
 
+def test_reset_password_invalidates_a_token_issued_before_the_reset(
+    unauthenticated_client: TestClient, monkeypatch, db_session: Session
+) -> None:
+    _signup(unauthenticated_client, monkeypatch)
+    verification_token = db_session.query(EmailVerificationToken).one()
+    unauthenticated_client.post("/auth/verify-email", json={"token": verification_token.token})
+    user = db_session.query(User).filter(User.email == "newuser@example.com").one()
+    stale_token = create_access_token(user)
+
+    _forgot_password(unauthenticated_client, monkeypatch)
+    reset_token = db_session.query(PasswordResetToken).one()
+    response = unauthenticated_client.post(
+        "/auth/reset-password", json={"token": reset_token.token, "new_password": "a-new-password1"}
+    )
+    assert response.status_code == 200
+
+    unauthenticated_client.headers["Authorization"] = f"Bearer {stale_token}"
+    protected = unauthenticated_client.get("/users/me")
+    assert protected.status_code == 401
+
+
 def test_reset_password_rejects_an_invalid_token(unauthenticated_client: TestClient) -> None:
     response = unauthenticated_client.post(
         "/auth/reset-password", json={"token": "not-a-real-token", "new_password": "a-new-password1"}
@@ -381,9 +403,75 @@ def test_protected_route_accepts_a_real_admin_token(
 def test_protected_route_rejects_a_verified_non_admin_user(
     unauthenticated_client: TestClient, regular_user: User
 ) -> None:
-    # require_admin now checks the token's is_admin claim, not just "is this a validly signed
-    # token" — a real, unexpired token for a non-admin user must still be rejected here.
+    # require_admin checks is_admin, not just "is this a validly signed token" — a real,
+    # unexpired token for a non-admin user must still be rejected here.
     token = create_access_token(regular_user)
+    unauthenticated_client.headers["Authorization"] = f"Bearer {token}"
+
+    response = unauthenticated_client.post("/categories", json={"name": "Desserts"})
+
+    assert response.status_code == 403
+
+
+def test_protected_route_rejects_a_pre_upgrade_token_without_iat_after_a_password_change(
+    unauthenticated_client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    # A token minted before the `iat` claim existed (any token issued before this feature
+    # shipped) has no issued-at to compare against token_valid_after — treated as "issued at the
+    # dawn of time" so it's still caught by a subsequent password change, rather than silently
+    # staying valid forever because it predates the check.
+    no_iat_token = jwt.encode(
+        {"sub": admin_user.email, "user_id": admin_user.id, "is_admin": True, "is_super_admin": True},
+        settings.jwt_secret,
+        algorithm=ALGORITHM,
+    )
+    admin_user.token_valid_after = datetime.now(timezone.utc)
+    db_session.commit()
+    unauthenticated_client.headers["Authorization"] = f"Bearer {no_iat_token}"
+
+    response = unauthenticated_client.post("/categories", json={"name": "Desserts"})
+
+    assert response.status_code == 401
+
+
+def test_protected_route_accepts_a_token_minted_after_a_password_change(
+    unauthenticated_client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    # Backdated well clear of "now" rather than set to it — see change_password's own comment on
+    # why token_valid_after isn't floored to whole seconds; a token_valid_after of exactly "now"
+    # would race against this token's own (floored) iat.
+    admin_user.token_valid_after = datetime.now(timezone.utc) - timedelta(seconds=5)
+    db_session.commit()
+    fresh_token = create_access_token(admin_user)
+    unauthenticated_client.headers["Authorization"] = f"Bearer {fresh_token}"
+
+    response = unauthenticated_client.post("/categories", json={"name": "Desserts"})
+
+    assert response.status_code == 201
+
+
+def test_protected_route_rejects_a_token_for_a_since_deleted_user(
+    unauthenticated_client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    token = create_access_token(admin_user)
+    db_session.delete(admin_user)
+    db_session.commit()
+    unauthenticated_client.headers["Authorization"] = f"Bearer {token}"
+
+    response = unauthenticated_client.post("/categories", json={"name": "Desserts"})
+
+    assert response.status_code == 401
+
+
+def test_protected_route_reflects_a_live_admin_demotion_without_needing_a_new_token(
+    unauthenticated_client: TestClient, db_session: Session, admin_user: User
+) -> None:
+    # is_admin/is_super_admin come from the current DB row (see get_current_user), not from the
+    # token's own claims — so a demotion takes effect on the very next request, not whenever this
+    # token happens to expire.
+    token = create_access_token(admin_user)
+    admin_user.is_admin = False
+    db_session.commit()
     unauthenticated_client.headers["Authorization"] = f"Bearer {token}"
 
     response = unauthenticated_client.post("/categories", json={"name": "Desserts"})

@@ -289,6 +289,10 @@ def reset_password(payload: ResetPasswordRequest, db: Session = Depends(get_db))
         raise HTTPException(status_code=400, detail="Invalid reset token")
 
     user.password_hash = bcrypt.hashpw(payload.new_password.encode(), bcrypt.gensalt()).decode("ascii")
+    # Invalidates every token issued before now (see User.token_valid_after) — the whole point of
+    # a forgot-password reset is "I might not be the only one with access to this account anymore".
+    # NOT floored to whole seconds — see users.py's change_password for the same decision and why.
+    user.token_valid_after = datetime.now(timezone.utc)
     token.used_at = datetime.now(timezone.utc)
     db.commit()
 

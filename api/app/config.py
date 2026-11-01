@@ -13,7 +13,11 @@ class Settings(BaseSettings):
     # every existing session at once, which a DB-editable setting wouldn't guarantee (a stale
     # worker/API process would keep trusting old tokens signed with the old value).
     jwt_secret: str = "change-me-too"
-    jwt_expires_minutes: int = 60 * 24
+    # 5 days. A revoked/expired token still can't be force-logged-out individually (the shared
+    # secret is the only global kill switch — see jwt_secret's own comment) — the one piece of
+    # recourse a user actually has is changing their password, which invalidates every token
+    # issued before that moment via User.token_valid_after (see auth.py's get_current_user).
+    jwt_expires_minutes: int = 60 * 24 * 5
 
 
 settings = Settings()

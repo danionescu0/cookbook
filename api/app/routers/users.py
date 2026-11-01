@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import bcrypt
 from fastapi import APIRouter, Depends, HTTPException
@@ -108,4 +108,16 @@ def change_password(
         raise HTTPException(status_code=401, detail="Current password is incorrect")
 
     user.password_hash = bcrypt.hashpw(payload.new_password.encode(), bcrypt.gensalt()).decode("ascii")
+    # Invalidates every token issued before now (see User.token_valid_after) — including the one
+    # on this very request, so the caller needs to log in again afterward. Deliberately NOT
+    # floored to whole seconds despite a JWT's own `iat` being second-precision (PyJWT truncates
+    # it on encode) — flooring this value too would make it possible for the current request's
+    # own (floored) iat to tie rather than lose, which would defeat the one guarantee that must
+    # never flake: the token used to make this exact change must come out invalidated. The
+    # (accepted, narrow) tradeoff is the reverse case — a brand new login landing within the same
+    # wall-clock second as this change could, in principle, carry a floored iat that reads as
+    # "before" this microsecond-precision value and get spuriously rejected. That only matters for
+    # a fresh login within roughly a second of the password change, which real human usage won't
+    # hit.
+    user.token_valid_after = datetime.now(timezone.utc)
     db.commit()

@@ -50,6 +50,16 @@ class User(Base):
 
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     # Stamped on each successful POST /auth/login — a proxy for "last used," not a full activity
-    # log (this API is stateless JWT auth, so a request between logins doesn't touch this). Null
-    # for an account that's never logged in since this column existed.
+    # log (a request between logins doesn't touch this). Null for an account that's never logged
+    # in since this column existed.
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+    # A JWT issued before this moment is rejected even if it hasn't hit its own `exp` yet — see
+    # auth.py's get_current_user. Bumped to "now" whenever the account's password changes
+    # (self-service change or a forgot-password reset), since that's the one piece of recourse a
+    # user actually has if they suspect a session leaked: auth is otherwise stateless (no session
+    # table, no per-token revocation list), and jwt_secret is a blunter, app-wide kill switch, not
+    # a per-user one. Null means "no restriction" — true for every account until its first
+    # password change after this column existed, so a routine deploy doesn't retroactively log
+    # anyone out.
+    token_valid_after: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
